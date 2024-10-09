@@ -1,6 +1,7 @@
 from flask import Flask
 import json
 from flask_cors import CORS
+from ortools.sat.python import cp_model
 
 app = Flask(__name__)
 CORS(app)
