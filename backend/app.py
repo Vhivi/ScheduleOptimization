@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify, request
 import json
 from flask_cors import CORS
 from ortools.sat.python import cp_model
@@ -16,6 +16,18 @@ def get_config():
 @app.route('/')
 def home():
     return "Hello, Flask is up and running!"
+
+@app.route('/generate-planning', methods=['POST'])
+def generate_planning_route():
+    data = request.get_json()
+    agents = data['agents']
+    vacations = data['vacations']
+    week_schedule = data['week_schedule']
+    
+    # Appel de la fonction de génération de planning
+    result = generate_planning(agents, vacations, week_schedule)
+    return jsonify(result)
+
 
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
