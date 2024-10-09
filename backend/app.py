@@ -1,7 +1,9 @@
 from flask import Flask
 import json
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 with open('config.json') as config_file:
     config = json.load(config_file)
