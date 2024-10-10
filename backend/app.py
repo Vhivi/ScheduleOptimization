@@ -60,6 +60,17 @@ def generate_planning(agents, vacations, week_schedule):
         total_hours = sum(planning[(agent, day, 'Jour')] * 12 + planning[(agent, day, 'Nuit')] * 12 for day in week_schedule)
         model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
         
+    # Respect des préférences des agents
+    for agent in agents:
+        for day in week_schedule:
+            for vacation in vacations:
+                if vacation in agents[agent]['preferences']['preferred']:
+                    # Favoriser les vacations préférées
+                    model.Add(planning[(agent, day, vacation)] == 1)
+                if vacation in agents[agent]['preferences']['avoid']:
+                    # Éviter les vacations non désirées
+                    model.Add(planning[(agent, day, vacation)] == 0)
+                    
     # Solver
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
