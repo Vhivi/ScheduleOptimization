@@ -19,8 +19,8 @@ export default {
     async generatePlanning() {
       const payload = {
         agents: ["Agent1", "Agent2"], // Exemple de données
-        vacations: ["Jour", "Nuit"],
-        week_schedule: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
+        vacations: ["Jour", "Nuit", "CDP"], // Exemple de données
+        week_schedule: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]  // Exemple de données
       };
 
       try {
