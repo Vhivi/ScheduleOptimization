@@ -1,8 +1,21 @@
 {
     "agents": [
-      {"name": "Agent1", "preferences": {"preferred": [], "avoid": []}},
-      {"name": "Agent2", "preferences": {"preferred": [], "avoid": []}}
+      {
+        "name": "Agent1",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
+        },
+      {
+        "name": "Agent2",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
+        }
     ],
-    "vacations": ["Jour", "Nuit", "CDP"]
+    "vacations": ["Jour", "Nuit", "CDP"],
+    "week_schedule": ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
   }
   
