@@ -6,12 +6,13 @@ from ortools.sat.python import cp_model
 app = Flask(__name__)
 CORS(app)
 
-with open('config.json') as config_file:
-    config = json.load(config_file)
-    
 @app.route('/config')
-def get_config():
-    return config
+# Charger le fichier de configuration
+def load_config():
+    with open('config.json', 'r') as config_file:
+        return json.load(config_file)
+
+config = load_config()
 
 @app.route('/')
 def home():
