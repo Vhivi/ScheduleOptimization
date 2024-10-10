@@ -32,14 +32,21 @@ def generate_planning_route():
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
     
-    # Variables : une variable par agent/vacation/jour
+    ########################################################
+    # Variables
+    ########################################################
+    
+    # Une variable par agent/vacation/jour
     planning = {}
     for agent in agents:
         for day in week_schedule:
             for vacation in vacations:
                 planning[(agent, day, vacation)] = model.NewBoolVar(f'planning_{agent}_{day}_{vacation}')
                 
+    ########################################################
     # Contraintes
+    ########################################################
+    
     # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:
         for day in week_schedule:
@@ -71,6 +78,18 @@ def generate_planning(agents, vacations, week_schedule):
                     # Éviter les vacations non désirées
                     model.Add(planning[(agent, day, vacation)] == 0)
                     
+    ########################################################
+    # Objectifs
+    ########################################################
+    
+    # Maximiser les vacations préférées
+    objective = cp_model.LinearExpr.Sum(
+        planning[(agent, day, vacation)] for agent in agents
+        for day in week_schedule for vacation in vacations
+        if vacation in agents[agent]['preferences']['preferred']
+    )
+    model.Maximize(objective)
+    
     # Solver
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
