@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 import json
 from flask_cors import CORS
 from ortools.sat.python import cp_model
@@ -20,10 +20,10 @@ def home():
 
 @app.route('/generate-planning', methods=['POST'])
 def generate_planning_route():
-    data = request.get_json()
-    agents = data['agents']
-    vacations = data['vacations']
-    week_schedule = data['week_schedule']
+    # Récupération des données à partir du fichier JSON
+    agents = config['agents']
+    vacations = config['vacations']
+    week_schedule = config['week_schedule']
     
     # Appel de la fonction de génération de planning
     result = generate_planning(agents, vacations, week_schedule)
