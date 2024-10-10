@@ -60,11 +60,11 @@ def generate_planning(agents, vacations, week_schedule):
         agent_name = agent['name']
         model.Add(sum(planning[(agent_name, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
         
-    # Un seul agent par vacation et par jour
+    # Chaque vacation doit être assignée à un agent chaque jour
     for day in week_schedule:
         for vacation in vacations:
-            # Somme des agents assignés à une vacation spécifique pour un jour donné doit être inférieure ou égale à 1
-            model.Add(sum(planning[(agent['name'], day, vacation)] for agent in agents) <= 1)
+            # Somme des agents assignés à une vacation spécifique pour un jour donné doit être égale à 1
+            model.Add(sum(planning[(agent['name'], day, vacation)] for agent in agents) == 1)
         
     # 12 heures de repos minimum entre deux vacations
     for agent in agents:
