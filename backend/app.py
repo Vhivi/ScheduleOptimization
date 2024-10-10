@@ -54,6 +54,11 @@ def generate_planning(agents, vacations, week_schedule):
         for day_idx, day in enumerate(week_schedule[:-1]):  # On ne prend pas en compte le dernier jour
             next_day = week_schedule[day_idx + 1]
             model.AddBoolOr([planning[(agent, day, 'Nuit')].Not(), planning[(agent, next_day, 'Jour')].Not()])
+            
+    # Un agent ne peut pas travailler plus de 48 heures par semaine
+    for agent in agents:
+        total_hours = sum(planning[(agent, day, 'Jour')] * 12 + planning[(agent, day, 'Nuit')] * 12 for day in week_schedule)
+        model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
         
     # Solver
     solver = cp_model.CpSolver()
