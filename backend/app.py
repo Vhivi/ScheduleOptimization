@@ -76,12 +76,13 @@ def generate_planning(agents, vacations, week_schedule):
     # Respect des préférences des agents
     for agent in agents:
         agent_name = agent['name']
+        preferences = agent['preferences']
         for day in week_schedule:
             for vacation in vacations:
-                if vacation in agents[agent_name]['preferences']['preferred']:
+                if vacation in preferences['preferred']:
                     # Favoriser les vacations préférées
                     model.Add(planning[(agent_name, day, vacation)] == 1)
-                if vacation in agents[agent_name]['preferences']['avoid']:
+                if vacation in preferences['avoid']:
                     # Éviter les vacations non désirées
                     model.Add(planning[(agent_name, day, vacation)] == 0)
                     
@@ -91,9 +92,13 @@ def generate_planning(agents, vacations, week_schedule):
     
     # Maximiser les vacations préférées
     objective = cp_model.LinearExpr.Sum(
-        planning[(agent['name'], day, vacation)] for agent in agents
-        for day in week_schedule for vacation in vacations
-        if vacation in agents[agent['name']]['preferences']['preferred']
+        list(
+            planning[(agent['name'], day, vacation)]
+            for agent in agents
+            for day in week_schedule
+            for vacation in vacations
+            if vacation in agent['preferences']['preferred']
+        )
     )
     model.Maximize(objective)
     
