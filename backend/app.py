@@ -39,15 +39,38 @@ def generate_planning(agents, vacations, week_schedule):
             for vacation in vacations:
                 planning[(agent, day, vacation)] = model.NewBoolVar(f'planning_{agent}_{day}_{vacation}')
                 
-    # Contraintes : chaque agent peut travailler au plus une vacation par jour
+    # Contraintes
+    # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:
         for day in week_schedule:
             model.Add(sum(planning[(agent, day, vacation)] for vacation in vacations) <= 1)
             
-    # Contraintes : au moins une vacation par agent pour la semaine
+    # Au moins une vacation par agent pour la semaine
     for agent in agents:
         model.Add(sum(planning[(agent, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
         
+    # 12 heures de repos minimum entre deux vacations
+    for agent in agents:
+        for day_idx, day in enumerate(week_schedule[:-1]):  # On ne prend pas en compte le dernier jour
+            next_day = week_schedule[day_idx + 1]
+            model.AddBoolOr([planning[(agent, day, 'Nuit')].Not(), planning[(agent, next_day, 'Jour')].Not()])
+            
+    # Un agent ne peut pas travailler plus de 48 heures par semaine
+    for agent in agents:
+        total_hours = sum(planning[(agent, day, 'Jour')] * 12 + planning[(agent, day, 'Nuit')] * 12 for day in week_schedule)
+        model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
+        
+    # Respect des préférences des agents
+    for agent in agents:
+        for day in week_schedule:
+            for vacation in vacations:
+                if vacation in agents[agent]['preferences']['preferred']:
+                    # Favoriser les vacations préférées
+                    model.Add(planning[(agent, day, vacation)] == 1)
+                if vacation in agents[agent]['preferences']['avoid']:
+                    # Éviter les vacations non désirées
+                    model.Add(planning[(agent, day, vacation)] == 0)
+                    
     # Solver
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
