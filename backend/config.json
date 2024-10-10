@@ -13,6 +13,34 @@
           "preferred": [],
           "avoid": []
           }
+        },
+      {
+        "name": "Agent3",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
+        },
+      {
+        "name": "Agent4",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
+        },
+      {
+        "name": "Agent5",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
+        },
+      {
+        "name": "Agent6",
+        "preferences": {
+          "preferred": [],
+          "avoid": []
+          }
         }
     ],
     "vacations": ["Jour", "Nuit", "CDP"],
