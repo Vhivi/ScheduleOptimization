@@ -40,9 +40,10 @@ def generate_planning(agents, vacations, week_schedule):
     # Une variable par agent/vacation/jour
     planning = {}
     for agent in agents:
+        agent_name = agent['name']  # Utiliser le nom de l'agent comme clé
         for day in week_schedule:
             for vacation in vacations:
-                planning[(agent, day, vacation)] = model.NewBoolVar(f'planning_{agent}_{day}_{vacation}')
+                planning[(agent_name, day, vacation)] = model.NewBoolVar(f'planning_{agent_name}_{day}_{vacation}')
                 
     ########################################################
     # Contraintes
@@ -50,34 +51,39 @@ def generate_planning(agents, vacations, week_schedule):
     
     # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:
+        agent_name = agent['name']
         for day in week_schedule:
-            model.Add(sum(planning[(agent, day, vacation)] for vacation in vacations) <= 1)
+            model.Add(sum(planning[(agent_name, day, vacation)] for vacation in vacations) <= 1)
             
     # Au moins une vacation par agent pour la semaine
     for agent in agents:
-        model.Add(sum(planning[(agent, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
+        agent_name = agent['name']
+        model.Add(sum(planning[(agent_name, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
         
     # 12 heures de repos minimum entre deux vacations
     for agent in agents:
+        agent_name = agent['name']
         for day_idx, day in enumerate(week_schedule[:-1]):  # On ne prend pas en compte le dernier jour
             next_day = week_schedule[day_idx + 1]
-            model.AddBoolOr([planning[(agent, day, 'Nuit')].Not(), planning[(agent, next_day, 'Jour')].Not()])
+            model.AddBoolOr([planning[(agent_name, day, 'Nuit')].Not(), planning[(agent_name, next_day, 'Jour')].Not()])
             
     # Un agent ne peut pas travailler plus de 48 heures par semaine
     for agent in agents:
-        total_hours = sum(planning[(agent, day, 'Jour')] * 12 + planning[(agent, day, 'Nuit')] * 12 for day in week_schedule)
+        agent_name = agent['name']
+        total_hours = sum(planning[(agent_name, day, 'Jour')] * 12 + planning[(agent_name, day, 'Nuit')] * 12 for day in week_schedule)
         model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
         
     # Respect des préférences des agents
     for agent in agents:
+        agent_name = agent['name']
         for day in week_schedule:
             for vacation in vacations:
-                if vacation in agents[agent]['preferences']['preferred']:
+                if vacation in agents[agent_name]['preferences']['preferred']:
                     # Favoriser les vacations préférées
-                    model.Add(planning[(agent, day, vacation)] == 1)
-                if vacation in agents[agent]['preferences']['avoid']:
+                    model.Add(planning[(agent_name, day, vacation)] == 1)
+                if vacation in agents[agent_name]['preferences']['avoid']:
                     # Éviter les vacations non désirées
-                    model.Add(planning[(agent, day, vacation)] == 0)
+                    model.Add(planning[(agent_name, day, vacation)] == 0)
                     
     ########################################################
     # Objectifs
@@ -85,9 +91,9 @@ def generate_planning(agents, vacations, week_schedule):
     
     # Maximiser les vacations préférées
     objective = cp_model.LinearExpr.Sum(
-        planning[(agent, day, vacation)] for agent in agents
+        planning[(agent['name'], day, vacation)] for agent in agents
         for day in week_schedule for vacation in vacations
-        if vacation in agents[agent]['preferences']['preferred']
+        if vacation in agents[agent['name']]['preferences']['preferred']
     )
     model.Maximize(objective)
     
@@ -99,11 +105,12 @@ def generate_planning(agents, vacations, week_schedule):
     if status == cp_model.OPTIMAL:
         result = {}
         for agent in agents:
-            result[agent] = []
+            agent_name = agent['name']
+            result[agent_name] = []
             for day in week_schedule:
                 for vacation in vacations:
-                    if solver.Value(planning[(agent, day, vacation)]):
-                        result[agent].append((day, vacation))
+                    if solver.Value(planning[(agent_name, day, vacation)]):
+                        result[agent_name].append((day, vacation))
         return result
     else:
         return "No solution found."
