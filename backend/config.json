@@ -50,7 +50,6 @@
       "CDP": 5.5
     },
     "start_date": "2021-01-01",
-    "end_date": "2021-12-31",
-    "week_schedule": ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    "end_date": "2021-12-31"
   }
   
