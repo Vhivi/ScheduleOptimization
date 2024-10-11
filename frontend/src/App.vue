@@ -4,7 +4,7 @@
 
     <!-- Afficher le tableau uniquement lorsque planningResult est défini -->
     <div v-if="planningResult">
-      <PlanningTable :planning="planningResult" :weekSchedule="weekSchedule" />
+      <PlanningTable :planning="planningResult" :weekSchedule="weekSchedule" :vacationColors="vacationColors" />
     </div>
     <div v-else>
       <p>Le planning n'est pas encore généré.</p>
@@ -23,7 +23,12 @@ export default {
   data() {
     return {
       planningResult: null, // Initialement, aucun planning n'est défini
-      weekSchedule: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
+      weekSchedule: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"],
+      vacationColors: {
+        'Jour': '#75FA79',  // Couleur pour la vaction Jour
+        'Nuit': '#9175FA',  // Couleur pour la vacation Nuit
+        'CDP': '#A59384'  // Couleur pour la vacation CDP
+      }
     };
   },
   methods: {

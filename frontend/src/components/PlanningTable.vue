@@ -11,7 +11,7 @@
         <tbody>
           <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
             <td>{{ agent }}</td>
-            <td v-for="day in weekSchedule" :key="day">
+            <td v-for="day in weekSchedule" :key="day" :style="{ backgroundColor: getVacationColor(agent, day)}">
               <!-- On affiche la vacation de cet agent ce jour-là -->
               {{ getVacationForAgent(agent, day) || '//' }}
             </td>
@@ -31,6 +31,10 @@
       weekSchedule: {
         type: Array,
         required: true
+      },
+      vacationColors: {
+        type: Object,
+        required: true
       }
     },
     methods: {
@@ -38,6 +42,12 @@
         // Chercher la vacation de cet agent pour ce jour
         const vacationForDay = this.planning[agent].find(vac => vac[0] === day);
         return vacationForDay ? vacationForDay[1] : null; // Retourne la vacation ou null si pas de vacation
+      },
+      getVacationColor(agent, day) {
+        // Obtenir la vacation pour cet agent
+        const vacation = this.getVacationForAgent(agent, day);
+        // Retourner la couleur correspondante
+        return vacation ? this.vacationColors[vacation] : "white";  // Blanc si pas de vacation
       }
     }
   };
