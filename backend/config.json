@@ -4,54 +4,44 @@
         "name": "Agent1",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
-          }
+          "avoid": []
+          },
+        "unavailable": []
         },
       {
         "name": "Agent2",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
+          "avoid": []
           }
         },
       {
         "name": "Agent3",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
+          "avoid": []
           }
         },
       {
         "name": "Agent4",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
-          }
+          "avoid": []
+          },
+        "unavailable": ["2024-10-15"]
         },
       {
         "name": "Agent5",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
+          "avoid": []
           }
         },
       {
         "name": "Agent6",
         "preferences": {
           "preferred": [],
-          "avoid": [],
-          "unavailable": [],
-          "holiday": []
+          "avoid": []
           }
         }
     ],

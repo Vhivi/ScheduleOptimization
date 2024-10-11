@@ -116,13 +116,16 @@ def generate_planning(agents, vacations, week_schedule):
         model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
     #! ########################################################
     
-    # Indisponibilité ou congés
+    # Interdire les vacations les jours où l'agent est indisponible
     for agent in agents:
         agent_name = agent['name']
         if "unavailable" in agent:
-            for day in agent['unavailable']:
-                for vacation in vacations:
-                    model.Add(planning[(agent_name, day, vacation)] == 0)
+            for unavailable_date in agent['unavailable']:
+                # Convertir la date indisponible en jour de la semaine
+                unavailable_day = datetime.strptime(unavailable_date, '%Y-%m-%d').strftime("%A")
+                if unavailable_day in week_schedule:
+                    for vacation in vacations:
+                        model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
         
     # Respect des préférences des agents
     for agent in agents:
