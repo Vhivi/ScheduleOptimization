@@ -89,12 +89,20 @@ def generate_planning(agents, vacations, week_schedule):
             # Somme des agents assignés à une vacation spécifique pour un jour donné doit être égale à 1
             model.Add(sum(planning[(agent['name'], day, vacation)] for agent in agents) == 1)
         
-    # 12 heures de repos minimum entre deux vacations
+    # Après une vacation de nuit, pas de vacation de jour ou CDP le lendemain
     for agent in agents:
         agent_name = agent['name']
         for day_idx, day in enumerate(week_schedule[:-1]):  # On ne prend pas en compte le dernier jour
             next_day = week_schedule[day_idx + 1]
-            model.AddBoolOr([planning[(agent_name, day, 'Nuit')].Not(), planning[(agent_name, next_day, 'Jour')].Not()])
+            
+            # Variables boolèennes pour les vacations
+            nuit_var = planning[(agent_name, day, 'Nuit')]
+            jour_var = planning[(agent_name, next_day, 'Jour')]
+            cdp_var = planning[(agent_name, next_day, 'CDP')]
+            
+            # Si l'agent travaille la nuit, il ne peut pas travailler une vacation de jour ou CDP le lendemain
+            model.Add(jour_var == 0).OnlyEnforceIf(nuit_var)
+            model.Add(cdp_var == 0).OnlyEnforceIf(nuit_var)
             
     # Un agent ne peut pas travailler plus de 48 heures par semaine
     for agent in agents:
