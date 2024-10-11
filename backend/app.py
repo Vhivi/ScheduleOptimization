@@ -115,6 +115,18 @@ def generate_planning(agents, vacations, week_schedule):
                     # Éviter les vacations non désirées
                     model.Add(planning[(agent_name, day, vacation)] == 0)
                     
+    # Contrainte d'équilibre : tous les agents doivent avoir un nombre similaire de vacations
+    total_vacations = len(week_schedule) * len(vacations) // len(agents)
+    
+    for agent in agents:
+        agent_name = agent['name']
+        
+        # Chaque agent doit travailler entre [total_vacations - 1] et [total_vacations + 1] vacations
+        model.Add(sum(planning[(agent_name, day, vacation['name'] if isinstance(vacation, dict) else vacation)]
+                    for day in week_schedule for vacation in vacations) >= total_vacations - 1)
+        model.Add(sum(planning[(agent_name, day, vacation['name'] if isinstance(vacation, dict) else vacation)]
+                    for day in week_schedule for vacation in vacations) <= total_vacations + 1)
+                    
     ########################################################
     # Objectifs
     ########################################################
