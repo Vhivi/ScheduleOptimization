@@ -3,6 +3,7 @@ import json
 from flask_cors import CORS
 from ortools.sat.python import cp_model
 from datetime import datetime, timedelta
+import locale
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +15,7 @@ def load_config():
         return json.load(config_file)
 
 config = load_config()
+weekend_days = ["Samedi", "Dimanche"]
 
 @app.route('/')
 def home():
@@ -43,13 +45,15 @@ def generate_planning_route():
     })
     
 def get_week_schedule(start_date_str, end_date_str):
+    # Configuer le local pour utiliser les jours de la semaine en français
+    locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
     # Convertir les chaines en objets datetime
     start_date = datetime.strptime(start_date_str, '%Y-%m-%d')  # Format date / ISO 8601
     end_date = datetime.strptime(end_date_str, '%Y-%m-%d')  # Format date / ISO 8601
     
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [(start_date + timedelta(days=i)).strftime("%A") for i in range(delta.days + 1)]
+    week_schedule = [(start_date + timedelta(days=i)).strftime("%A").capitalize() for i in range(delta.days + 1)]
     return week_schedule
 
 
@@ -126,6 +130,14 @@ def generate_planning(agents, vacations, week_schedule):
                 if unavailable_day in week_schedule:
                     for vacation in vacations:
                         model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
+                        
+    # Pas de vacation CDP le week-end
+    for day in week_schedule:
+        if day in weekend_days:   # Vérifier si le jour est un week-end
+            for agent in agents:
+                agent_name = agent['name']
+                # Empêcher la vacation CDP le week-end pour tous les agents
+                model.Add(planning[(agent_name, day, 'CDP')] == 0)
         
     # Respect des préférences des agents
     for agent in agents:
@@ -141,16 +153,29 @@ def generate_planning(agents, vacations, week_schedule):
                     model.Add(planning[(agent_name, day, vacation)] == 0)
                     
     # Contrainte d'équilibre : tous les agents doivent avoir un nombre similaire de vacations
-    total_vacations = len(week_schedule) * len(vacations) // len(agents)
+    # Calculer le nombre total de vacations hors CDP le week-end
+    total_vacations = 0
+    for day in week_schedule:
+        if day in weekend_days:
+            total_vacations += len(vacations) - 1  # Exclure CDP le week-end
+        else:
+            total_vacations += len(vacations)
+
+    # Nombre moyen de vacations par agent
+    average_vacations_per_agent = total_vacations // len(agents)
     
     for agent in agents:
         agent_name = agent['name']
         
         # Chaque agent doit travailler entre [total_vacations - 1] et [total_vacations + 1] vacations
-        model.Add(sum(planning[(agent_name, day, vacation['name'] if isinstance(vacation, dict) else vacation)]
-                    for day in week_schedule for vacation in vacations) >= total_vacations - 1)
-        model.Add(sum(planning[(agent_name, day, vacation['name'] if isinstance(vacation, dict) else vacation)]
-                    for day in week_schedule for vacation in vacations) <= total_vacations + 1)
+        model.Add(sum(planning[(agent_name, day, vacation)]
+                    for day in week_schedule
+                    for vacation in vacations
+                    if not (vacation == 'CDP' and day in weekend_days)) >= average_vacations_per_agent - 1)
+        model.Add(sum(planning[(agent_name, day, vacation)]
+                    for day in week_schedule
+                    for vacation in vacations
+                    if not (vacation == 'CDP' and day in weekend_days)) <= average_vacations_per_agent + 1)
                     
     ########################################################
     # Objectifs
@@ -170,10 +195,12 @@ def generate_planning(agents, vacations, week_schedule):
     
     # Solver
     solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 30 # Limite de temps de résolution
     status = solver.Solve(model)
     
     # Résultats
-    if status == cp_model.OPTIMAL:
+    # Nous acceptons les solutions optimales et réalisables
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         result = {}
         for agent in agents:
             agent_name = agent['name']
