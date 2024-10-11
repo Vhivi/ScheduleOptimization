@@ -44,6 +44,10 @@
         }
     ],
     "vacations": ["Jour", "Nuit", "CDP"],
-    "week_schedule": ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    "vacation_durations": {
+      "Jour": 12,
+      "Nuit": 12,
+      "CDP": 5.5
+    }
   }
   
