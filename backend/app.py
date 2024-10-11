@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 import json
 from flask_cors import CORS
 from ortools.sat.python import cp_model
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -23,15 +24,32 @@ def generate_planning_route():
     # Récupération des données à partir du fichier JSON
     agents = config['agents']
     vacations = config['vacations']
-    week_schedule = config['week_schedule']
     vacation_durations = config['vacation_durations']
+    
+    # Récupérer les dates de début et de fin
+    start_date = config['start_date']
+    end_date = config['end_date']
+    
+    # Calculer la liste des jours à partir des dates
+    week_schedule = get_week_schedule(start_date, end_date)
     
     # Appel de la fonction de génération de planning
     result = generate_planning(agents, vacations, week_schedule)
+    
     return jsonify({
         "planning": result,
         "vacation_durations": vacation_durations
     })
+    
+def get_week_schedule(start_date_str, end_date_str):
+    # Convertir les chaines en objets datetime
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+    
+    # Calculer les jours entre la date de début et la date de fin
+    delta = end_date - start_date
+    week_schedule = [(start_date + timedelta(days=i)).strftime("%A") for i in range(delta.days + 1)]
+    return week_schedule
 
 
 def generate_planning(agents, vacations, week_schedule):
