@@ -43,8 +43,8 @@ def generate_planning_route():
     
 def get_week_schedule(start_date_str, end_date_str):
     # Convertir les chaines en objets datetime
-    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')  # Format date / ISO 8601
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')  # Format date / ISO 8601
     
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
