@@ -1,6 +1,16 @@
 <template>
   <div id="app">
-    <button @click="generatePlanning">Générer le planning</button>
+    <div>
+      <label for="start">Date de début :</label>
+      <input type="date" id="start" name="start" v-model="startDate" />
+
+      <br />
+      <label for="end">Date de fin :</label>
+      <input type="date" id="end" name="end" v-model="endDate" />
+    </div>
+    <div>
+      <button @click="generatePlanning">Générer le planning</button>
+    </div>
 
     <!-- Afficher le tableau uniquement lorsque planningResult est défini -->
     <div v-if="planningResult">
@@ -27,6 +37,8 @@ export default {
   },
   data() {
     return {
+      startDate: null, // Date de début du planning
+      endDate: null, // Date de fin du planning
       planningResult: null, // Initialement, aucun planning n'est défini, sera rempli après l'appel à l'API
       vacationDurations: null, // Initialement, aucune durée de vacation n'est définie, sera rempli après l'appel à l'API
       weekSchedule: [],
@@ -40,8 +52,11 @@ export default {
   methods: {
     async generatePlanning() {
       try {
-        // Envoyer la requête à Flask pour générer le planning
-        const response = await axios.post('http://127.0.0.1:5000/generate-planning');
+        // Envoyer la requête à Flask pour générer le planning avec les dates de début et de fin
+        const response = await axios.post('http://127.0.0.1:5000/generate-planning', {
+          start_date: this.startDate,
+          end_date: this.endDate
+        });
         this.planningResult = response.data.planning; // Stocker les données dans planningResult
         this.vacationDurations = response.data.vacation_durations; // Stocker les durées de vacation
         this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période

@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import json
 from flask_cors import CORS
 from ortools.sat.python import cp_model
@@ -26,9 +26,9 @@ def generate_planning_route():
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
     
-    # Récupérer les dates de début et de fin
-    start_date = config['start_date']
-    end_date = config['end_date']
+    # # Récupérer les dates de début et de fin
+    start_date = request.json['start_date']
+    end_date = request.json['end_date']
     
     # Calculer la liste des jours à partir des dates
     week_schedule = get_week_schedule(start_date, end_date)
