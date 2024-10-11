@@ -56,6 +56,11 @@
         return vacation ? this.vacationColors[vacation] : "white";  // Blanc si pas de vacation
       },
       calculateTotalHours(agent) {
+        // Vérifier si this.planning[agent] est un tableau
+        if (!Array.isArray(this.planning[agent])) {
+          console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
+          return 0; // Retourner 0 si ce n'est pas un tableau
+        }
         // Calculer le total des heures pour cet agent en utilisant vacationDurations
         return this.planning[agent].reduce((total, vac) => {
           const vacation = vac[1]; // Obtenir la vacation

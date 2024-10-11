@@ -48,7 +48,6 @@
       "Jour": 12,
       "Nuit": 12,
       "CDP": 5.5
-    },
-    "week_schedule": ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    }
   }
   
