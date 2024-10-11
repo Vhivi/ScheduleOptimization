@@ -56,6 +56,10 @@ def get_week_schedule(start_date_str, end_date_str):
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
     
+    jour_duration = config['vacation_durations']['Jour']
+    nuit_duration = config['vacation_durations']['Nuit']
+    cdp_duration = config['vacation_durations']['CDP']
+    
     ########################################################
     # Variables
     ########################################################
@@ -103,12 +107,22 @@ def generate_planning(agents, vacations, week_schedule):
             # Si l'agent travaille la nuit, il ne peut pas travailler une vacation de jour ou CDP le lendemain
             model.Add(jour_var == 0).OnlyEnforceIf(nuit_var)
             model.Add(cdp_var == 0).OnlyEnforceIf(nuit_var)
-            
+    
+    #! A retravailler sur le calcul des heures et sur la durée
     # Un agent ne peut pas travailler plus de 48 heures par semaine
     for agent in agents:
         agent_name = agent['name']
         total_hours = sum(planning[(agent_name, day, 'Jour')] * 12 + planning[(agent_name, day, 'Nuit')] * 12 for day in week_schedule)
         model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
+    #! ########################################################
+    
+    # Indisponibilité ou congés
+    for agent in agents:
+        agent_name = agent['name']
+        if "unavailable" in agent:
+            for day in agent['unavailable']:
+                for vacation in vacations:
+                    model.Add(planning[(agent_name, day, vacation)] == 0)
         
     # Respect des préférences des agents
     for agent in agents:
