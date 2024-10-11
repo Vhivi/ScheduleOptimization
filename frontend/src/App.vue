@@ -9,22 +9,27 @@
     <div v-else>
       <p>Le planning n'est pas encore généré.</p>
     </div>
+    <div>
+      <ConfigComponent />
+    </div>
   </div>
 </template>
 
 <script>
 import axios from 'axios';
 import PlanningTable from './components/PlanningTable.vue';
+import ConfigComponent from './components/ConfigComponent.vue';
 
 export default {
   components: {
-    PlanningTable
+    PlanningTable,
+    ConfigComponent
   },
   data() {
     return {
       planningResult: null, // Initialement, aucun planning n'est défini, sera rempli après l'appel à l'API
       vacationDurations: null, // Initialement, aucune durée de vacation n'est définie, sera rempli après l'appel à l'API
-      weekSchedule: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"],
+      weekSchedule: [],
       vacationColors: {
         'Jour': '#75FA79',  // Couleur pour la vaction Jour
         'Nuit': '#9175FA',  // Couleur pour la vacation Nuit
@@ -39,6 +44,7 @@ export default {
         const response = await axios.post('http://127.0.0.1:5000/generate-planning');
         this.planningResult = response.data.planning; // Stocker les données dans planningResult
         this.vacationDurations = response.data.vacation_durations; // Stocker les durées de vacation
+        this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période
       } catch (error) {
         console.error('Erreur lors de la génération du planning :', error);
       }

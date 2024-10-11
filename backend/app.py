@@ -38,7 +38,8 @@ def generate_planning_route():
     
     return jsonify({
         "planning": result,
-        "vacation_durations": vacation_durations
+        "vacation_durations": vacation_durations,
+        "week_schedule": week_schedule
     })
     
 def get_week_schedule(start_date_str, end_date_str):
