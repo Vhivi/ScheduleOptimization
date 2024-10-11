@@ -6,6 +6,7 @@
           <tr>
             <th>Agent</th>
             <th v-for="day in weekSchedule" :key="day">{{ day }}</th>
+            <th>Total Heures</th> <!-- Ajouter une colonne pour afficher le total des heures -->
           </tr>
         </thead>
         <tbody>
@@ -15,6 +16,7 @@
               <!-- On affiche la vacation de cet agent ce jour-là -->
               {{ getVacationForAgent(agent, day) || '//' }}
             </td>
+            <td>{{ calculateTotalHours(agent) }} h</td> <!-- Afficher le total des heures pour cet agent -->
           </tr>
         </tbody>
       </table>
@@ -30,6 +32,10 @@
       },
       weekSchedule: {
         type: Array,
+        required: true
+      },
+      vacationDurations: {
+        type: Object,
         required: true
       },
       vacationColors: {
@@ -48,6 +54,13 @@
         const vacation = this.getVacationForAgent(agent, day);
         // Retourner la couleur correspondante
         return vacation ? this.vacationColors[vacation] : "white";  // Blanc si pas de vacation
+      },
+      calculateTotalHours(agent) {
+        // Calculer le total des heures pour cet agent en utilisant vacationDurations
+        return this.planning[agent].reduce((total, vac) => {
+          const vacation = vac[1]; // Obtenir la vacation
+          return total + (this.vacationDurations[vacation] || 0); // Ajouter la durée de la vacation
+        }, 0);  // Commencer à 0
       }
     }
   };

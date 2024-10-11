@@ -24,10 +24,14 @@ def generate_planning_route():
     agents = config['agents']
     vacations = config['vacations']
     week_schedule = config['week_schedule']
+    vacation_durations = config['vacation_durations']
     
     # Appel de la fonction de génération de planning
     result = generate_planning(agents, vacations, week_schedule)
-    return jsonify(result)
+    return jsonify({
+        "planning": result,
+        "vacation_durations": vacation_durations
+    })
 
 
 def generate_planning(agents, vacations, week_schedule):
