@@ -45,10 +45,26 @@
     },
     methods: {
       getVacationForAgent(agent, day) {
-        // Chercher la vacation de cet agent pour ce jour
-        const vacationForDay = this.planning[agent].find(vac => vac[0] === day);
-        return vacationForDay ? vacationForDay[1] : null; // Retourne la vacation ou null si pas de vacation
+      const vacations = this.planning[agent]
+
+      if (Array.isArray(vacations)) {
+        // Si c'est un tableau, utilisez .find()
+        const vacationForDay = vacations.find(vac => vac[0] === day);
+        return vacationForDay ? vacationForDay[1] : null;
+      } else if (typeof vacations === 'object') {
+        /// Si c'est un objet, utilisez Object.entries() pour parcourir les clés/valeurs
+        for (const [vacationDay, vacation] of Object.entries(vacations)) {
+          if (vacationDay === day) {
+            return vacation;
+          }
+        }
+        return null;
+      }
       },
+      //   // Chercher la vacation de cet agent pour ce jour
+      //   const vacationForDay = this.planning[agent].find(vac => vac[0] === day);
+      //   return vacationForDay ? vacationForDay[1] : null; // Retourne la vacation ou null si pas de vacation
+      // },
       getVacationColor(agent, day) {
         // Obtenir la vacation pour cet agent
         const vacation = this.getVacationForAgent(agent, day);
