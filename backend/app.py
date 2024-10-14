@@ -60,9 +60,10 @@ def get_week_schedule(start_date_str, end_date_str):
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
     
-    jour_duration = config['vacation_durations']['Jour']
-    nuit_duration = config['vacation_durations']['Nuit']
-    cdp_duration = config['vacation_durations']['CDP']
+    # Ajuster les durées des vacations en multipliant par 10 pour éliminer les décimales
+    jour_duration = int(config['vacation_durations']['Jour'] * 10)
+    nuit_duration = int(config['vacation_durations']['Nuit'] * 10)
+    cdp_duration = int(config['vacation_durations']['CDP'] * 10)
     
     ########################################################
     # Variables
@@ -91,11 +92,16 @@ def generate_planning(agents, vacations, week_schedule):
         agent_name = agent['name']
         model.Add(sum(planning[(agent_name, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
         
-    # Chaque vacation doit être assignée à un agent chaque jour
+    # Chaque vacation doit être assignée à un agent chaque jour, sauf CDP le week-end
     for day in week_schedule:
         for vacation in vacations:
-            # Somme des agents assignés à une vacation spécifique pour un jour donné doit être égale à 1
-            model.Add(sum(planning[(agent['name'], day, vacation)] for agent in agents) == 1)
+            # Exclusion de la vacation CDP le week-end
+            if vacation == 'CDP' and day in weekend_days:
+                # Ne pas assigner la vacation CDP le week-end
+                model.Add(sum(planning[(agent['name'], day, 'CDP')] for agent in agents) == 0)
+            else:
+                # Somme des agents assignés à une vacation spécifique pour un jour donné doit être égale à 1
+                model.Add(sum(planning[(agent['name'], day, vacation)] for agent in agents) == 1)
         
     # Après une vacation de nuit, pas de vacation de jour ou CDP le lendemain
     for agent in agents:
@@ -112,46 +118,26 @@ def generate_planning(agents, vacations, week_schedule):
             model.Add(jour_var == 0).OnlyEnforceIf(nuit_var)
             model.Add(cdp_var == 0).OnlyEnforceIf(nuit_var)
     
-    #! A retravailler sur le calcul des heures et sur la durée
-    # Un agent ne peut pas travailler plus de 48 heures par semaine
-    for agent in agents:
-        agent_name = agent['name']
-        total_hours = sum(planning[(agent_name, day, 'Jour')] * 12 + planning[(agent_name, day, 'Nuit')] * 12 for day in week_schedule)
-        model.Add(total_hours <= 48)    # Limite à 48 heures par semaine
-    #! ########################################################
+    # #! A retravailler sur le calcul des heures et sur la durée
+    # # # Un agent ne peut pas travailler plus de 48 heures par semaine
+    # # for agent in agents:
+    # #     agent_name = agent['name']
+    # #     total_hours = sum(planning[(agent_name, day, 'Jour')] * jour_duration + planning[(agent_name, day, 'Nuit')] * nuit_duration + planning[(agent_name, day, 'CDP')] * cdp_duration for day in week_schedule)
+    # #     model.Add(total_hours <= 480)    # Limite à 48 heures par semaine (480 au lieu de 48)
+    # #! ########################################################
     
-    # Interdire les vacations les jours où l'agent est indisponible
-    for agent in agents:
-        agent_name = agent['name']
-        if "unavailable" in agent:
-            for unavailable_date in agent['unavailable']:
-                # Convertir la date indisponible en jour de la semaine
-                unavailable_day = datetime.strptime(unavailable_date, '%Y-%m-%d').strftime("%A")
-                if unavailable_day in week_schedule:
-                    for vacation in vacations:
-                        model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
+    # # Interdire les vacations les jours où l'agent est indisponible
+    # for agent in agents:
+    #     agent_name = agent['name']
+    #     if "unavailable" in agent:
+    #         for unavailable_date in agent['unavailable']:
+    #             # Convertir la date indisponible en jour de la semaine
+    #             unavailable_day = datetime.strptime(unavailable_date, '%Y-%m-%d').strftime("%A")
+    #             if unavailable_day in week_schedule:
+    #                 for vacation in vacations:
+    #                     model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
                         
-    # Pas de vacation CDP le week-end
-    for day in week_schedule:
-        if day in weekend_days:   # Vérifier si le jour est un week-end
-            for agent in agents:
-                agent_name = agent['name']
-                # Empêcher la vacation CDP le week-end pour tous les agents
-                model.Add(planning[(agent_name, day, 'CDP')] == 0)
-        
-    # Respect des préférences des agents
-    for agent in agents:
-        agent_name = agent['name']
-        preferences = agent['preferences']
-        for day in week_schedule:
-            for vacation in vacations:
-                if vacation in preferences['preferred']:
-                    # Favoriser les vacations préférées
-                    model.Add(planning[(agent_name, day, vacation)] == 1)
-                if vacation in preferences['avoid']:
-                    # Éviter les vacations non désirées
-                    model.Add(planning[(agent_name, day, vacation)] == 0)
-                    
+                            
     # Contrainte d'équilibre : tous les agents doivent avoir un nombre similaire de vacations
     # Calculer le nombre total de vacations hors CDP le week-end
     total_vacations = 0
@@ -182,7 +168,7 @@ def generate_planning(agents, vacations, week_schedule):
     ########################################################
     
     # Maximiser les vacations préférées
-    objective = cp_model.LinearExpr.Sum(
+    objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
             planning[(agent['name'], day, vacation)]
             for agent in agents
@@ -191,8 +177,8 @@ def generate_planning(agents, vacations, week_schedule):
             if vacation in agent['preferences']['preferred']
         )
     )
-    model.Maximize(objective)
-    
+    model.Maximize(objective_preferred_vacations)
+        
     # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 30 # Limite de temps de résolution
