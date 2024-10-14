@@ -18,7 +18,11 @@ export default {
   methods: {
     async generatePlanning() {
       try {
-        const response = await axios.post('http://127.0.0.1:5000/generate-planning');
+        const response = await axios.post('http://127.0.0.1:5000/generate-planning', {
+          start_date: '2024-10-11',
+          end_date: '2024-10-20',
+        }
+        );
         this.planningResult = response.data;
       } catch (error) {
         console.error('Erreur lors de la génération du planning :', error);
