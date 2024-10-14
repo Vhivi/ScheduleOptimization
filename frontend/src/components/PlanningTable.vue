@@ -6,6 +6,7 @@
           <tr>
             <th>Agent</th>
             <th v-for="day in weekSchedule" :key="day">{{ day }}</th>
+            <th>Total Vacations</th> <!-- Ajouter une colonne pour afficher le nombre de vacations -->
             <th>Total Heures</th> <!-- Ajouter une colonne pour afficher le total des heures -->
           </tr>
         </thead>
@@ -16,6 +17,7 @@
               <!-- On affiche la vacation de cet agent ce jour-là -->
               {{ getVacationForAgent(agent, day) || '//' }}
             </td>
+            <td>{{ calculateNumberShifts(agent) }}</td> <!-- Afficher le nombre de vacations pour cet agent -->
             <td>{{ calculateTotalHours(agent) }} h</td> <!-- Afficher le total des heures pour cet agent -->
           </tr>
         </tbody>
@@ -82,6 +84,15 @@
           const vacation = vac[1]; // Obtenir la vacation
           return total + (this.vacationDurations[vacation] || 0); // Ajouter la durée de la vacation
         }, 0);  // Commencer à 0
+      },
+      calculateNumberShifts(agent) {
+        // Vérifier si this.planning[agent] est un tableau
+        if (!Array.isArray(this.planning[agent])) {
+          console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
+          return 0; // Retourner 0 si ce n'est pas un tableau
+        }
+        // Retourner le nombre de vacations pour cet agent
+        return this.planning[agent].length;
       }
     }
   };
