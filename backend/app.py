@@ -118,6 +118,31 @@ def generate_planning(agents, vacations, week_schedule):
             model.Add(jour_var == 0).OnlyEnforceIf(nuit_var)
             model.Add(cdp_var == 0).OnlyEnforceIf(nuit_var)
     
+    ########################################################
+    # Contrainte d'équilibre : tous les agents doivent avoir un volume horaire similaire
+    total_hours = {}
+    for agent in agents:
+        agent_name = agent['name']
+        total_hours[agent_name] = sum(
+            planning[(agent_name, day, 'Jour')] * jour_duration +
+            planning[(agent_name, day, 'Nuit')] * nuit_duration +
+            planning[(agent_name, day, 'CDP')] * cdp_duration
+            for day in week_schedule
+        )
+        
+    # Imposer que la différence netre le minimum et le maximum d'heures travaillées par les agents soit limitée
+    min_hours = model.NewIntVar(0, 10000, 'min_hours')  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
+    max_hours = model.NewIntVar(0, 10000, 'max_hours')  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
+    
+    # Contrainte pour équilibrer les heures travaillées entre agents
+    for agent_name in total_hours:
+        model.Add(min_hours <= total_hours[agent_name])
+        model.Add(total_hours[agent_name] <= max_hours)
+        
+    # Contraindre la différence entre max_hours et min_hours pour un équilibre global
+    model.Add(max_hours - min_hours <= 240)  # Ajuster la flexibilité si nécessaire (*10)
+    ########################################################
+    
     # #! A retravailler sur le calcul des heures et sur la durée
     # # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # # for agent in agents:
@@ -137,32 +162,7 @@ def generate_planning(agents, vacations, week_schedule):
     #                 for vacation in vacations:
     #                     model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
                         
-                            
-    # Contrainte d'équilibre : tous les agents doivent avoir un nombre similaire de vacations
-    # Calculer le nombre total de vacations hors CDP le week-end
-    total_vacations = 0
-    for day in week_schedule:
-        if day in weekend_days:
-            total_vacations += len(vacations) - 1  # Exclure CDP le week-end
-        else:
-            total_vacations += len(vacations)
-
-    # Nombre moyen de vacations par agent
-    average_vacations_per_agent = total_vacations // len(agents)
-    
-    for agent in agents:
-        agent_name = agent['name']
         
-        # Chaque agent doit travailler entre [total_vacations - 1] et [total_vacations + 1] vacations
-        model.Add(sum(planning[(agent_name, day, vacation)]
-                    for day in week_schedule
-                    for vacation in vacations
-                    if not (vacation == 'CDP' and day in weekend_days)) >= average_vacations_per_agent - 1)
-        model.Add(sum(planning[(agent_name, day, vacation)]
-                    for day in week_schedule
-                    for vacation in vacations
-                    if not (vacation == 'CDP' and day in weekend_days)) <= average_vacations_per_agent + 1)
-                    
     ########################################################
     # Objectifs
     ########################################################
@@ -181,7 +181,7 @@ def generate_planning(agents, vacations, week_schedule):
         
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30 # Limite de temps de résolution
+    solver.parameters.max_time_in_seconds = 60 # Limite de temps de résolution
     status = solver.Solve(model)
     
     # Résultats
