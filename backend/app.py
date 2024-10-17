@@ -167,17 +167,30 @@ def generate_planning(agents, vacations, week_schedule):
     # Objectifs
     ########################################################
     
-    # Maximiser les vacations préférées
+    # Maximiser les vacations préférées avec un poids supplémentaire
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)]
+            planning[(agent['name'], day, vacation)] * 10  # Poids plus élévé pour les vacations préférées
             for agent in agents
             for day in week_schedule
             for vacation in vacations
             if vacation in agent['preferences']['preferred']
         )
     )
-    model.Maximize(objective_preferred_vacations)
+    
+    # Ajouter un poids normal pour les autres vacations
+    objective_other_vacations = cp_model.LinearExpr.Sum(
+        list(
+            planning[(agent['name'], day, vacation)]
+            for agent in agents
+            for day in week_schedule
+            for vacation in vacations
+            if vacation not in agent['preferences']['preferred']
+        )
+    )
+    
+    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées
+    model.Maximize(objective_preferred_vacations + objective_other_vacations)
         
     # Solver
     solver = cp_model.CpSolver()
