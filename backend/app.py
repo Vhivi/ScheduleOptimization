@@ -189,8 +189,19 @@ def generate_planning(agents, vacations, week_schedule):
         )
     )
     
+    # Pénaliser les vacations non désirées (évitées)
+    penalized_vacations = cp_model.LinearExpr.Sum(
+        list(
+            planning[(agent['name'], day, vacation)] * -5  # Pénalité pour les vacations non désirées
+            for agent in agents
+            for day in week_schedule
+            for vacation in vacations
+            if vacation in agent['preferences']['avoid']
+        )
+    )
+    
     # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées
-    model.Maximize(objective_preferred_vacations + objective_other_vacations)
+    model.Maximize(objective_preferred_vacations + objective_other_vacations + penalized_vacations)
         
     # Solver
     solver = cp_model.CpSolver()
