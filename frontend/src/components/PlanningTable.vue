@@ -13,7 +13,7 @@
         <tbody>
           <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
             <td>{{ agent }}</td>
-            <td v-for="day in weekSchedule" :key="day" :style="{ backgroundColor: getVacationColor(agent, day)}">
+            <td v-for="day in weekSchedule" :key="day" :style="{ backgroundColor: getColumnColor(agent, day)}">
               <!-- On affiche la vacation de cet agent ce jour-là -->
               {{ getVacationForAgent(agent, day) || '//' }}
             </td>
@@ -73,6 +73,18 @@
         // Retourner la couleur correspondante
         return vacation ? this.vacationColors[vacation] : "white";  // Blanc si pas de vacation
       },
+      getColumnColor(agent, day) {
+        // Récupérer la couleur de la vacation
+        const vacationColor = this.getVacationColor(agent, day);
+        // Si une vacation est définie, retourner cette couleur, sinon retourner la couleur de la colonne
+        if (!vacationColor || vacationColor === "white") {
+          // Retourner la couleur de la colonne suivant le jour de la semaine
+          if (day === "Samedi" || day === "Dimanche") {
+            return "#dedede"; // Gris pour les week-ends
+          } 
+        }
+        return vacationColor; // Retourner la couleur de la vacation
+      },
       calculateTotalHours(agent) {
         // Vérifier si this.planning[agent] est un tableau
         if (!Array.isArray(this.planning[agent])) {
@@ -111,7 +123,7 @@
   }
   
   th {
-    background-color: #f4f4f4;
+    background-color: #dedede
   }
   </style>
   
