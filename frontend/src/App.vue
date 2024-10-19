@@ -1,35 +1,84 @@
 <template>
-  <img alt="Vue logo" src="./assets/logo.png">
-  <HelloWorld msg="Welcome to Your Vue.js App"/>
-  <ConfigComponent />
+  <div id="app">
+    <div>
+      <label for="start">Date de début :</label>
+      <input type="date" id="start" name="start" v-model="startDate" />
+
+      <br />
+      <label for="end">Date de fin :</label>
+      <input type="date" id="end" name="end" v-model="endDate" />
+    </div>
+    <div>
+      <button @click="generatePlanning">Générer le planning</button>
+    </div>
+
+    <!-- Afficher le tableau uniquement lorsque planningResult est défini -->
+    <div v-if="planningResult">
+      <PlanningTable :planning="planningResult" :weekSchedule="weekSchedule" :vacationDurations="vacationDurations" :vacationColors="vacationColors" />
+    </div>
+    <div v-else>
+      <p>Le planning n'est pas encore généré.</p>
+    </div>
+    <div>
+      <ConfigComponent />
+    </div>
+  </div>
 </template>
 
 <script>
-// import HelloWorld from './components/HelloWorld.vue'
-
-// export default {
-//   name: 'App',
-//   components: {
-//     HelloWorld
-//   }
-// }
-
+import axios from 'axios';
+import PlanningTable from './components/PlanningTable.vue';
 import ConfigComponent from './components/ConfigComponent.vue';
 
 export default {
   components: {
-    ConfigComponent,
+    PlanningTable,
+    ConfigComponent
   },
+  data() {
+    return {
+      startDate: null, // Date de début du planning
+      endDate: null, // Date de fin du planning
+      planningResult: null, // Initialement, aucun planning n'est défini, sera rempli après l'appel à l'API
+      vacationDurations: null, // Initialement, aucune durée de vacation n'est définie, sera rempli après l'appel à l'API
+      weekSchedule: [],
+      vacationColors: {
+        'Jour': '#75FA79',  // Couleur pour la vaction Jour
+        'Nuit': '#9175FA',  // Couleur pour la vacation Nuit
+        'CDP': '#A59384'  // Couleur pour la vacation CDP
+      }
+    };
+  },
+  methods: {
+    async generatePlanning() {
+      try {
+        // Envoyer la requête à Flask pour générer le planning avec les dates de début et de fin
+        const response = await axios.post('http://127.0.0.1:5000/generate-planning', {
+          start_date: this.startDate,
+          end_date: this.endDate
+        });
+        this.planningResult = response.data.planning; // Stocker les données dans planningResult
+        this.vacationDurations = response.data.vacation_durations; // Stocker les durées de vacation
+        this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période
+      } catch (error) {
+        console.error('Erreur lors de la génération du planning :', error);
+      }
+    }
+  }
 };
 </script>
 
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
+<style scoped>
+button {
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #0056b3;
 }
 </style>

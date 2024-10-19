@@ -1,8 +1,59 @@
 {
     "agents": [
-      {"name": "Agent1", "preferences": {"preferred": [], "avoid": []}},
-      {"name": "Agent2", "preferences": {"preferred": [], "avoid": []}}
+      {
+        "name": "Agent1",
+        "preferences": {
+          "preferred": ["Jour", "CDP"],
+          "avoid": ["Nuit"]
+          },
+        "unavailable": []
+        },
+      {
+        "name": "Agent2",
+        "preferences": {
+          "preferred": ["Nuit"],
+          "avoid": ["Jour"]
+          },
+        "unavailable": []
+        },
+      {
+        "name": "Agent3",
+        "preferences": {
+          "preferred": ["Nuit"],
+          "avoid": ["Jour"]
+          },
+        "unavailable": []
+        },
+      {
+        "name": "Agent4",
+        "preferences": {
+          "preferred": ["CDP", "Jour"],
+          "avoid": ["Nuit"]
+          },
+        "unavailable": []
+        },
+      {
+        "name": "Agent5",
+        "preferences": {
+          "preferred": ["CDP", "Jour"],
+          "avoid": ["Nuit"]
+          },
+        "unavailable": []
+        },
+      {
+        "name": "Agent6",
+        "preferences": {
+          "preferred": ["Nuit"],
+          "avoid": ["Jour"]
+          },
+        "unavailable": []
+        }
     ],
-    "vacations": ["Jour", "Nuit", "CDP"]
+    "vacations": ["Jour", "Nuit", "CDP"],
+    "vacation_durations": {
+      "Jour": 12,
+      "Nuit": 12,
+      "CDP": 5.5
+    }
   }
   
