@@ -79,7 +79,7 @@
         // Si une vacation est définie, retourner cette couleur, sinon retourner la couleur de la colonne
         if (!vacationColor || vacationColor === "white") {
           // Retourner la couleur de la colonne suivant le jour de la semaine
-          if (day === "Samedi" || day === "Dimanche") {
+          if (day.includes("Sam") || day.includes("Dim")) {
             return "#dedede"; // Gris pour les week-ends
           } 
         }
