@@ -53,7 +53,7 @@ def get_week_schedule(start_date_str, end_date_str):
     
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [(start_date + timedelta(days=i)).strftime("%A").capitalize() for i in range(delta.days + 1)]
+    week_schedule = [(start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize() for i in range(delta.days + 1)] # Format : Jour abrégé + Date (ex: Lun 25-12)
     return week_schedule
 
 
