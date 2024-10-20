@@ -27,6 +27,7 @@ def generate_planning_route():
     agents = config['agents']
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
+    holidays = config['holidays-2024']
     
     # # Récupérer les dates de début et de fin
     start_date = request.json['start_date']
@@ -41,7 +42,8 @@ def generate_planning_route():
     return jsonify({
         "planning": result,
         "vacation_durations": vacation_durations,
-        "week_schedule": week_schedule
+        "week_schedule": week_schedule,
+        "holidays": holidays
     })
     
 def get_week_schedule(start_date_str, end_date_str):
@@ -53,7 +55,8 @@ def get_week_schedule(start_date_str, end_date_str):
     
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [(start_date + timedelta(days=i)).strftime("%A").capitalize() for i in range(delta.days + 1)]
+    # week_schedule = [(start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize() for i in range(delta.days + 1)] # Jour de la semaine + date (%a %d-%m)
+    week_schedule = [(start_date + timedelta(days=i)).strftime("%A").capitalize() for i in range(delta.days + 1)] # Jour de la semaine
     return week_schedule
 
 
