@@ -43,6 +43,10 @@
       vacationColors: {
         type: Object,
         required: true
+      },
+      holidays: {
+        type: Array,
+        required: true
       }
     },
     methods: {
@@ -73,6 +77,13 @@
         // Retourner la couleur correspondante
         return vacation ? this.vacationColors[vacation] : "white";  // Blanc si pas de vacation
       },
+      // Vérifie si le jour est un jour férié
+      isHoliday(day) {
+        if (this.holidays && Array.isArray(this.holidays)) {
+          return this.holidays.includes(day); // Retourner true si le jour est un jour férié dans la liste
+        }
+        return false; // Retourner false si la liste des jours fériés n'est pas définie
+      },
       getColumnColor(agent, day) {
         // Récupérer la couleur de la vacation
         const vacationColor = this.getVacationColor(agent, day);
@@ -82,6 +93,9 @@
           if (day === "Samedi" || day === "Dimanche") {
             return "#dedede"; // Gris pour les week-ends
           } 
+        }
+        if (this.isHoliday(day)) {
+          return "#dedede"; // Rouge pour les jours fériés
         }
         return vacationColor; // Retourner la couleur de la vacation
       },
