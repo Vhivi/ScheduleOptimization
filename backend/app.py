@@ -15,7 +15,7 @@ def load_config():
         return json.load(config_file)
 
 config = load_config()
-weekend_days = ["Samedi", "Dimanche"]
+weekend_days = ["Sam", "Dim"]  # Jours du week-end abrégés
 
 @app.route('/')
 def home():
@@ -27,6 +27,7 @@ def generate_planning_route():
     agents = config['agents']
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
+    holidays = config['holidays-2024']
     
     # # Récupérer les dates de début et de fin
     start_date = request.json['start_date']
@@ -41,7 +42,8 @@ def generate_planning_route():
     return jsonify({
         "planning": result,
         "vacation_durations": vacation_durations,
-        "week_schedule": week_schedule
+        "week_schedule": week_schedule,
+        "holidays": holidays
     })
     
 def get_week_schedule(start_date_str, end_date_str):
@@ -53,7 +55,7 @@ def get_week_schedule(start_date_str, end_date_str):
     
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [(start_date + timedelta(days=i)).strftime("%A").capitalize() for i in range(delta.days + 1)]
+    week_schedule = [(start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize() for i in range(delta.days + 1)] # Format : Jour abrégé + Date (ex: Lun 25-12)
     return week_schedule
 
 
@@ -96,7 +98,7 @@ def generate_planning(agents, vacations, week_schedule):
     for day in week_schedule:
         for vacation in vacations:
             # Exclusion de la vacation CDP le week-end
-            if vacation == 'CDP' and day in weekend_days:
+            if vacation == 'CDP' and ("Sam" in day or "Dim" in day):
                 # Ne pas assigner la vacation CDP le week-end
                 model.Add(sum(planning[(agent['name'], day, 'CDP')] for agent in agents) == 0)
             else:
