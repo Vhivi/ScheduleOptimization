@@ -15,7 +15,7 @@ def load_config():
         return json.load(config_file)
 
 config = load_config()
-weekend_days = ["Samedi", "Dimanche"]
+weekend_days = ["Sam", "Dim"]  # Jours du week-end abrégés
 
 @app.route('/')
 def home():
@@ -96,7 +96,7 @@ def generate_planning(agents, vacations, week_schedule):
     for day in week_schedule:
         for vacation in vacations:
             # Exclusion de la vacation CDP le week-end
-            if vacation == 'CDP' and day in weekend_days:
+            if vacation == 'CDP' and ("Sam" in day or "Dim" in day):
                 # Ne pas assigner la vacation CDP le week-end
                 model.Add(sum(planning[(agent['name'], day, 'CDP')] for agent in agents) == 0)
             else:
