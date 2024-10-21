@@ -80,7 +80,9 @@
       // Vérifie si le jour est un jour férié
       isHoliday(day) {
         if (this.holidays && Array.isArray(this.holidays)) {
-          return this.holidays.includes(day); // Retourner true si le jour est un jour férié dans la liste
+          // Extrait la partie de la date dd-mm de la chaine
+          const datePart = day.split(" ")[1]; // Extraire la partie de la date
+          return this.holidays.includes(datePart); // Retourner true si le jour est un jour férié dans la liste
         }
         return false; // Retourner false si la liste des jours fériés n'est pas définie
       },
@@ -92,10 +94,10 @@
           // Retourner la couleur de la colonne suivant le jour de la semaine
           if (day.includes("Sam") || day.includes("Dim")) {
             return "#dedede"; // Gris pour les week-ends
-          } 
-        }
-        if (this.isHoliday(day)) {
-          return "#dedede"; // Rouge pour les jours fériés
+          }
+          if (this.isHoliday(day)) {
+            return "#dedede"; // Gris pour les jours fériés
+          }
         }
         return vacationColor; // Retourner la couleur de la vacation
       },
