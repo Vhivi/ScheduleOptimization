@@ -16,6 +16,7 @@ def load_config():
 
 config = load_config()
 weekend_days = ["Sam", "Dim"]  # Jours du week-end abrégés
+holidays = config['holidays-2024']  # Jours fériés en 2024
 
 @app.route('/')
 def home():
@@ -94,12 +95,13 @@ def generate_planning(agents, vacations, week_schedule):
         agent_name = agent['name']
         model.Add(sum(planning[(agent_name, day, vacation)] for day in week_schedule for vacation in vacations) >= 1)
         
-    # Chaque vacation doit être assignée à un agent chaque jour, sauf CDP le week-end
+    # Chaque vacation doit être assignée à un agent chaque jour, sauf CDP le week-end et les jours fériés
     for day in week_schedule:
+        day_date = day.split(" ")[1]  # Extraire la date
         for vacation in vacations:
-            # Exclusion de la vacation CDP le week-end
-            if vacation == 'CDP' and ("Sam" in day or "Dim" in day):
-                # Ne pas assigner la vacation CDP le week-end
+            # Exclusion de la vacation CDP le week-end et jours fériés
+            if vacation == 'CDP' and ("Sam" in day or "Dim" in day or day_date in holidays):
+                # Ne pas assigner la vacation CDP le week-end et jours fériés
                 model.Add(sum(planning[(agent['name'], day, 'CDP')] for agent in agents) == 0)
             else:
                 # Somme des agents assignés à une vacation spécifique pour un jour donné doit être égale à 1
