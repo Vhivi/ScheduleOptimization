@@ -29,6 +29,13 @@ def generate_planning_route():
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
     holidays = config['holidays-2024']
+    unavailable = {}
+    
+    # Récupérer les jours d'indisponibilité des agents et les stocker dans un dictionnaire {agent: [jours]}
+    for agent in agents:
+        if "unavailable" in agent:
+            unavailable[agent['name']] = agent['unavailable']
+
     
     # # Récupérer les dates de début et de fin
     start_date = request.json['start_date']
@@ -44,7 +51,8 @@ def generate_planning_route():
         "planning": result,
         "vacation_durations": vacation_durations,
         "week_schedule": week_schedule,
-        "holidays": holidays
+        "holidays": holidays,
+        "unavailable": unavailable
     })
     
 def get_week_schedule(start_date_str, end_date_str):
