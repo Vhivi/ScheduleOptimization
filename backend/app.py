@@ -59,6 +59,19 @@ def get_week_schedule(start_date_str, end_date_str):
     week_schedule = [(start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize() for i in range(delta.days + 1)] # Format : Jour abrégé + Date (ex: Lun 25-12)
     return week_schedule
 
+def split_into_weeks(week_schedule):
+    # Diviser la liste des jours en sous-période de 7 jours (semaines)
+    weeks = []
+    current_week = []
+    
+    for day in week_schedule:
+        current_week.append(day)
+        if len(current_week) == 7 or day == week_schedule[-1]:  # Si 7 jours ou dernier jour
+            weeks.append(current_week)
+            current_week = []
+            
+    return weeks
+
 
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
@@ -147,12 +160,46 @@ def generate_planning(agents, vacations, week_schedule):
     model.Add(max_hours - min_hours <= 240)  # Ajuster la flexibilité si nécessaire (*10)
     ########################################################
     
+    # Limitation du nombre de Nuit à 3 par semaine et gestion des vacations Jour et CDP
+    weeks = split_into_weeks(week_schedule) # Diviser week_schedule en semaines
+    
+    for agent in agents:
+        agent_name = agent["name"]
+        
+        for week in weeks:
+            # Limiter le nombre de vacation Nuit à 3 par semaine (du lundi au dimanche)
+            total_nuits = sum(planning[(agent_name, day, 'Nuit')] for day in week if "Nuit" in vacations)
+            model.Add(total_nuits <= 3)
+            
+            # Calculer le total d'heures pour Jour et CDP par semaine
+            total_heures = sum(
+                planning[(agent_name, day, 'Jour')] * jour_duration +
+                planning[(agent_name, day, 'CDP')] * cdp_duration
+                for day in week
+            )
+            
+            # Limiter à 48 heures par semaine
+            model.Add(total_heures <= 360)  # 48 heures * 10
+    
     # #! A retravailler sur le calcul des heures et sur la durée
-    # # # Un agent ne peut pas travailler plus de 48 heures par semaine
-    # # for agent in agents:
-    # #     agent_name = agent['name']
-    # #     total_hours = sum(planning[(agent_name, day, 'Jour')] * jour_duration + planning[(agent_name, day, 'Nuit')] * nuit_duration + planning[(agent_name, day, 'CDP')] * cdp_duration for day in week_schedule)
-    # #     model.Add(total_hours <= 480)    # Limite à 48 heures par semaine (480 au lieu de 48)
+    # # Un agent ne peut pas travailler plus de 48 heures par semaine
+    # for agent in agents:
+    #     agent_name = agent['name']
+        
+    #     # Calculer le total des heures travaillées sur la période définie
+    #     total_hours = sum(
+    #         planning[(agent_name, day, 'Jour')] * jour_duration +
+    #         planning[(agent_name, day, 'Nuit')] * nuit_duration +
+    #         planning[(agent_name, day, 'CDP')] * cdp_duration
+    #         for day in week_schedule
+    #     )
+        
+    #     # Limiter le total des heures à 48 heures par semaine proportionnellement au nombre de jours
+    #     # Si la semaine est plus courte, ajuster le total des heures en conséquence
+    #     total_days = len(week_schedule)
+    #     max_hours = int((480 / 7) * total_days)  # Limite proportionnelle au nombre de jours
+        
+    #     model.Add(total_hours <= max_hours)
     # #! ########################################################
     
     # # Interdire les vacations les jours où l'agent est indisponible
