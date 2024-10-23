@@ -6,7 +6,7 @@
           "preferred": ["Jour", "CDP"],
           "avoid": ["Nuit"]
           },
-        "unavailable": []
+        "unavailable": ["17-11-2024"]
         },
       {
         "name": "Agent2",
