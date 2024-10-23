@@ -134,7 +134,7 @@ def generate_planning(agents, vacations, week_schedule):
             for day in week_schedule
         )
         
-    # Imposer que la différence netre le minimum et le maximum d'heures travaillées par les agents soit limitée
+    # Imposer que la différence entre le minimum et le maximum d'heures travaillées par les agents soit limitée
     min_hours = model.NewIntVar(0, 10000, 'min_hours')  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
     max_hours = model.NewIntVar(0, 10000, 'max_hours')  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
     
@@ -174,7 +174,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Maximiser les vacations préférées avec un poids supplémentaire
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * 10  # Poids plus élévé pour les vacations préférées
+            planning[(agent['name'], day, vacation)] * 100  # Poids plus élévé pour les vacations préférées
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -196,7 +196,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Pénaliser les vacations non désirées (évitées)
     penalized_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * -5  # Pénalité pour les vacations non désirées
+            planning[(agent['name'], day, vacation)] * -50  # Pénalité pour les vacations non désirées
             for agent in agents
             for day in week_schedule
             for vacation in vacations

@@ -12,7 +12,7 @@
         "name": "Agent2",
         "preferences": {
           "preferred": ["Nuit"],
-          "avoid": ["Jour"]
+          "avoid": ["Jour", "CDP"]
           },
         "unavailable": []
         },
@@ -27,7 +27,7 @@
       {
         "name": "Agent4",
         "preferences": {
-          "preferred": ["CDP", "Jour"],
+          "preferred": ["Jour"],
           "avoid": ["Nuit"]
           },
         "unavailable": []
@@ -35,7 +35,7 @@
       {
         "name": "Agent5",
         "preferences": {
-          "preferred": ["CDP", "Jour"],
+          "preferred": ["Jour"],
           "avoid": ["Nuit"]
           },
         "unavailable": []
@@ -44,7 +44,7 @@
         "name": "Agent6",
         "preferences": {
           "preferred": ["Nuit"],
-          "avoid": ["Jour"]
+          "avoid": ["Jour", "CDP"]
           },
         "unavailable": []
         }
