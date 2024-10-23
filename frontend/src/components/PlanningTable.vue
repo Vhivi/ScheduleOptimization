@@ -47,25 +47,47 @@
       holidays: {
         type: Array,
         required: true
+      },
+      unavailable: {
+        type: Object,
+        required: true
       }
     },
     methods: {
       getVacationForAgent(agent, day) {
-      const vacations = this.planning[agent]
-
-      if (Array.isArray(vacations)) {
-        // Si c'est un tableau, utilisez .find()
-        const vacationForDay = vacations.find(vac => vac[0] === day);
-        return vacationForDay ? vacationForDay[1] : null;
-      } else if (typeof vacations === 'object') {
-        /// Si c'est un objet, utilisez Object.entries() pour parcourir les clés/valeurs
-        for (const [vacationDay, vacation] of Object.entries(vacations)) {
-          if (vacationDay === day) {
-            return vacation;
-          }
+        // Vérifie d'abord si l'agent est indisponible
+        if (this.isUnavailable(agent, day)) {
+          return "Ind."; // Retourner "Indisponible" si l'agent est indisponible
         }
-        return null;
-      }
+        const vacations = this.planning[agent]
+
+        if (Array.isArray(vacations)) {
+          // Si c'est un tableau, utilisez .find()
+          const vacationForDay = vacations.find(vac => vac[0] === day);
+          return vacationForDay ? vacationForDay[1] : null;
+        } else if (typeof vacations === 'object') {
+          /// Si c'est un objet, utilisez Object.entries() pour parcourir les clés/valeurs
+          for (const [vacationDay, vacation] of Object.entries(vacations)) {
+            if (vacationDay === day) {
+              return vacation;
+            }
+          }
+          return null;
+        }
+      },
+      isUnavailable(agent, day) { // Vérifie si un jour est une indisponibilité
+        // Vérifie si les indisponibilités exsitent pour cet agent
+        if (!this.unavailable || !this.unavailable[agent]) {
+          console.error(`Indisponibilités pour l'agent ${agent} non définies.`, this.unavailable);
+          return false; // Retourner false si aucune indisponibilité n'est définie
+        }
+
+        const unavailableDays = this.unavailable[agent] || [];
+        const datePart = day.split(" ")[1]; // Extraire la partie de la date dd-mm
+
+        // Comparer uniquement dd-mm des indisponiblités
+        const formatedUnavailableDays = unavailableDays.map(date => date.slice(0, 5));  // Extraire uniquement dd-mm
+        return formatedUnavailableDays.includes(datePart); // Retourner true si le jour est indisponible
       },
       //   // Chercher la vacation de cet agent pour ce jour
       //   const vacationForDay = this.planning[agent].find(vac => vac[0] === day);
@@ -87,19 +109,23 @@
         return false; // Retourner false si la liste des jours fériés n'est pas définie
       },
       getColumnColor(agent, day) {
-        // Récupérer la couleur de la vacation
+        // Vérifier d'abord si l'agent est indisponible
+        if (this.isUnavailable(agent, day)) {
+            return "#f2cb05"; // Jaune pour les jours indisponibles
+          }
+        
+        // Enfin retourner la couleur de la vacation si elle existe
         const vacationColor = this.getVacationColor(agent, day);
-        // Si une vacation est définie, retourner cette couleur, sinon retourner la couleur de la colonne
-        if (!vacationColor || vacationColor === "white") {
-          // Retourner la couleur de la colonne suivant le jour de la semaine
-          if (day.includes("Sam") || day.includes("Dim")) {
-            return "#dedede"; // Gris pour les week-ends
-          }
-          if (this.isHoliday(day)) {
-            return "#dedede"; // Gris pour les jours fériés
-          }
+        if (vacationColor && vacationColor !== "white") {
+          return vacationColor; // Retourner la couleur de la vacation
         }
-        return vacationColor; // Retourner la couleur de la vacation
+
+        // Vérifier si c'est un jour férié ou un week-end
+        if (this.isHoliday(day) || day.includes("Sam") || day.includes("Dim")) {
+            return "#dedede"; // Gris pour les jours fériés et les week-ends
+          }
+
+        return "white"; // Retourner blanc par défaut
       },
       calculateTotalHours(agent) {
         // Vérifier si this.planning[agent] est un tableau
