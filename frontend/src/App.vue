@@ -14,7 +14,14 @@
 
     <!-- Afficher le tableau uniquement lorsque planningResult est défini -->
     <div v-if="planningResult">
-      <PlanningTable :planning="planningResult" :weekSchedule="weekSchedule" :vacationDurations="vacationDurations" :vacationColors="vacationColors" :holidays="holidaysFromConfig"/>
+      <PlanningTable
+        :planning="planningResult"
+        :weekSchedule="weekSchedule"
+        :vacationDurations="vacationDurations"
+        :vacationColors="vacationColors"
+        :holidays="holidaysFromConfig"
+        :unavailable="unavailableFromConfig"
+      />
     </div>
     <div v-else>
       <p>Le planning n'est pas encore généré.</p>
@@ -47,7 +54,8 @@ export default {
         'Nuit': '#9175FA',  // Couleur pour la vacation Nuit
         'CDP': '#A59384'  // Couleur pour la vacation CDP
       },
-      holidaysFromConfig: [] // Initialiser les jours fériés à partir de la configuration
+      holidaysFromConfig: [], // Initialiser les jours fériés à partir de la configuration
+      unavailableFromConfig: null // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
     };
   },
   methods: {
@@ -62,6 +70,7 @@ export default {
         this.vacationDurations = response.data.vacation_durations; // Stocker les durées de vacation
         this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période
         this.holidaysFromConfig = response.data.holidays; // Stocker les jours fériés à partir de la configuration
+        this.unavailableFromConfig = response.data.unavailable; // Stocker les indisponibilités à partir de la configuration
       } catch (error) {
         console.error('Erreur lors de la génération du planning :', error);
       }
