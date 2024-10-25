@@ -6,7 +6,11 @@
           "preferred": ["Jour", "CDP"],
           "avoid": ["Nuit"]
           },
-        "unavailable": ["17-11-2024"]
+        "unavailable": ["17-11-2024"],
+        "vacation": {
+          "start": "28-10-2024",
+          "end": "04-11-2024"
+        }
         },
       {
         "name": "Agent2",
@@ -14,7 +18,11 @@
           "preferred": ["Nuit"],
           "avoid": ["Jour", "CDP"]
           },
-        "unavailable": []
+        "unavailable": [],
+        "vacation": {
+          "start": "",
+          "end": ""
+        }
         },
       {
         "name": "Agent3",
@@ -22,7 +30,11 @@
           "preferred": ["Nuit"],
           "avoid": ["Jour"]
           },
-        "unavailable": []
+        "unavailable": [],
+        "vacation": {
+          "start": "",
+          "end": ""
+        }
         },
       {
         "name": "Agent4",
@@ -30,7 +42,11 @@
           "preferred": ["Jour"],
           "avoid": ["Nuit"]
           },
-        "unavailable": []
+        "unavailable": [],
+        "vacation": {
+          "start": "",
+          "end": ""
+        }
         },
       {
         "name": "Agent5",
@@ -38,7 +54,11 @@
           "preferred": ["Jour"],
           "avoid": ["Nuit"]
           },
-        "unavailable": []
+        "unavailable": [],
+        "vacation": {
+          "start": "",
+          "end": ""
+        }
         },
       {
         "name": "Agent6",
@@ -46,7 +66,11 @@
           "preferred": ["Nuit"],
           "avoid": ["Jour", "CDP"]
           },
-        "unavailable": []
+        "unavailable": [],
+        "vacation": {
+          "start": "",
+          "end": ""
+        }
         }
     ],
     "vacations": ["Jour", "Nuit", "CDP"],
