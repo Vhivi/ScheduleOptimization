@@ -4,6 +4,7 @@ from flask_cors import CORS
 from ortools.sat.python import cp_model
 from datetime import datetime, timedelta
 import locale
+from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
@@ -226,7 +227,6 @@ def generate_planning(agents, vacations, week_schedule):
     # Congés
     ########################################################
     date_format_full = "%d-%m-%Y"
-    date_format_partial = "%d-%m"
     
     for agent in agents:
         agent_name = agent['name']
@@ -269,6 +269,27 @@ def generate_planning(agents, vacations, week_schedule):
                         for vacation in vacations:
                             model.Add(planning[(agent_name, weekend_str, vacation)] == 0)
             
+    ########################################################
+    # Limitation à 3 vacations de Jour par semaine
+    # Convertir week_schedule en objet datetime pour faciliter le regroupement par semaine
+    week_days = [(day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in week_schedule]
+    weeks = defaultdict(list)
+    
+    # Regrouper les jours par semaine
+    for day_str, day_date in week_days:
+        # `isocalendar()` renvoie un tuple (année, semaine, jour) ce qui permet de regrouper par semaine
+        # Utiliser une clé lisible en chaîne de caractères pour le regroupement (année-semaine)
+        week_number = day_date.isocalendar()[:2]
+        weeks[week_number].append(day_str)
+        
+    # Limiter à 3 vacations de Jour par semaine
+    for agent in agents:
+        agent_name = agent['name']
+        for week, days in weeks.items():
+            # Limiter les vacations "Jour" à 3 par semaine pour cet agent
+            model.Add(sum(planning[(agent_name, day, 'Jour')] for day in days) <= 3)
+    ########################################################
+    
     # #! A retravailler sur le calcul des heures et sur la durée
     # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # for agent in agents:
