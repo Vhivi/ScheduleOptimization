@@ -19,10 +19,7 @@
           "avoid": ["Jour", "CDP"]
           },
         "unavailable": [],
-        "vacation": {
-          "start": "",
-          "end": ""
-        }
+        "vacation": {}
         },
       {
         "name": "Agent3",
@@ -31,10 +28,7 @@
           "avoid": ["Jour"]
           },
         "unavailable": [],
-        "vacation": {
-          "start": "",
-          "end": ""
-        }
+        "vacation": {}
         },
       {
         "name": "Agent4",
@@ -43,10 +37,7 @@
           "avoid": ["Nuit"]
           },
         "unavailable": [],
-        "vacation": {
-          "start": "",
-          "end": ""
-        }
+        "vacation": {}
         },
       {
         "name": "Agent5",
@@ -55,10 +46,7 @@
           "avoid": ["Nuit"]
           },
         "unavailable": [],
-        "vacation": {
-          "start": "",
-          "end": ""
-        }
+        "vacation": {}
         },
       {
         "name": "Agent6",
@@ -67,10 +55,7 @@
           "avoid": ["Jour", "CDP"]
           },
         "unavailable": [],
-        "vacation": {
-          "start": "",
-          "end": ""
-        }
+        "vacation": {}
         }
     ],
     "vacations": ["Jour", "Nuit", "CDP"],
