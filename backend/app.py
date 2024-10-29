@@ -29,6 +29,13 @@ def generate_planning_route():
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
     holidays = config['holidays-2024']
+    unavailable = {}
+    
+    # Récupérer les jours d'indisponibilité des agents et les stocker dans un dictionnaire {agent: [jours]}
+    for agent in agents:
+        if "unavailable" in agent:
+            unavailable[agent['name']] = agent['unavailable']
+
     
     # # Récupérer les dates de début et de fin
     start_date = request.json['start_date']
@@ -44,7 +51,8 @@ def generate_planning_route():
         "planning": result,
         "vacation_durations": vacation_durations,
         "week_schedule": week_schedule,
-        "holidays": holidays
+        "holidays": holidays,
+        "unavailable": unavailable
     })
     
 def get_week_schedule(start_date_str, end_date_str):
@@ -179,8 +187,75 @@ def generate_planning(agents, vacations, week_schedule):
             )
             
             # Limiter à 48 heures par semaine
-            model.Add(total_heures <= 360)  # 48 heures * 10
+            model.Add(total_heures <= 360)  # 36 heures * 10
+            
+    # Un agent ne travaille pas quand il est indisponible
+    # Une indisponibilité est une journée où l'agent ne peut pas avoir de vacation quelle qu'elle soit.
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "unavailable" in agent:
+            # Récupérer les jours d'indisponibilité de l'agent
+            unavailable_days = agent['unavailable']
+            
+            # Parcourir chaque jour d'indisponibilité
+            for unavailable_date in unavailable_days:
+                # Extraire la portion date du jour
+                unavailable_day = datetime.strptime(unavailable_date, '%d-%m-%Y').strftime("%d-%m")
+                
+                # Interdire toutes les vacations pour l'agent ce jour
+                for day in week_schedule:
+                    if unavailable_day in day:  # Vérifie si le jour correspond à une indisponibilité
+                        for vacation in vacations:
+                            model.Add(planning[(agent_name, day, vacation)] == 0)
+                            
+    ########################################################
+    # Congés
+    ########################################################
+    date_format_full = "%d-%m-%Y"
+    date_format_partial = "%d-%m"
     
+    for agent in agents:
+        agent_name = agent['name']
+        
+        # Récupérer les informations de congés s'il y en a
+        vacation = agent.get('vacation')
+        if vacation and isinstance(vacation, dict) and 'start' in vacation and 'end' in vacation:
+            vacation_start = datetime.strptime(vacation['start'], date_format_full)
+            vacation_end = datetime.strptime(vacation['end'], date_format_full)
+            
+            for day_str in week_schedule:
+                # Extrait le jour et le mois et compléter avec l'année de vacation_start
+                day_part = day_str.split(" ")[1] # Extrait la date au format %d-%m
+                # Identifier le format et convertir le jour en objet datetime
+                try:
+                    day_date = datetime.strptime(f"{day_part}-{vacation_start.year}", date_format_full)
+                except ValueError:
+                    continue    # Ignorer la dates mal formées
+                
+                # Si le jour est un jour de congé, interdire toutes les vacations
+                if vacation_start <= day_date <= vacation_end:
+                    for vacation in vacations:
+                        model.Add(planning[(agent_name, day_str, vacation)] == 0)
+                        
+                    # Calcul des heures pour les jours de congés (7 heures du lundi au samedi)
+                    if day_date.weekday() < 6:   # lundi (0) à samedi (5)
+                        total_hours[agent_name] += 70   # 7 heures * 10
+                        # model.Add(total_hours[agent_name])
+            
+            # Si le congé commence un lundi, ajoutez l'indisponibilité du week-end précédent
+            if vacation_start.weekday() == 0:  # lundi (0)
+                previous_saturday = vacation_start - timedelta(days=2)
+                previous_sunday = vacation_start - timedelta(days=1)
+                
+                for weekend_day in [previous_saturday, previous_sunday]:
+                    weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
+                    
+                    # Vérifie si le jour est dans la semaine de planification
+                    if weekend_str in week_schedule:
+                        for vacation in vacations:
+                            model.Add(planning[(agent_name, weekend_str, vacation)] == 0)
+            
     # #! A retravailler sur le calcul des heures et sur la durée
     # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # for agent in agents:
