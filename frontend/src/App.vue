@@ -21,6 +21,7 @@
         :vacationColors="vacationColors"
         :holidays="holidaysFromConfig"
         :unavailable="unavailableFromConfig"
+        :dayOff="dayOffFromConfig"
       />
     </div>
     <div v-else>
@@ -55,7 +56,8 @@ export default {
         'CDP': '#A59384'  // Couleur pour la vacation CDP
       },
       holidaysFromConfig: [], // Initialiser les jours fériés à partir de la configuration
-      unavailableFromConfig: null // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
+      unavailableFromConfig: null, // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
+      dayOffFromConfig: null // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
     };
   },
   methods: {
@@ -71,6 +73,7 @@ export default {
         this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période
         this.holidaysFromConfig = response.data.holidays; // Stocker les jours fériés à partir de la configuration
         this.unavailableFromConfig = response.data.unavailable; // Stocker les indisponibilités à partir de la configuration
+        this.dayOffFromConfig = response.data.dayOff; // Stocker les jours de congé à partir de la configuration
       } catch (error) {
         console.error('Erreur lors de la génération du planning :', error);
       }
