@@ -51,10 +51,18 @@
       unavailable: {
         type: Object,
         required: true
+      },
+      dayOff: {
+        type: Object,
+        required: true
       }
     },
     methods: {
       getVacationForAgent(agent, day) {
+        // Vérifie si le jour est un jour de congé
+        if (this.isVacationDay(agent, day)) {
+          return "Con."; // Retourner "Congé" si c'est un jour de congé
+        }
         // Vérifie d'abord si l'agent est indisponible
         if (this.isUnavailable(agent, day)) {
           return "Ind."; // Retourner "Indisponible" si l'agent est indisponible
@@ -74,6 +82,30 @@
           }
           return null;
         }
+      },
+      isVacationDay(agent, day) { // Vérifie si un jour est un jour de congé
+        // Vérifie si les jours de congé existent pour cet agent
+        if (!this.dayOff || !this.dayOff[agent]) {
+          console.error(`Jour de congé pour l'agent ${agent} non défini.`, this.dayOff);
+          return false; // Retourner false si aucun jour de congé n'est défini
+        }
+
+        const vacation = this.dayOff[agent] || {}; // Obtenir les jours de congé pour cet agent
+        const dayPart = day.split(" ")[1]; // Extraire la partie date (dd-mm)
+
+        // Ajouter une année fictive pour les comparaisons
+        const referenceYear = new Date().getFullYear();
+        const vacationStartDate = new Date(`${vacation[0].slice(6, 10)}-${vacation[0].slice(3, 5)}-${vacation[0].slice(0, 2)}`); // Convertir la date de début au format YYYY-mm-dd
+        const vacationEndDate = new Date(`${vacation[1].slice(6, 10)}-${vacation[1].slice(3, 5)}-${vacation[1].slice(0, 2)}`); // Convertir la date de fin au format YYYY-mm-dd
+        const currentDate = new Date(`${referenceYear}-${dayPart.slice(3, 5)}-${dayPart.slice(0, 2)}`); // Convertir la date actuelle au format YYYY-mm-dd
+
+        if (vacationStartDate > vacationEndDate) {
+          // Si la date de début est supérieure à la date de fin, c'est un congé qui chevauche l'année
+          return currentDate >= vacationStartDate || currentDate <= vacationEndDate;
+        }
+
+        // Sinon, c'est un congé normal
+        return vacationStartDate <= currentDate && currentDate <= vacationEndDate;
       },
       isUnavailable(agent, day) { // Vérifie si un jour est une indisponibilité
         // Vérifie si les indisponibilités exsitent pour cet agent
@@ -109,6 +141,11 @@
         return false; // Retourner false si la liste des jours fériés n'est pas définie
       },
       getColumnColor(agent, day) {
+        // Vérifier d'abord si c'est un jour de congé
+        if (this.isVacationDay(agent, day)) {
+          return "#f2cb05"; // Jaune pour les jours de congé
+        }
+
         // Vérifier d'abord si l'agent est indisponible
         if (this.isUnavailable(agent, day)) {
             return "#f2cb05"; // Jaune pour les jours indisponibles
