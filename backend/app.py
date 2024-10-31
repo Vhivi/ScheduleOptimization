@@ -82,13 +82,17 @@ def get_week_schedule(start_date_str, end_date_str):
     return week_schedule
 
 def split_into_weeks(week_schedule):
-    # Diviser la liste des jours en sous-période de 7 jours (semaines)
+    # Diviser la liste des jours en semaines calendaires (lundi à dimanche)
     weeks = []
     current_week = []
     
     for day in week_schedule:
+        # Ajouter le jour à la semaine courante
         current_week.append(day)
-        if len(current_week) == 7 or day == week_schedule[-1]:  # Si 7 jours ou dernier jour
+        
+        # Si le jour est un dimanche ou le dernier jour du planning, terminer la semaine
+        day_name = day.split(" ")[0]  # Extraire le nom du jour (ex: Lun.)
+        if day_name == "Dim." or day == week_schedule[-1]:   # Dimanche ou dernier jour
             weeks.append(current_week)
             current_week = []
             
@@ -182,6 +186,7 @@ def generate_planning(agents, vacations, week_schedule):
     model.Add(max_hours - min_hours <= 240)  # Ajuster la flexibilité si nécessaire (*10)
     ########################################################
     
+    ########################################################
     # Limitation du nombre de Nuit à 3 par semaine et gestion des vacations Jour et CDP
     weeks = split_into_weeks(week_schedule) # Diviser week_schedule en semaines
     
@@ -190,8 +195,7 @@ def generate_planning(agents, vacations, week_schedule):
         
         for week in weeks:
             # Limiter le nombre de vacation Nuit à 3 par semaine (du lundi au dimanche)
-            total_nuits = sum(planning[(agent_name, day, 'Nuit')] for day in week if "Nuit" in vacations)
-            model.Add(total_nuits <= 3)
+            model.Add(sum(planning[(agent_name, day, 'Nuit')] for day in week) <= 3)
             
             # Calculer le total d'heures pour Jour et CDP par semaine
             total_heures = sum(
@@ -200,8 +204,9 @@ def generate_planning(agents, vacations, week_schedule):
                 for day in week
             )
             
-            # Limiter à 48 heures par semaine
+            # Limiter à 36 heures par semaine
             model.Add(total_heures <= 360)  # 36 heures * 10
+    ########################################################
             
     # Un agent ne travaille pas quand il est indisponible
     # Une indisponibilité est une journée où l'agent ne peut pas avoir de vacation quelle qu'elle soit.
