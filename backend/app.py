@@ -208,6 +208,7 @@ def generate_planning(agents, vacations, week_schedule):
             model.Add(total_heures <= 360)  # 36 heures * 10
     ########################################################
             
+    ########################################################
     # Un agent ne travaille pas quand il est indisponible
     # Une indisponibilité est une journée où l'agent ne peut pas avoir de vacation quelle qu'elle soit.
     for agent in agents:
@@ -227,10 +228,10 @@ def generate_planning(agents, vacations, week_schedule):
                     if unavailable_day in day:  # Vérifie si le jour correspond à une indisponibilité
                         for vacation in vacations:
                             model.Add(planning[(agent_name, day, vacation)] == 0)
-                            
     ########################################################
-    # Congés
+    
     ########################################################
+    # Congés des agents
     date_format_full = "%d-%m-%Y"
     
     for agent in agents:
@@ -273,7 +274,8 @@ def generate_planning(agents, vacations, week_schedule):
                     if weekend_str in week_schedule:
                         for vacation in vacations:
                             model.Add(planning[(agent_name, weekend_str, vacation)] == 0)
-            
+    ########################################################
+    
     ########################################################
     # Limitation à 3 vacations de Jour par semaine
     # Convertir week_schedule en objet datetime pour faciliter le regroupement par semaine
@@ -316,18 +318,6 @@ def generate_planning(agents, vacations, week_schedule):
     #     model.Add(total_hours <= max_hours)
     # #! ########################################################
     
-    # # Interdire les vacations les jours où l'agent est indisponible
-    # for agent in agents:
-    #     agent_name = agent['name']
-    #     if "unavailable" in agent:
-    #         for unavailable_date in agent['unavailable']:
-    #             # Convertir la date indisponible en jour de la semaine
-    #             unavailable_day = datetime.strptime(unavailable_date, '%Y-%m-%d').strftime("%A")
-    #             if unavailable_day in week_schedule:
-    #                 for vacation in vacations:
-    #                     model.Add(planning[(agent_name, unavailable_day, vacation)] == 0)
-                        
-        
     ########################################################
     # Objectifs
     ########################################################
