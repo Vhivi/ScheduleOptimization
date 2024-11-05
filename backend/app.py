@@ -314,19 +314,15 @@ def generate_planning(agents, vacations, week_schedule):
         
         if "unavailable" in agent:
             # Récupérer les jours d'indisponibilité de l'agent
-            unavailable_days = agent['unavailable']
+            unavailable_days = [datetime.strptime(date, '%d-%m-%Y').strftime("%d-%m") for date in agent['unavailable']]
             
-            # Parcourir chaque jour d'indisponibilité
-            for unavailable_date in unavailable_days:
-                # Extraire la portion date du jour
-                unavailable_day = datetime.strptime(unavailable_date, '%d-%m-%Y').strftime("%d-%m")
+            # Interdire la vacation de nuit la veille de l'indisponibilité
+            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignorer le dernier jour
+                next_day = week_schedule[day_idx + 1]
                 
-                # Interdire la vacation de nuit la veille de l'indisponibilité
-                for day_idx, day in enumerate(week_schedule[:-1]):  # Ignorer le dernier jour
-                    next_day = week_schedule[day_idx + 1]
-                    
-                    if unavailable_day in next_day:  # Vérifie si le jour correspond à une indisponibilité
-                        model.Add(planning[(agent_name, day, 'Nuit')] == 0)
+                # Vérifie si le jour suivant est une indisponibilité
+                if any(unavailable_day in next_day for unavailable_day in unavailable_days):
+                    model.Add(planning[(agent_name, day, 'Nuit')] == 0)
     ########################################################
     
     # #! A retravailler sur le calcul des heures et sur la durée
