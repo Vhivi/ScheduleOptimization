@@ -37,7 +37,10 @@
         "avoid": ["Nuit"]
         },
       "unavailable": ["26-11-2024"],
-      "vacation": {}
+      "vacation": {
+        "start": "05-12-2024",
+        "end": "11-12-2024"
+      }
       },
     {
       "name": "Agent5",
