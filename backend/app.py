@@ -307,6 +307,28 @@ def generate_planning(agents, vacations, week_schedule):
             model.Add(sum(planning[(agent_name, day, 'Jour')] for day in days) <= 3)
     ########################################################
     
+    ########################################################
+    # Interdire une vacation de nuit avant une indisponibilité
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "unavailable" in agent:
+            # Récupérer les jours d'indisponibilité de l'agent
+            unavailable_days = agent['unavailable']
+            
+            # Parcourir chaque jour d'indisponibilité
+            for unavailable_date in unavailable_days:
+                # Extraire la portion date du jour
+                unavailable_day = datetime.strptime(unavailable_date, '%d-%m-%Y').strftime("%d-%m")
+                
+                # Interdire la vacation de nuit la veille de l'indisponibilité
+                for day_idx, day in enumerate(week_schedule[:-1]):  # Ignorer le dernier jour
+                    next_day = week_schedule[day_idx + 1]
+                    
+                    if unavailable_day in next_day:  # Vérifie si le jour correspond à une indisponibilité
+                        model.Add(planning[(agent_name, day, 'Nuit')] == 0)
+    ########################################################
+    
     # #! A retravailler sur le calcul des heures et sur la durée
     # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # for agent in agents:
