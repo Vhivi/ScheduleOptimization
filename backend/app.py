@@ -207,6 +207,16 @@ def generate_planning(agents, vacations, week_schedule):
             # Limiter à 36 heures par semaine
             model.Add(total_heures <= 360)  # 36 heures * 10
     ########################################################
+    
+    ########################################################
+    # Limitation du nombre de CDP à 2 par semaine
+    for agent in agents:
+        agent_name = agent['name']
+        
+        for week in weeks:
+            # Limiter le nombre de vacation CDP à 3 par semaine (du lundi au dimanche)
+            model.Add(sum(planning[(agent_name, day, 'CDP')] for day in week) <= 2)
+    ########################################################
             
     ########################################################
     # Un agent ne travaille pas quand il est indisponible
