@@ -32,6 +32,12 @@ def generate_planning_route():
     holidays = config['holidays-2024']
     unavailable = {}
     dayOff = {}
+    training = {}
+    
+    # Récupérer les jours de formation des agents et les stocker dans un dictionnaire {agent: [jours]}
+    for agent in agents:
+        if "training" in agent:
+            training[agent['name']] = agent['training']
     
     # Récupérer les jours d'indisponibilité des agents et les stocker dans un dictionnaire {agent: [jours]}
     for agent in agents:
@@ -66,7 +72,8 @@ def generate_planning_route():
         "week_schedule": week_schedule,
         "holidays": holidays,
         "unavailable": unavailable,
-        "dayOff": dayOff
+        "dayOff": dayOff,
+        "training": training
     })
     
 def get_week_schedule(start_date_str, end_date_str):
@@ -241,6 +248,28 @@ def generate_planning(agents, vacations, week_schedule):
     ########################################################
     
     ########################################################
+    # Un agent ne travaille pas quand il est en formation
+    # Une formation est une journée où l'agent ne peut pas avoir de vacation quelle qu'elle soit.
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "training" in agent:
+            # Récupérer les jours de formation de l'agent
+            training_days = agent['training']
+            
+            # Parcourir chaque jour de formation
+            for training_date in training_days:
+                # Extraire la portion date du jour
+                training_day = datetime.strptime(training_date, '%d-%m-%Y').strftime("%d-%m")
+                
+                # Interdire toutes les vacations pour l'agent ce jour
+                for day in week_schedule:
+                    if training_day in day:  # Vérifie si le jour correspond à une formation
+                        for vacation in vacations:
+                            model.Add(planning[(agent_name, day, vacation)] == 0)
+    ########################################################
+    
+    ########################################################
     # Congés des agents
     date_format_full = "%d-%m-%Y"
     
@@ -322,6 +351,24 @@ def generate_planning(agents, vacations, week_schedule):
                 
                 # Vérifie si le jour suivant est une indisponibilité
                 if any(unavailable_day in next_day for unavailable_day in unavailable_days):
+                    model.Add(planning[(agent_name, day, 'Nuit')] == 0)
+    ########################################################
+    
+    ########################################################
+    # Interdire une vacation de nuit avant une formation
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "training" in agent:
+            # Récupérer les jours de formation de l'agent
+            training_days = [datetime.strptime(date, '%d-%m-%Y').strftime("%d-%m") for date in agent['training']]
+            
+            # Interdire la vacation de nuit la veille de la formation
+            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignorer le dernier jour
+                next_day = week_schedule[day_idx + 1]
+                
+                # Vérifie si le jour suivant est une formation
+                if any(training_day in next_day for training_day in training_days):
                     model.Add(planning[(agent_name, day, 'Nuit')] == 0)
     ########################################################
     

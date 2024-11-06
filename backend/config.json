@@ -6,7 +6,8 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
-      "unavailable": ["17-11-2024", "19-11-2024"],
+      "unavailable": ["17-11-2024"],
+      "training": ["19-11-2024"],
       "vacation": {
         "start": "28-10-2024",
         "end": "04-11-2024"
@@ -19,6 +20,7 @@
         "avoid": ["Jour", "CDP"]
         },
       "unavailable": [],
+      "training": [],
       "vacation": {}
       },
     {
@@ -28,6 +30,7 @@
         "avoid": ["Jour"]
         },
       "unavailable": ["25-11-2024"],
+      "training": [],
       "vacation": {}
       },
     {
@@ -37,6 +40,7 @@
         "avoid": ["Nuit"]
         },
       "unavailable": ["26-11-2024"],
+      "training": [],
       "vacation": {
         "start": "05-12-2024",
         "end": "11-12-2024"
@@ -49,6 +53,7 @@
         "avoid": ["Nuit"]
         },
       "unavailable": [],
+      "training": [],
       "vacation": {}
       },
     {
@@ -57,7 +62,8 @@
         "preferred": ["Nuit"],
         "avoid": ["Jour", "CDP"]
         },
-      "unavailable": ["20-11-2024"],
+      "unavailable": [],
+      "training": ["20-11-2024"],
       "vacation": {
         "start": "11-11-2024",
         "end": "17-11-2024"
