@@ -60,6 +60,10 @@
       dayOff: {
         type: Object,
         required: true
+      },
+      training: {
+        type: Object,
+        required: true
       }
     },
     methods: {
@@ -81,6 +85,10 @@
         return monthMap[month] || month;
       },
       getVacationForAgent(agent, day) {
+        // Vérifie si le jour est un jour de formation
+        if (this.isTrainingDay(agent, day)) {
+          return "For."; // Retourner "Formation" si c'est un jour de formation
+        }
         // Vérifie si le jour est un jour de congé
         if (this.isVacationDay(agent, day)) {
           return "Con."; // Retourner "Congé" si c'est un jour de congé
@@ -162,6 +170,19 @@
         }
         return false; // Retourner false si la liste des jours fériés n'est pas définie
       },
+      // Vérifie si le jour est un jour de formation
+      isTrainingDay(agent, day) {
+        if (!this.training || !this.training[agent]) {
+          console.error(`Formation pour l'agent ${agent} non définie.`, this.training);
+          return false; // Retourner false si aucune formation n'est définie
+        }
+        const trainingDays = this.training[agent] || [];
+        const datePart = day.split(" ")[1]; // Extraire la partie de la date dd-mm
+
+        // Comparer uniquement dd-mm des jours de formation
+        const formatedTrainingDays = trainingDays.map(date => date.slice(0, 5));  // Extraire uniquement dd-mm
+        return formatedTrainingDays.includes(datePart); // Retourner true si le jour est un jour de formation
+      },
       getColumnColor(agent, day) {
         // Vérifier d'abord si c'est un jour de congé
         if (this.isVacationDay(agent, day)) {
@@ -171,7 +192,12 @@
         // Vérifier d'abord si l'agent est indisponible
         if (this.isUnavailable(agent, day)) {
             return "#f2cb05"; // Jaune pour les jours indisponibles
-          }
+        }
+
+        // Vérifier si c'est un jour de formation
+        if (this.isTrainingDay(agent, day)) {
+          return "#D93030"; // Rouge pour les jours de formation
+        }
         
         // Enfin retourner la couleur de la vacation si elle existe
         const vacationColor = this.getVacationColor(agent, day);
