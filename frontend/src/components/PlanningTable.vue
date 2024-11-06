@@ -1,27 +1,32 @@
 <template>
     <div>
       <h1>Planning des Vacations</h1>
-      <table>
-        <thead>
-          <tr>
-            <th>Agent</th>
-            <th v-for="day in weekSchedule" :key="day">{{ day }}</th>
-            <th>Total Vacations</th> <!-- Ajouter une colonne pour afficher le nombre de vacations -->
-            <th>Total Heures</th> <!-- Ajouter une colonne pour afficher le total des heures -->
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
-            <td>{{ agent }}</td>
-            <td v-for="day in weekSchedule" :key="day" :style="{ backgroundColor: getColumnColor(agent, day)}">
-              <!-- On affiche la vacation de cet agent ce jour-là -->
-              {{ getVacationForAgent(agent, day) || '//' }}
-            </td>
-            <td>{{ calculateNumberShifts(agent) }}</td> <!-- Afficher le nombre de vacations pour cet agent -->
-            <td>{{ calculateTotalHours(agent) }} h</td> <!-- Afficher le total des heures pour cet agent -->
-          </tr>
-        </tbody>
-      </table>
+
+      <!-- Boucle pour chaque mois pour afficher un tableau par mois -->
+      <div v-for="(monthDays, monthKey) in splitByMonth(weekSchedule)" :key="monthKey" class="month-table">
+        <h2>{{ formatMonthTitle(monthKey) }}</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th v-for="day in monthDays" :key="day">{{ day }}</th>
+              <th>Total Vacations</th> <!-- Ajouter une colonne pour afficher le nombre de vacations -->
+              <th>Total Heures</th> <!-- Ajouter une colonne pour afficher le total des heures -->
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
+              <td>{{ agent }}</td>
+              <td v-for="day in monthDays" :key="day" :style="{ backgroundColor: getColumnColor(agent, day)}">
+                <!-- On affiche la vacation de cet agent ce jour-là -->
+                {{ getVacationForAgent(agent, day) || '//' }}
+              </td>
+              <td>{{ calculateNumberShifts(agent, monthDays) }}</td> <!-- Afficher le nombre de vacations pour cet agent -->
+              <td>{{ calculateTotalHours(agent, monthDays) }} h</td> <!-- Afficher le total des heures pour cet agent -->
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </template>
   
@@ -58,6 +63,23 @@
       }
     },
     methods: {
+      splitByMonth(weekSchedule) {
+        return weekSchedule.reduce((months, day) => {
+          const monthKey = day.slice(8, 10); // Extraire le mois en abréviation (ex. Jan, Feb, etc.)
+          if (!months[monthKey]) {
+            months[monthKey] = [];
+          }
+          months[monthKey].push(day);
+          return months;
+        }, {});
+      },
+      formatMonthTitle(month) {
+        const monthMap = {
+                "01": "Janvier", "02": "Février", "03": "Mars", "04": "Avril", "05": "Mai", "06": "Juin",
+                "07": "Juillet", "08": "Août", "09": "Septembre", "10": "Octobre", "11": "Novembre", "12": "Décembre"
+            };
+        return monthMap[month] || month;
+      },
       getVacationForAgent(agent, day) {
         // Vérifie si le jour est un jour de congé
         if (this.isVacationDay(agent, day)) {
@@ -164,32 +186,41 @@
 
         return "white"; // Retourner blanc par défaut
       },
-      calculateTotalHours(agent) {
-        // Vérifier si this.planning[agent] est un tableau
-        if (!Array.isArray(this.planning[agent])) {
-          console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
-          return 0; // Retourner 0 si ce n'est pas un tableau
-        }
-        // Calculer le total des heures pour cet agent en utilisant vacationDurations
-        return this.planning[agent].reduce((total, vac) => {
-          const vacation = vac[1]; // Obtenir la vacation
-          return total + (this.vacationDurations[vacation] || 0); // Ajouter la durée de la vacation
-        }, 0);  // Commencer à 0
+      calculateTotalHours(agent, days) {
+        // // Vérifier si this.planning[agent] est un tableau
+        // if (!Array.isArray(this.planning[agent])) {
+        //   console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
+        //   return 0; // Retourner 0 si ce n'est pas un tableau
+        // }
+        // // Calculer le total des heures pour cet agent en utilisant vacationDurations
+        // return this.planning[agent].reduce((total, vac) => {
+        //   const vacation = vac[1]; // Obtenir la vacation
+        //   return total + (this.vacationDurations[vacation] || 0); // Ajouter la durée de la vacation
+        // }, 0);  // Commencer à 0
+        return days.reduce((total, day) => {
+                const vacation = this.getVacationForAgent(agent, day);
+                return total + (this.vacationDurations[vacation] || 0);
+            }, 0);
       },
-      calculateNumberShifts(agent) {
-        // Vérifier si this.planning[agent] est un tableau
-        if (!Array.isArray(this.planning[agent])) {
-          console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
-          return 0; // Retourner 0 si ce n'est pas un tableau
-        }
-        // Retourner le nombre de vacations pour cet agent
-        return this.planning[agent].length;
+      calculateNumberShifts(agent, days) {
+        // // Vérifier si this.planning[agent] est un tableau
+        // if (!Array.isArray(this.planning[agent])) {
+        //   console.error(`Planning pour l'agent ${agent} n'est pas un tableau.`, this.planning[agent]);
+        //   return 0; // Retourner 0 si ce n'est pas un tableau
+        // }
+        // // Retourner le nombre de vacations pour cet agent
+        // return this.planning[agent].length;
+        return days.filter(day => this.getVacationForAgent(agent, day)).length;
       }
     }
   };
   </script>
   
   <style scoped>
+  .month-table {
+    margin-bottom: 20px;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
