@@ -22,6 +22,7 @@
         :holidays="holidaysFromConfig"
         :unavailable="unavailableFromConfig"
         :dayOff="dayOffFromConfig"
+        :training="trainingFromConfig"
       />
     </div>
     <div v-else>
@@ -57,7 +58,8 @@ export default {
       },
       holidaysFromConfig: [], // Initialiser les jours fériés à partir de la configuration
       unavailableFromConfig: null, // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
-      dayOffFromConfig: null // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
+      dayOffFromConfig: null, // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
+      trainingFromConfig: null // Initialement, aucune formation n'est définie, sera rempli à partir de la configuration
     };
   },
   methods: {
@@ -74,6 +76,7 @@ export default {
         this.holidaysFromConfig = response.data.holidays; // Stocker les jours fériés à partir de la configuration
         this.unavailableFromConfig = response.data.unavailable; // Stocker les indisponibilités à partir de la configuration
         this.dayOffFromConfig = response.data.dayOff; // Stocker les jours de congé à partir de la configuration
+        this.trainingFromConfig = response.data.training; // Stocker les formations à partir de la configuration
       } catch (error) {
         console.error('Erreur lors de la génération du planning :', error);
       }
