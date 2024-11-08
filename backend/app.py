@@ -17,7 +17,7 @@ def load_config():
 
 config = load_config()
 weekend_days = ["Sam", "Dim"]  # Jours du week-end abrégés
-holidays = config['holidays-2024']  # Jours fériés en 2024
+holidays = config['holidays']  # Jours fériés à remettre à jour chaque année, notamment pour le lundi de Pâques
 
 @app.route('/')
 def home():
@@ -29,7 +29,7 @@ def generate_planning_route():
     agents = config['agents']
     vacations = config['vacations']
     vacation_durations = config['vacation_durations']
-    holidays = config['holidays-2024']
+    holidays = config['holidays']
     unavailable = {}
     dayOff = {}
     training = {}
@@ -370,6 +370,29 @@ def generate_planning(agents, vacations, week_schedule):
                 # Vérifie si le jour suivant est une formation
                 if any(training_day in next_day for training_day in training_days):
                     model.Add(planning[(agent_name, day, 'Nuit')] == 0)
+    ########################################################
+    
+    ########################################################
+    # Interdire une vacation pour une exclusion de vacation
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "exclusion" in agent:
+            # Récupérer les vacations à exclure
+            exclusion_dates = agent['exclusion']
+            
+            # Parcourir chaque date d'exclusion
+            for exclusion_date in exclusion_dates:
+                # Extraire la portion date de l'exclusion
+                exclusion_day = datetime.strptime(exclusion_date, '%d-%m-%Y').strftime("%d-%m")
+                
+                # Interdire toutes les vacations pour l'agent ce jour
+                for day_str in week_schedule:
+                    day_date = day_str.split(" ")[1]  # Extraire la date (dd-mm)
+                    
+                    if exclusion_day == day_date:  # Vérifie si le jour correspond à une exclusion
+                        for vacation in vacations:
+                            model.Add(planning[(agent_name, day_str, vacation)] == 0)
     ########################################################
     
     # #! A retravailler sur le calcul des heures et sur la durée
