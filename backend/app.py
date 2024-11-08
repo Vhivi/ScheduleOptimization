@@ -395,6 +395,63 @@ def generate_planning(agents, vacations, week_schedule):
                             model.Add(planning[(agent_name, day_str, vacation)] == 0)
     ########################################################
     
+    ########################################################
+    # Fournir des week-ends complets
+    for agent in agents:
+        agent_name = agent['name']
+        
+        for day_idx, day in enumerate(week_schedule):
+            # Vérifier si le jour est un samedi
+            if "Sam" in day:
+                sunday_idx = day_idx + 1
+                
+                if sunday_idx < len(week_schedule) and "Dim" in week_schedule[sunday_idx]:
+                    saturday = day
+                    sunday = week_schedule[sunday_idx]
+                    
+                    # Créer des variables booléennes pour savoir si l'agent travaille le samedi et le dimanche
+                    saturday_jour = model.NewBoolVar(f'{agent_name}_work_saturday_jour_{saturday}')
+                    saturday_nuit = model.NewBoolVar(f'{agent_name}_work_saturday_nuit_{saturday}')
+                    sunday_jour = model.NewBoolVar(f'{agent_name}_work_sunday_jour_{sunday}')
+                    sunday_nuit = model.NewBoolVar(f'{agent_name}_work_sunday_nuit_{sunday}')
+                    
+                    # Assigner les variables en fonction de la planification
+                    model.Add(planning[(agent_name, saturday, 'Jour')] == 1).OnlyEnforceIf(saturday_jour)
+                    model.Add(planning[(agent_name, saturday, 'Jour')] == 0).OnlyEnforceIf(saturday_jour)
+                    model.Add(planning[(agent_name, saturday, 'Nuit')] == 1).OnlyEnforceIf(saturday_nuit)
+                    model.Add(planning[(agent_name, saturday, 'Nuit')] == 0).OnlyEnforceIf(saturday_nuit)
+                    
+                    model.Add(planning[(agent_name, sunday, 'Jour')] == 1).OnlyEnforceIf(sunday_jour)
+                    model.Add(planning[(agent_name, sunday, 'Jour')] == 0).OnlyEnforceIf(sunday_jour)
+                    model.Add(planning[(agent_name, sunday, 'Nuit')] == 1).OnlyEnforceIf(sunday_nuit)
+                    model.Add(planning[(agent_name, sunday, 'Nuit')] == 0).OnlyEnforceIf(sunday_nuit)
+                    
+                    # Créer des variables de travail pour le samdi et le dimanche
+                    saturday_work = model.NewBoolVar(f'{agent_name}_work_saturday_{saturday}')
+                    sunday_work = model.NewBoolVar(f'{agent_name}_work_sunday_{sunday}')
+                    
+                    # Si l'agent travaille soit en "Jour" soit en "Nuit" le samedi, alors saturday_work = 1
+                    model.AddBoolOr([saturday_jour, saturday_nuit]).OnlyEnforceIf(saturday_work)
+                    model.AddBoolOr([sunday_jour, sunday_nuit]).OnlyEnforceIf(sunday_work)
+                    
+                    # Contraindre à un week-end complet ou rien
+                    model.Add(saturday_work == sunday_work)
+                    
+                    # Pénalité pour un week-end partiel
+                    partial_weekend_penalty = model.NewBoolVar(f'{agent_name}_partial_weekend_penalty_{saturday}')
+                    model.Add(saturday_work != sunday_work).OnlyEnforceIf(partial_weekend_penalty)
+                    
+                    # Ajouter une légère pénalité pour encourager les week-ends complets
+                    penalty_weight_weekends = 1    # Ajustable pour les pénalités
+                    reward_weight_weekends = -1     # Ajustable pour les récompenses
+                    
+                    # Pénaliser les week-ends partiels
+                    model.Minimize(penalty_weight_weekends * partial_weekend_penalty)
+                    
+                    # Récompenser les week-ends complets
+                    model.Minimize(reward_weight_weekends * (saturday_work + sunday_work))
+    ########################################################
+    
     # #! A retravailler sur le calcul des heures et sur la durée
     # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # for agent in agents:
