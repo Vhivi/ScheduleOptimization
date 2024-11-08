@@ -29,7 +29,7 @@
         "preferred": ["Nuit"],
         "avoid": ["Jour"]
         },
-      "unavailable": ["25-11-2024"],
+      "unavailable": ["25-11-2024", "06-12-2024", "24-12-2024"],
       "training": [],
       "vacation": {}
       },
@@ -62,7 +62,7 @@
         "preferred": ["Nuit"],
         "avoid": ["Jour", "CDP"]
         },
-      "unavailable": [],
+      "unavailable": ["07-12-2024", "11-12-2024", "24-12-2024"],
       "training": ["20-11-2024"],
       "vacation": {
         "start": "11-11-2024",
