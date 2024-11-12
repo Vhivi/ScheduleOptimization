@@ -452,6 +452,30 @@ def generate_planning(agents, vacations, week_schedule):
                     model.Minimize(reward_weight_weekends * (saturday_work + sunday_work))
     ########################################################
     
+    ########################################################
+    # Interdire la vacation nuit du lundi si l'agent à travailler le week-end
+    for agent in agents:
+        agent_name = agent['name']
+        
+        for day_idx, day in enumerate(week_schedule[:-2]):  # on parcourt jusqu'à l'avant-dernier jour
+            # On vérifie si le jour est un samedi
+            if "Sam" in day:
+                sunday_idx = day_idx + 1
+                monday_idx = day_idx + 2
+                
+                if sunday_idx < len(week_schedule) and monday_idx < len(week_schedule):
+                    sunday = week_schedule[sunday_idx]
+                    monday = week_schedule[monday_idx]
+                    
+                    # Récupérer les variables de travail de nuit pour samedi et dimanche et auncune vacation le lundi
+                    saturday_night = planning[(agent_name, day, 'Nuit')]
+                    sunday_night = planning[(agent_name, sunday, 'Nuit')]
+                    
+                    # Créer une variable booléenne pour forcer l'agent à ne pas travailler le lundi
+                    model.Add(planning[(agent_name, monday, 'Nuit')] == 0).OnlyEnforceIf([saturday_night, sunday_night])
+                    
+    ########################################################
+    
     # #! A retravailler sur le calcul des heures et sur la durée
     # # Un agent ne peut pas travailler plus de 48 heures par semaine
     # for agent in agents:
