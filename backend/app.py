@@ -442,8 +442,8 @@ def generate_planning(agents, vacations, week_schedule):
                     model.Add(saturday_work != sunday_work).OnlyEnforceIf(partial_weekend_penalty)
                     
                     # Ajouter une légère pénalité pour encourager les week-ends complets
-                    penalty_weight_weekends = 1    # Ajustable pour les pénalités
-                    reward_weight_weekends = -1     # Ajustable pour les récompenses
+                    penalty_weight_weekends = 100    # Ajustable pour les pénalités
+                    reward_weight_weekends = -100     # Ajustable pour les récompenses
                     
                     # Pénaliser les week-ends partiels
                     model.Minimize(penalty_weight_weekends * partial_weekend_penalty)
@@ -526,7 +526,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Pénaliser les vacations non désirées (évitées)
     penalized_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * -50  # Pénalité pour les vacations non désirées
+            planning[(agent['name'], day, vacation)] * -150  # Pénalité pour les vacations non désirées
             for agent in agents
             for day in week_schedule
             for vacation in vacations
