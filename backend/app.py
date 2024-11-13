@@ -539,7 +539,7 @@ def generate_planning(agents, vacations, week_schedule):
         
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60 # Limite de temps de résolution
+    solver.parameters.max_time_in_seconds = 120 # Limite de temps de résolution en secondes
     status = solver.Solve(model)
     
     # Résultats
