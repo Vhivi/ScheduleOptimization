@@ -22,14 +22,14 @@
         },
       "unavailable": [],
       "training": [],
-      "exclusion": [],
+      "exclusion": ["31-12-2024", "01-01-2025"],
       "vacation": {}
       },
     {
       "name": "Agent3",
       "preferences": {
         "preferred": ["Nuit"],
-        "avoid": ["Jour"]
+        "avoid": []
         },
       "unavailable": ["25-11-2024", "06-12-2024"],
       "training": [],
