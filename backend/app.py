@@ -420,59 +420,59 @@ def generate_planning(agents, vacations, week_schedule):
     
     ########################################################
     # Fournir des week-ends complets
-    for agent in agents:
-        agent_name = agent['name']
+    # for agent in agents:
+    #     agent_name = agent['name']
         
-        for day_idx, day in enumerate(week_schedule):
-            # Vérifier si le jour est un samedi
-            if "Sam" in day:
-                sunday_idx = day_idx + 1
+    #     for day_idx, day in enumerate(week_schedule):
+    #         # Vérifier si le jour est un samedi
+    #         if "Sam" in day:
+    #             sunday_idx = day_idx + 1
                 
-                if sunday_idx < len(week_schedule) and "Dim" in week_schedule[sunday_idx]:
-                    saturday = day
-                    sunday = week_schedule[sunday_idx]
+    #             if sunday_idx < len(week_schedule) and "Dim" in week_schedule[sunday_idx]:
+    #                 saturday = day
+    #                 sunday = week_schedule[sunday_idx]
                     
-                    # Créer des variables booléennes pour savoir si l'agent travaille le samedi et le dimanche
-                    saturday_jour = model.NewBoolVar(f'{agent_name}_work_saturday_jour_{saturday}')
-                    saturday_nuit = model.NewBoolVar(f'{agent_name}_work_saturday_nuit_{saturday}')
-                    sunday_jour = model.NewBoolVar(f'{agent_name}_work_sunday_jour_{sunday}')
-                    sunday_nuit = model.NewBoolVar(f'{agent_name}_work_sunday_nuit_{sunday}')
+    #                 # Créer des variables booléennes pour savoir si l'agent travaille le samedi et le dimanche
+    #                 saturday_jour = model.NewBoolVar(f'{agent_name}_work_saturday_jour_{saturday}')
+    #                 saturday_nuit = model.NewBoolVar(f'{agent_name}_work_saturday_nuit_{saturday}')
+    #                 sunday_jour = model.NewBoolVar(f'{agent_name}_work_sunday_jour_{sunday}')
+    #                 sunday_nuit = model.NewBoolVar(f'{agent_name}_work_sunday_nuit_{sunday}')
                     
-                    # Assigner les variables en fonction de la planification
-                    model.Add(planning[(agent_name, saturday, 'Jour')] == 1).OnlyEnforceIf(saturday_jour)
-                    model.Add(planning[(agent_name, saturday, 'Jour')] == 0).OnlyEnforceIf(saturday_jour)
-                    model.Add(planning[(agent_name, saturday, 'Nuit')] == 1).OnlyEnforceIf(saturday_nuit)
-                    model.Add(planning[(agent_name, saturday, 'Nuit')] == 0).OnlyEnforceIf(saturday_nuit)
+    #                 # Assigner les variables en fonction de la planification
+    #                 model.Add(planning[(agent_name, saturday, 'Jour')] == 1).OnlyEnforceIf(saturday_jour)
+    #                 model.Add(planning[(agent_name, saturday, 'Jour')] == 0).OnlyEnforceIf(saturday_jour)
+    #                 model.Add(planning[(agent_name, saturday, 'Nuit')] == 1).OnlyEnforceIf(saturday_nuit)
+    #                 model.Add(planning[(agent_name, saturday, 'Nuit')] == 0).OnlyEnforceIf(saturday_nuit)
                     
-                    model.Add(planning[(agent_name, sunday, 'Jour')] == 1).OnlyEnforceIf(sunday_jour)
-                    model.Add(planning[(agent_name, sunday, 'Jour')] == 0).OnlyEnforceIf(sunday_jour)
-                    model.Add(planning[(agent_name, sunday, 'Nuit')] == 1).OnlyEnforceIf(sunday_nuit)
-                    model.Add(planning[(agent_name, sunday, 'Nuit')] == 0).OnlyEnforceIf(sunday_nuit)
+    #                 model.Add(planning[(agent_name, sunday, 'Jour')] == 1).OnlyEnforceIf(sunday_jour)
+    #                 model.Add(planning[(agent_name, sunday, 'Jour')] == 0).OnlyEnforceIf(sunday_jour)
+    #                 model.Add(planning[(agent_name, sunday, 'Nuit')] == 1).OnlyEnforceIf(sunday_nuit)
+    #                 model.Add(planning[(agent_name, sunday, 'Nuit')] == 0).OnlyEnforceIf(sunday_nuit)
                     
-                    # Créer des variables de travail pour le samdi et le dimanche
-                    saturday_work = model.NewBoolVar(f'{agent_name}_work_saturday_{saturday}')
-                    sunday_work = model.NewBoolVar(f'{agent_name}_work_sunday_{sunday}')
+    #                 # Créer des variables de travail pour le samdi et le dimanche
+    #                 saturday_work = model.NewBoolVar(f'{agent_name}_work_saturday_{saturday}')
+    #                 sunday_work = model.NewBoolVar(f'{agent_name}_work_sunday_{sunday}')
                     
-                    # Si l'agent travaille soit en "Jour" soit en "Nuit" le samedi, alors saturday_work = 1
-                    model.AddBoolOr([saturday_jour, saturday_nuit]).OnlyEnforceIf(saturday_work)
-                    model.AddBoolOr([sunday_jour, sunday_nuit]).OnlyEnforceIf(sunday_work)
+    #                 # Si l'agent travaille soit en "Jour" soit en "Nuit" le samedi, alors saturday_work = 1
+    #                 model.AddBoolOr([saturday_jour, saturday_nuit]).OnlyEnforceIf(saturday_work)
+    #                 model.AddBoolOr([sunday_jour, sunday_nuit]).OnlyEnforceIf(sunday_work)
                     
-                    # Contraindre à un week-end complet ou rien
-                    model.Add(saturday_work == sunday_work)
+    #                 # Contraindre à un week-end complet ou rien
+    #                 model.Add(saturday_work == sunday_work)
                     
-                    # Pénalité pour un week-end partiel
-                    partial_weekend_penalty = model.NewBoolVar(f'{agent_name}_partial_weekend_penalty_{saturday}')
-                    model.Add(saturday_work != sunday_work).OnlyEnforceIf(partial_weekend_penalty)
+    #                 # Pénalité pour un week-end partiel
+    #                 partial_weekend_penalty = model.NewBoolVar(f'{agent_name}_partial_weekend_penalty_{saturday}')
+    #                 model.Add(saturday_work != sunday_work).OnlyEnforceIf(partial_weekend_penalty)
                     
-                    # Ajouter une légère pénalité pour encourager les week-ends complets
-                    penalty_weight_weekends = 100    # Ajustable pour les pénalités
-                    reward_weight_weekends = -100     # Ajustable pour les récompenses
+    #                 # Ajouter une légère pénalité pour encourager les week-ends complets
+    #                 penalty_weight_weekends = 100    # Ajustable pour les pénalités
+    #                 reward_weight_weekends = -100     # Ajustable pour les récompenses
                     
-                    # Pénaliser les week-ends partiels
-                    model.Minimize(penalty_weight_weekends * partial_weekend_penalty)
+    #                 # Pénaliser les week-ends partiels
+    #                 model.Minimize(penalty_weight_weekends * partial_weekend_penalty)
                     
-                    # Récompenser les week-ends complets
-                    model.Minimize(reward_weight_weekends * (saturday_work + sunday_work))
+    #                 # Récompenser les week-ends complets
+    #                 model.Minimize(reward_weight_weekends * (saturday_work + sunday_work))
     ########################################################
     
     ########################################################
@@ -527,6 +527,81 @@ def generate_planning(agents, vacations, week_schedule):
     # Limiter l'écart d'heure entre les agents
     max_difference = 240  # Ajuster la flexibilité si nécessaire (*10)
     model.Add(max_hours - min_hours <= max_difference)
+    ########################################################
+    
+    ########################################################
+    # Ajouter l'équilibrage des week-ends complets
+    
+    total_weekends = sum(1 for day in week_schedule if "Sam" in day)    # Nombre total de week-ends dans la période
+    print("Total weekends - l.536:", total_weekends)
+    # Doublez la cible pour tenir compte de deux vacations (Jour et Nuit) par week-end
+    target_weekends_per_agent = (total_weekends * 2) // len(agents)  # Nombre de week-ends idéal par agent
+    print("Target weekends per agent - l.538:", target_weekends_per_agent)
+    
+    # Initialiser les compteurs de week-ends travaillés pour chaque agent
+    weekends_worked = {}
+    for agent in agents:
+        agent_name = agent['name']
+        weekends_worked[agent_name] = model.NewIntVar(0, total_weekends, f'weekends_worked_{agent_name}')
+        
+        # Calculer le nombre de week-ends complets travaillés pour chaque agent
+        weekend_count = []
+        for day_idx, day in enumerate(week_schedule):
+            if "Sam" in day and day_idx + 1 < len(week_schedule) and "Dim" in week_schedule[day_idx + 1]:
+                saturday = day
+                sunday = week_schedule[day_idx + 1]
+                
+                # Variables booléennes pour le travail le samedi et le dimanche
+                saturday_work = model.NewBoolVar(f'{agent_name}_works_saturday_{saturday}')
+                sunday_work = model.NewBoolVar(f'{agent_name}_works_sunday_{sunday}')
+                
+                # Ajouter les contraintes pour assigner ces variables
+                model.Add(planning[(agent_name, saturday, 'Jour')] + planning[(agent_name, saturday, 'Nuit')] > 0).OnlyEnforceIf(saturday_work)
+                model.Add(planning[(agent_name, saturday, 'Jour')] + planning[(agent_name, saturday, 'Nuit')] == 0).OnlyEnforceIf(saturday_work.Not())
+                
+                model.Add(planning[(agent_name, sunday, 'Jour')] + planning[(agent_name, sunday, 'Nuit')] > 0).OnlyEnforceIf(sunday_work)
+                model.Add(planning[(agent_name, sunday, 'Jour')] + planning[(agent_name, sunday, 'Nuit')] == 0).OnlyEnforceIf(sunday_work.Not())
+            
+                # L'agent travaille un week-end complet si les deux jours sont travaillés
+                works_weekend = model.NewBoolVar(f'{agent_name}_works_weekend_{saturday}_{sunday}')
+                model.AddBoolAnd([saturday_work, sunday_work]).OnlyEnforceIf(works_weekend)
+                model.AddBoolOr([saturday_work.Not(), sunday_work.Not()]).OnlyEnforceIf(works_weekend.Not())
+                
+                # Ajouter works_weekend à la liste des week-ends travaillés
+                weekend_count.append(works_weekend)
+                
+        # Assignation de la somme des week-ends travaillés
+        model.Add(weekends_worked[agent_name] == sum(weekend_count))
+        
+    # Ajouter l'objectif pour équilibrer les week-ends travaillés
+    min_weekends = model.NewIntVar(0, total_weekends, 'min_weekends')
+    max_weekends = model.NewIntVar(0, total_weekends, 'max_weekends')
+    for agent_name in weekends_worked:
+        model.Add(min_weekends <= weekends_worked[agent_name])
+        model.Add(weekends_worked[agent_name] <= max_weekends)
+        
+    # Minimiser l'écart entre le minimum et le maximum de week-ends travaillés par les agents
+    model.Minimize(max_weekends - min_weekends)
+    
+    # Calcul de l'équilibrage des week-ends travaillés
+    weekend_balancing_terms = []
+    
+    for agent in agents:
+        agent_name = agent['name']
+        difference = model.NewIntVar(-2 * total_weekends, 2 * total_weekends, f'difference_weekends_{agent_name}')
+        squared_difference = model.NewIntVar(0, (total_weekends * 2) ** 2, f'squared_difference_weekends_{agent_name}')
+        
+        # Calculer la différence entre les week-ends travaillés et le nombre de week-ends cible
+        model.Add(difference == weekends_worked[agent_name] - target_weekends_per_agent)
+        
+        # Définir le carré de la différence
+        model.AddMultiplicationEquality(squared_difference, [difference, difference])
+        
+        # Ajouter ce carré à l'objectif d'équilibrage des week-ends
+        weekend_balancing_terms.append(squared_difference)
+    
+    # Équilibrage des week-ends travaillés
+    weekend_balancing_objective = cp_model.LinearExpr.Sum(weekend_balancing_terms)
     ########################################################
                     
     ########################################################
@@ -622,7 +697,8 @@ def generate_planning(agents, vacations, week_schedule):
     model.Maximize(
         objective_preferred_vacations +
         objective_other_vacations +
-        penalized_vacations #-
+        penalized_vacations -
+        weekend_balancing_objective
         # (variance_weight * total_variance)  # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
     )
         
