@@ -105,6 +105,29 @@ def split_into_weeks(week_schedule):
             
     return weeks
 
+def split_by_month_or_period(week_schedule):
+    # Divise week_schedule en période mensuelle ou unique selon la durée
+    periods = []
+    current_period = []
+    previous_month = None
+    
+    for day in week_schedule:
+        # Extraire le mois (format : Lun 25-12)
+        current_month = day.split(" ")[1].split("-")[1]  # Extraire le mois (ex: 12)
+        
+        # Si changement de mois, commencer une nouvelle période
+        if previous_month and current_month != previous_month:
+            periods.append(current_period)
+            current_period = []
+        current_period.append(day)
+        previous_month = current_month
+        
+    # Ajouter la dernière période
+    if current_period:
+        periods.append(current_period)
+        
+    return periods
+
 
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
