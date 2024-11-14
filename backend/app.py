@@ -105,6 +105,29 @@ def split_into_weeks(week_schedule):
             
     return weeks
 
+def split_by_month_or_period(week_schedule):
+    # Divise week_schedule en période mensuelle ou unique selon la durée
+    periods = []
+    current_period = []
+    previous_month = None
+    
+    for day in week_schedule:
+        # Extraire le mois (format : Lun 25-12)
+        current_month = day.split(" ")[1].split("-")[1]  # Extraire le mois (ex: 12)
+        
+        # Si changement de mois, commencer une nouvelle période
+        if previous_month and current_month != previous_month:
+            periods.append(current_period)
+            current_period = []
+        current_period.append(day)
+        previous_month = current_month
+        
+    # Ajouter la dernière période
+    if current_period:
+        periods.append(current_period)
+        
+    return periods
+
 
 def generate_planning(agents, vacations, week_schedule):
     model = cp_model.CpModel()
@@ -473,38 +496,99 @@ def generate_planning(agents, vacations, week_schedule):
                     
                     # Créer une variable booléenne pour forcer l'agent à ne pas travailler le lundi
                     model.Add(planning[(agent_name, monday, 'Nuit')] == 0).OnlyEnforceIf([saturday_night, sunday_night])
+    
+    ########################################################
+    # Contrainte d'équilibre par période
+    
+    # Diviser week_schedule en périodes mensuelles ou uniques
+    periods = split_by_month_or_period(week_schedule)
+    
+    for period in periods:
+        total_hours = {}
+        for agent in agents:
+            agent_name = agent['name']
+            # Calcul des heures totales par agent sur la période
+            total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
+                planning[(agent_name, day, 'Jour')] * jour_duration +
+                planning[(agent_name, day, 'Nuit')] * nuit_duration +
+                planning[(agent_name, day, 'CDP')] * cdp_duration
+                for day in period
+            ))
+            
+    # Définir min_hours et max_hours pour l'équilibrage
+    min_hours = model.NewIntVar(0, 100000, 'min_hours_period')  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
+    max_hours = model.NewIntVar(0, 100000, 'max_hours_period')  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
+    
+    # Ajouter des contraintes pour chaque agent
+    for agent_name in total_hours:
+        model.Add(min_hours <= total_hours[agent_name])
+        model.Add(total_hours[agent_name] <= max_hours)
+        
+    # Limiter l'écart d'heure entre les agents
+    max_difference = 240  # Ajuster la flexibilité si nécessaire (*10)
+    model.Add(max_hours - min_hours <= max_difference)
+    ########################################################
                     
     ########################################################
-    
-    # #! A retravailler sur le calcul des heures et sur la durée
-    # # Un agent ne peut pas travailler plus de 48 heures par semaine
+    # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
+    # Tous les agents doivent avoir un volume horaire similaire
+    # total_hours = {}
     # for agent in agents:
     #     agent_name = agent['name']
-        
-    #     # Calculer le total des heures travaillées sur la période définie
-    #     total_hours = sum(
+    #     total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
     #         planning[(agent_name, day, 'Jour')] * jour_duration +
     #         planning[(agent_name, day, 'Nuit')] * nuit_duration +
     #         planning[(agent_name, day, 'CDP')] * cdp_duration
     #         for day in week_schedule
-    #     )
+    #     ))
         
-    #     # Limiter le total des heures à 48 heures par semaine proportionnellement au nombre de jours
-    #     # Si la semaine est plus courte, ajuster le total des heures en conséquence
-    #     total_days = len(week_schedule)
-    #     max_hours = int((480 / 7) * total_days)  # Limite proportionnelle au nombre de jours
+    # # Calculer le volume cible d'heures par agent
+    # total_available_hours = sum(
+    #     jour_duration + nuit_duration + cdp_duration for day in week_schedule
+    # )
+    # target_hours_per_agent = total_available_hours // len(agents)
+    # print("Target hours per agent:", target_hours_per_agent)
+    
+    # acceptable_deviation = 240  # Ajuste cette valeur selon tes besoins (*10)
+    # for agent_name in total_hours:
+    #     model.Add(total_hours[agent_name] <= target_hours_per_agent + acceptable_deviation)
+    #     model.Add(total_hours[agent_name] >= target_hours_per_agent - acceptable_deviation)
+
+    # # Crée des variables pour la variance
+    # variance = {}
+    # for agent in agents:
+    #     agent_name = agent['name']
         
-    #     model.Add(total_hours <= max_hours)
-    # #! ########################################################
+    #     # Variable pour la différence entre les heures travaillées et l'objectif cible
+    #     diff = model.NewIntVar(-10000, 10000, f'diff_{agent_name}')
+    #     model.Add(diff == total_hours[agent_name] - target_hours_per_agent)
+        
+    #     # Variable pour le carré de la différence
+    #     squared_diff = model.NewIntVar(0, 100000000, f'squared_diff_{agent_name}')
+    #     model.AddMultiplicationEquality(squared_diff, [diff, diff])
+        
+    #     # Stocker la variance pour chaque agent
+    #     variance[agent_name] = squared_diff
+        
+    # # Calculer la variance totale
+    # total_variance = cp_model.LinearExpr.Sum(variance.values())
+    # ! Fin de la mise en suspens de la contrainte de volume horaire similaire pour le moment
+    ########################################################
     
     ########################################################
     # Objectifs
     ########################################################
     
+    # Poids pour chaque composante de l'objectif
+    weight_preferred = 100
+    weight_other = 1
+    weight_avoid = -250
+    # variance_weight = 100
+    
     # Maximiser les vacations préférées avec un poids supplémentaire
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * 100  # Poids plus élévé pour les vacations préférées
+            planning[(agent['name'], day, vacation)] * weight_preferred
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -515,7 +599,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Ajouter un poids normal pour les autres vacations
     objective_other_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)]
+            planning[(agent['name'], day, vacation)] * weight_other
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -526,7 +610,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Pénaliser les vacations non désirées (évitées)
     penalized_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * -150  # Pénalité pour les vacations non désirées
+            planning[(agent['name'], day, vacation)] * weight_avoid
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -534,8 +618,13 @@ def generate_planning(agents, vacations, week_schedule):
         )
     )
     
-    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées
-    model.Maximize(objective_preferred_vacations + objective_other_vacations + penalized_vacations)
+    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées et équilibre des heures
+    model.Maximize(
+        objective_preferred_vacations +
+        objective_other_vacations +
+        penalized_vacations #-
+        # (variance_weight * total_variance)  # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
+    )
         
     # Solver
     solver = cp_model.CpSolver()
