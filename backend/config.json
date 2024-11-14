@@ -65,7 +65,7 @@
       "name": "Agent6",
       "preferences": {
         "preferred": ["Nuit"],
-        "avoid": ["Jour", "CDP"]
+        "avoid": ["Jour"]
         },
       "unavailable": ["07-12-2024", "11-12-2024"],
       "training": ["20-11-2024"],
