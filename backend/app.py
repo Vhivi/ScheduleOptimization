@@ -475,36 +475,63 @@ def generate_planning(agents, vacations, week_schedule):
                     model.Add(planning[(agent_name, monday, 'Nuit')] == 0).OnlyEnforceIf([saturday_night, sunday_night])
                     
     ########################################################
+    # Tous les agents doivent avoir un volume horaire similaire
+    total_hours = {}
+    for agent in agents:
+        agent_name = agent['name']
+        total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
+            planning[(agent_name, day, 'Jour')] * jour_duration +
+            planning[(agent_name, day, 'Nuit')] * nuit_duration +
+            planning[(agent_name, day, 'CDP')] * cdp_duration
+            for day in week_schedule
+        ))
+        
+    # Calculer le volume cible d'heures par agent
+    total_available_hours = sum(
+        jour_duration + nuit_duration + cdp_duration for day in week_schedule
+    )
+    target_hours_per_agent = total_available_hours // len(agents)
+    print("Target hours per agent:", target_hours_per_agent)
     
-    # #! A retravailler sur le calcul des heures et sur la durée
-    # # Un agent ne peut pas travailler plus de 48 heures par semaine
-    # for agent in agents:
-    #     agent_name = agent['name']
+    acceptable_deviation = 240  # Ajuste cette valeur selon tes besoins (*10)
+    for agent_name in total_hours:
+        model.Add(total_hours[agent_name] <= target_hours_per_agent + acceptable_deviation)
+        model.Add(total_hours[agent_name] >= target_hours_per_agent - acceptable_deviation)
+
+    # Crée des variables pour la variance
+    variance = {}
+    for agent in agents:
+        agent_name = agent['name']
         
-    #     # Calculer le total des heures travaillées sur la période définie
-    #     total_hours = sum(
-    #         planning[(agent_name, day, 'Jour')] * jour_duration +
-    #         planning[(agent_name, day, 'Nuit')] * nuit_duration +
-    #         planning[(agent_name, day, 'CDP')] * cdp_duration
-    #         for day in week_schedule
-    #     )
+        # Variable pour la différence entre les heures travaillées et l'objectif cible
+        diff = model.NewIntVar(-10000, 10000, f'diff_{agent_name}')
+        model.Add(diff == total_hours[agent_name] - target_hours_per_agent)
         
-    #     # Limiter le total des heures à 48 heures par semaine proportionnellement au nombre de jours
-    #     # Si la semaine est plus courte, ajuster le total des heures en conséquence
-    #     total_days = len(week_schedule)
-    #     max_hours = int((480 / 7) * total_days)  # Limite proportionnelle au nombre de jours
+        # Variable pour le carré de la différence
+        squared_diff = model.NewIntVar(0, 100000000, f'squared_diff_{agent_name}')
+        model.AddMultiplicationEquality(squared_diff, [diff, diff])
         
-    #     model.Add(total_hours <= max_hours)
-    # #! ########################################################
+        # Stocker la variance pour chaque agent
+        variance[agent_name] = squared_diff
+        
+    # Calculer la variance totale
+    total_variance = cp_model.LinearExpr.Sum(variance.values())
+    ########################################################
     
     ########################################################
     # Objectifs
     ########################################################
     
+    # Poids pour chaque composante de l'objectif
+    weight_preferred = 100
+    weight_other = 1
+    weight_avoid = -250
+    variance_weight = 100
+    
     # Maximiser les vacations préférées avec un poids supplémentaire
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * 100  # Poids plus élévé pour les vacations préférées
+            planning[(agent['name'], day, vacation)] * weight_preferred
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -515,7 +542,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Ajouter un poids normal pour les autres vacations
     objective_other_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)]
+            planning[(agent['name'], day, vacation)] * weight_other
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -526,7 +553,7 @@ def generate_planning(agents, vacations, week_schedule):
     # Pénaliser les vacations non désirées (évitées)
     penalized_vacations = cp_model.LinearExpr.Sum(
         list(
-            planning[(agent['name'], day, vacation)] * -150  # Pénalité pour les vacations non désirées
+            planning[(agent['name'], day, vacation)] * weight_avoid
             for agent in agents
             for day in week_schedule
             for vacation in vacations
@@ -534,12 +561,17 @@ def generate_planning(agents, vacations, week_schedule):
         )
     )
     
-    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées
-    model.Maximize(objective_preferred_vacations + objective_other_vacations + penalized_vacations)
+    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées et équilibre des heures
+    model.Maximize(
+        objective_preferred_vacations +
+        objective_other_vacations +
+        penalized_vacations -
+        (variance_weight * total_variance)
+    )
         
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 120 # Limite de temps de résolution en secondes
+    solver.parameters.max_time_in_seconds = 60 # Limite de temps de résolution en secondes
     status = solver.Solve(model)
     
     # Résultats
