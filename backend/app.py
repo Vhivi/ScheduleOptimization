@@ -496,49 +496,83 @@ def generate_planning(agents, vacations, week_schedule):
                     
                     # Créer une variable booléenne pour forcer l'agent à ne pas travailler le lundi
                     model.Add(planning[(agent_name, monday, 'Nuit')] == 0).OnlyEnforceIf([saturday_night, sunday_night])
+    
+    ########################################################
+    # Contrainte d'équilibre par période
+    
+    # Diviser week_schedule en périodes mensuelles ou uniques
+    periods = split_by_month_or_period(week_schedule)
+    
+    for period in periods:
+        total_hours = {}
+        for agent in agents:
+            agent_name = agent['name']
+            # Calcul des heures totales par agent sur la période
+            total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
+                planning[(agent_name, day, 'Jour')] * jour_duration +
+                planning[(agent_name, day, 'Nuit')] * nuit_duration +
+                planning[(agent_name, day, 'CDP')] * cdp_duration
+                for day in period
+            ))
+            
+    # Définir min_hours et max_hours pour l'équilibrage
+    min_hours = model.NewIntVar(0, 100000, 'min_hours_period')  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
+    max_hours = model.NewIntVar(0, 100000, 'max_hours_period')  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
+    
+    # Ajouter des contraintes pour chaque agent
+    for agent_name in total_hours:
+        model.Add(min_hours <= total_hours[agent_name])
+        model.Add(total_hours[agent_name] <= max_hours)
+        
+    # Limiter l'écart d'heure entre les agents
+    max_difference = 240  # Ajuster la flexibilité si nécessaire (*10)
+    model.Add(max_hours - min_hours <= max_difference)
+    ########################################################
                     
     ########################################################
+    # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
     # Tous les agents doivent avoir un volume horaire similaire
-    total_hours = {}
-    for agent in agents:
-        agent_name = agent['name']
-        total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
-            planning[(agent_name, day, 'Jour')] * jour_duration +
-            planning[(agent_name, day, 'Nuit')] * nuit_duration +
-            planning[(agent_name, day, 'CDP')] * cdp_duration
-            for day in week_schedule
-        ))
+    # total_hours = {}
+    # for agent in agents:
+    #     agent_name = agent['name']
+    #     total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
+    #         planning[(agent_name, day, 'Jour')] * jour_duration +
+    #         planning[(agent_name, day, 'Nuit')] * nuit_duration +
+    #         planning[(agent_name, day, 'CDP')] * cdp_duration
+    #         for day in week_schedule
+    #     ))
         
-    # Calculer le volume cible d'heures par agent
-    total_available_hours = sum(
-        jour_duration + nuit_duration + cdp_duration for day in week_schedule
-    )
-    target_hours_per_agent = total_available_hours // len(agents)
-    print("Target hours per agent:", target_hours_per_agent)
+    # # Calculer le volume cible d'heures par agent
+    # total_available_hours = sum(
+    #     jour_duration + nuit_duration + cdp_duration for day in week_schedule
+    # )
+    # target_hours_per_agent = total_available_hours // len(agents)
+    # print("Target hours per agent:", target_hours_per_agent)
     
-    acceptable_deviation = 240  # Ajuste cette valeur selon tes besoins (*10)
-    for agent_name in total_hours:
-        model.Add(total_hours[agent_name] <= target_hours_per_agent + acceptable_deviation)
-        model.Add(total_hours[agent_name] >= target_hours_per_agent - acceptable_deviation)
+    # acceptable_deviation = 240  # Ajuste cette valeur selon tes besoins (*10)
+    # for agent_name in total_hours:
+    #     model.Add(total_hours[agent_name] <= target_hours_per_agent + acceptable_deviation)
+    #     model.Add(total_hours[agent_name] >= target_hours_per_agent - acceptable_deviation)
 
-    # Crée des variables pour la variance
-    variance = {}
-    for agent in agents:
-        agent_name = agent['name']
+    # # Crée des variables pour la variance
+    # variance = {}
+    # for agent in agents:
+    #     agent_name = agent['name']
         
-        # Variable pour la différence entre les heures travaillées et l'objectif cible
-        diff = model.NewIntVar(-10000, 10000, f'diff_{agent_name}')
-        model.Add(diff == total_hours[agent_name] - target_hours_per_agent)
+    #     # Variable pour la différence entre les heures travaillées et l'objectif cible
+    #     diff = model.NewIntVar(-10000, 10000, f'diff_{agent_name}')
+    #     model.Add(diff == total_hours[agent_name] - target_hours_per_agent)
         
-        # Variable pour le carré de la différence
-        squared_diff = model.NewIntVar(0, 100000000, f'squared_diff_{agent_name}')
-        model.AddMultiplicationEquality(squared_diff, [diff, diff])
+    #     # Variable pour le carré de la différence
+    #     squared_diff = model.NewIntVar(0, 100000000, f'squared_diff_{agent_name}')
+    #     model.AddMultiplicationEquality(squared_diff, [diff, diff])
         
-        # Stocker la variance pour chaque agent
-        variance[agent_name] = squared_diff
+    #     # Stocker la variance pour chaque agent
+    #     variance[agent_name] = squared_diff
         
-    # Calculer la variance totale
-    total_variance = cp_model.LinearExpr.Sum(variance.values())
+    # # Calculer la variance totale
+    # total_variance = cp_model.LinearExpr.Sum(variance.values())
+    # ! Fin de la mise en suspens de la contrainte de volume horaire similaire pour le moment
     ########################################################
     
     ########################################################
@@ -549,7 +583,7 @@ def generate_planning(agents, vacations, week_schedule):
     weight_preferred = 100
     weight_other = 1
     weight_avoid = -250
-    variance_weight = 100
+    # variance_weight = 100
     
     # Maximiser les vacations préférées avec un poids supplémentaire
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
@@ -588,13 +622,13 @@ def generate_planning(agents, vacations, week_schedule):
     model.Maximize(
         objective_preferred_vacations +
         objective_other_vacations +
-        penalized_vacations -
-        (variance_weight * total_variance)
+        penalized_vacations #-
+        # (variance_weight * total_variance)  # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
     )
         
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60 # Limite de temps de résolution en secondes
+    solver.parameters.max_time_in_seconds = 120 # Limite de temps de résolution en secondes
     status = solver.Solve(model)
     
     # Résultats
