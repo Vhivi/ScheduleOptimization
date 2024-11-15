@@ -64,7 +64,7 @@ def generate_planning_route():
     week_schedule = get_week_schedule(start_date, end_date)
     
     # Appel de la fonction de génération de planning
-    result = generate_planning(agents, vacations, week_schedule)
+    result = generate_planning(agents, vacations, week_schedule, dayOff)
     
     return jsonify({
         "planning": result,
@@ -128,14 +128,34 @@ def split_by_month_or_period(week_schedule):
         
     return periods
 
+def is_vacation_day(agent_name, day, dayOff):
+    """Vérifie si le jour est un jour de congé pour cet agent."""
+    if agent_name in dayOff:
+        vacation_start, vacation_end = dayOff[agent_name]
+        # Convertir les dates de congé et le jour en objets datetime pour comparaison
+        vacation_start_date = datetime.strptime(vacation_start, '%d-%m-%Y')
+        vacation_end_date = datetime.strptime(vacation_end, '%d-%m-%Y')
+        day_part = day.split(" ")[1]  # Extraire la date (ex: 25-12)
+        day_date = datetime.strptime(f"{day_part}-{vacation_start_date.year}", '%d-%m-%Y')
 
-def generate_planning(agents, vacations, week_schedule):
+        # Vérifier si le jour est entre la date de début et de fin du congé
+        return vacation_start_date <= day_date <= vacation_end_date and not is_weekend(day)
+    return False
+
+def is_weekend(day):
+    """Détermine si un jour est un samedi ou un dimanche."""
+    day_name = day.split(" ")[0]
+    return day_name in ["Sam.", "Dim."]
+
+
+def generate_planning(agents, vacations, week_schedule, dayOff):
     model = cp_model.CpModel()
     
     # Ajuster les durées des vacations en multipliant par 10 pour éliminer les décimales
     jour_duration = int(config['vacation_durations']['Jour'] * 10)
     nuit_duration = int(config['vacation_durations']['Nuit'] * 10)
     cdp_duration = int(config['vacation_durations']['CDP'] * 10)
+    conge_duration = int(config['vacation_durations']['Conge'] * 10)
     
     ########################################################
     # Variables
@@ -199,9 +219,12 @@ def generate_planning(agents, vacations, week_schedule):
         total_hours[agent_name] = sum(
             planning[(agent_name, day, 'Jour')] * jour_duration +
             planning[(agent_name, day, 'Nuit')] * nuit_duration +
-            planning[(agent_name, day, 'CDP')] * cdp_duration
+            planning[(agent_name, day, 'CDP')] * cdp_duration +
+            # Ajout de la durée de congé pour chaque jour de congé détecté
+            (conge_duration if is_vacation_day(agent_name, day, dayOff) and not is_weekend(day) else 0)
             for day in week_schedule
         )
+        print(f"Congé pour {agent_name}: {sum((conge_duration if is_vacation_day(agent_name, day, dayOff) else 0) for day in week_schedule)}")
         
     # Imposer que la différence entre le minimum et le maximum d'heures travaillées par les agents soit limitée
     min_hours = model.NewIntVar(0, 10000, 'min_hours')  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
@@ -533,10 +556,8 @@ def generate_planning(agents, vacations, week_schedule):
     # Ajouter l'équilibrage des week-ends complets
     
     total_weekends = sum(1 for day in week_schedule if "Sam" in day)    # Nombre total de week-ends dans la période
-    print("Total weekends - l.536:", total_weekends)
     # Doublez la cible pour tenir compte de deux vacations (Jour et Nuit) par week-end
     target_weekends_per_agent = (total_weekends * 2) // len(agents)  # Nombre de week-ends idéal par agent
-    print("Target weekends per agent - l.538:", target_weekends_per_agent)
     
     # Initialiser les compteurs de week-ends travaillés pour chaque agent
     weekends_worked = {}
