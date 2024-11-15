@@ -65,7 +65,7 @@
       "name": "Agent6",
       "preferences": {
         "preferred": ["Nuit"],
-        "avoid": ["Jour"]
+        "avoid": []
         },
       "unavailable": ["07-12-2024", "11-12-2024"],
       "training": ["20-11-2024"],
@@ -80,7 +80,8 @@
   "vacation_durations": {
     "Jour": 12,
     "Nuit": 12,
-    "CDP": 5.5
+    "CDP": 5.5,
+    "Conge": 7
   },
   "holidays": [
     "01-01",
