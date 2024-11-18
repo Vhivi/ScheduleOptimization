@@ -419,6 +419,37 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     ########################################################
     
     ########################################################
+    # Limiter les vacations avant et après une formation
+    for agent in agents:
+        agent_name = agent['name']
+        
+        if "training" in agent:
+            # Récupérer les jours de formation de l'agent
+            training_days = [datetime.strptime(date, '%d-%m-%Y').strftime("%d-%m") for date in agent['training']]
+            
+            for day_idx, day in enumerate(week_schedule):
+                if any(training_day in day for training_day in training_days):
+                    # Vérifier le jour précédent (veille de la formation)
+                    if day_idx > 0:
+                        previous_day = week_schedule[day_idx - 1]
+                        
+                        # Si une vacation est attribuée la veille, elle doit être CDP ou rien
+                        for vacation in vacations:
+                            if vacation != 'CDP':
+                                model.Add(planning[(agent_name, previous_day, vacation)] == 0)
+
+                    # Vérifier le jour suivant (lendemain de la formation)
+                    if day_idx < len(week_schedule) - 1:
+                        next_day = week_schedule[day_idx + 1]
+                        
+                        # Si une vacation est attribuée le lendemain, elle doit être CDP, Nuit ou rien
+                        allowed_vacations = ['CDP', 'Nuit']
+                        for vacation in vacations:
+                            if vacation not in allowed_vacations:
+                                model.Add(planning[(agent_name, next_day, vacation)] == 0)
+    ########################################################
+    
+    ########################################################
     # Interdire une vacation pour une exclusion de vacation
     for agent in agents:
         agent_name = agent['name']
