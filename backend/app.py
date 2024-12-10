@@ -151,6 +151,8 @@ def is_weekend(day):
 def generate_planning(agents, vacations, week_schedule, dayOff):
     model = cp_model.CpModel()
     
+    weeks_split = split_into_weeks(week_schedule) # Diviser week_schedule en semaines
+    
     # Ajuster les durées des vacations en multipliant par 10 pour éliminer les décimales
     jour_duration = int(config['vacation_durations']['Jour'] * 10)
     nuit_duration = int(config['vacation_durations']['Nuit'] * 10)
@@ -217,7 +219,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     for agent in agents:
         agent_name = agent['name']
         
-        for week in weeks:
+        for week in weeks_split:
             # Limiter le nombre de vacation CDP à 3 par semaine (du lundi au dimanche)
             model.Add(sum(planning[(agent_name, day, 'CDP')] for day in week) <= 2)
     ########################################################
@@ -269,6 +271,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     ########################################################
     # Congés des agents
     date_format_full = "%d-%m-%Y"
+    total_hours = {}
     
     for agent in agents:
         agent_name = agent['name']
@@ -316,19 +319,19 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     # Limitation à 3 vacations de Jour par semaine
     # Convertir week_schedule en objet datetime pour faciliter le regroupement par semaine
     week_days = [(day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in week_schedule]
-    weeks = defaultdict(list)
+    weeks_dict = defaultdict(list)
     
     # Regrouper les jours par semaine
     for day_str, day_date in week_days:
         # `isocalendar()` renvoie un tuple (année, semaine, jour) ce qui permet de regrouper par semaine
         # Utiliser une clé lisible en chaîne de caractères pour le regroupement (année-semaine)
         week_number = day_date.isocalendar()[:2]
-        weeks[week_number].append(day_str)
+        weeks_dict[week_number].append(day_str)
         
     # Limiter à 3 vacations de Jour par semaine
     for agent in agents:
         agent_name = agent['name']
-        for week, days in weeks.items():
+        for week, days in weeks_dict.items():
             # Limiter les vacations "Jour" à 3 par semaine pour cet agent
             model.Add(sum(planning[(agent_name, day, 'Jour')] for day in days) <= 3)
     ########################################################
@@ -592,12 +595,10 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
 
     ########################################################
     # Limitation du nombre de Nuit à 3 par semaine et gestion des vacations Jour et CDP
-    weeks = split_into_weeks(week_schedule) # Diviser week_schedule en semaines
-    
     for agent in agents:
         agent_name = agent["name"]
         
-        for week in weeks:
+        for week in weeks_split:
             # Limiter le nombre de vacation Nuit à 3 par semaine (du lundi au dimanche)
             model.Add(sum(planning[(agent_name, day, 'Nuit')] for day in week) <= 3)
             
