@@ -1,10 +1,11 @@
-from flask import Flask, jsonify, request
 import json
-from flask_cors import CORS
-from ortools.sat.python import cp_model
-from datetime import datetime, timedelta
 import locale
 from collections import defaultdict
+from datetime import datetime, timedelta
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from ortools.sat.python import cp_model
 
 app = Flask(__name__)
 CORS(app)
