@@ -1,100 +1,209 @@
-# Projet de Génération de Planning de Vacations
+# 📆 Schedule Optimization Project
 
-## Description
+## 🔬 Overview
 
-Ce projet a pour objectif de générer un planning de vacations pour un ensemble d'agents répartis sur différents postes de travail. L'algorithme prend en compte plusieurs contraintes afin de garantir une répartition équitable des vacations et le respect des règles relatives aux temps de repos et aux volumes horaires. La génération du planning est optimisée à l'aide de Google OR-Tools pour répondre aux principes d'optimisation tout en respectant les contraintes définies.
+📆 Schedule Optimization Project is a 🛠️ tool designed to generate optimized work schedules for a team of 👥 agents. It considers various constraints like ⏳ availability, 🎓 training days, 💖 preferences, and more to create ⚖️ balanced schedules. The project aims to minimize ⚡ scheduling conflicts while maximizing 🤝 fairness and 🚀 efficiency.
 
-## Fonctionnalités
+---
 
-### Répartition des vacations
+## ⚠️ Warning
 
-- Génération d'un planning pour `n` agents sur 3 postes (Jour, CDP, Nuit) du lundi au vendredi, puis sur 2 postes (Jour, Nuit) le week-end.
-- Chaque vacation est attribuée à un seul agent.
-- Chaque agent travaille au maximum une vacation par jour.
-- Répartition équitable des vacations, chaque agent doit travailler au moins une vacation.
+⚠️ This project is specifically designed for generating private security guard schedules, considering the rules and constraints imposed by the French Labour Code.
 
-### Gestion des exceptions
+📌 It is the user's responsibility to ensure that the rules specific to their organization or sector are also respected. This project may require 🛠️ adjustments for other domains or legislative frameworks.
 
-- **Week-end** : Samedi et dimanche, seules les vacations Jour et Nuit sont disponibles.
-- **Jours fériés** : Gestion des jours fériés avec uniquement des vacations Jour et Nuit.
-- **Congés** : Un agent en congé ne peut pas être planifié pour une vacation.
-- **Indisponibilité** : Un agent indisponible ne peut pas travailler le jour concerné.
-- **Récupération** : Un agent en récupération ne peut pas être assigné à une vacation.
-- **Formation** : Un agent en formation ne peut pas être planifié pour une vacation.
+---
 
-### Contraintes sur les vacations et les repos
+## ✨ Key Features
 
-- Un agent ne peut pas travailler la nuit et le matin suivant (nécessité de 48h de repos entre une vacation de nuit et une vacation de jour).
-- Volume horaire hebdomadaire : un agent ne peut pas travailler plus de 48h par semaine (recommandé : 35h).
-- Volume horaire mensuel : un agent ne peut pas travailler plus de 220h par mois (recommandé : 151,67h).
-- Volume horaire annuel : un agent ne peut pas travailler plus de 1607h par an (recommandé : 1607h).
-- Repos hebdomadaire : chaque agent doit avoir au moins 2 jours de repos consécutifs par semaine.
-- Volume horaire des vacations :
-  - Jour : 12h
-  - Nuit : 12h
-  - CDP : 5,5h
-- Temps de repos entre deux vacations : 12h minimum.
+### 📊 Intelligent Scheduling
 
-### Préférences des agents
+- 🔄 Generate tailored schedules accommodating agent availability, vacations, and preferences.
+- ⚒️ Optimize workloads while adhering to strict and flexible constraints.
 
-- **Vacations préférées** : chaque agent peut indiquer des vacations qu'il souhaite travailler en priorité.
-- **Vacations à éviter** : chaque agent peut indiquer des vacations qu'il ne souhaite pas travailler.
-- **Vacations en binôme** : (à voir si on intègre cette option) chaque agent peut indiquer des vacations qu'il souhaite travailler en binôme.
+### ⚖️ Constraint Management
 
-### Génération du planning
+- **❌ Hard Constraints**: Rules strictly enforced (e.g., no overlapping shifts).
+- **💖 Soft Constraints**: Preferences considered for optimization (e.g., preferred shifts).
 
-- Génération d'un planning à partir d'une date de début et d'une date de fin sur un **calendrier réel** et non pas sur une période fictive.
-- Génération d'un planning pour une période donnée (1 semaine, 1 mois, 1 an).
-- Affichage du planning sous forme de tableau.
-- Affichage des vacations de chaque agent.
-- Affichage coloré des vacations suivant le poste.
-- Export du planning au format PDF ou d'autres formats.
-- **Optimisation via Google OR-Tools** pour générer les plannings en tenant compte des contraintes.
+### 📂 Modular Configuration
 
-## Stack Technique
+- 🔨 Flexible parameters defined through the `config.json` file.
+- ✉️ Support for agent preferences, exclusions, and training days.
 
-- **Backend** : Flask pour gérer les requêtes et la logique serveur.
-- **Frontend** : Vue.js pour une interface utilisateur simple et réactive.
-- **Optimisation** : Google OR-Tools pour la génération optimisée des plannings.
-- **Configuration** : Paramètres gérés via un fichier `config.json`.
-- **Base de données** : Utilisation possible de SQLite à l'avenir pour persister les données, mais la configuration reste actuellement sur des fichiers JSON.
+### 🔧 Visual Interactivity
 
-## Installation
+- 🔍 Vue.js-powered frontend for seamless schedule visualization and interaction.
 
-1. Clonez ce dépôt :
+---
+
+## 🚀 Setup and Usage
+
+### 🛠️ Prerequisites
+
+Ensure the following tools are installed:
+
+- 💻 Python 3.10+
+- 📦 Node.js and npm
+- 🔐 Git
+
+### 🔄 Installation Steps
+
+1. 🔧 Clone the repository:
 
    ```bash
-   git clone https://github.com/votre-utilisateur/projet-planning-vacations.git
+   git clone https://github.com/your-username/schedule-optimization.git
+   cd schedule-optimization
    ```
 
-2. Installez les dépendances :
+2. ✏️ Configure the application:
+
+   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
+
+3. 🔧 Start the backend server:
 
    ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Installez Google OR-Tools :
-
-   ```bash
-   pip install ortools
-   ```
-
-## Utilisation
-
-1. Démarrez le serveur Flask :
-
-   ```bash
+   cd backend
    flask run
    ```
 
-2. Accédez à l'interface web via votre navigateur à l'adresse indiquée (par défaut `http://127.0.0.1:5000/`).
+4. 🎩 Launch the frontend server:
 
-3. Depuis l'interface web, configurez les agents, postes et préférences, puis générez et visualisez le planning.
+   Note: The `npm install` step is mandatory only during the initial setup or when new dependencies are added. You can skip this step during subsequent launches if no changes have been made to the dependencies.
 
-## Contribution
+   ```bash
+   cd frontend
+   npm install
+   npm run serve
+   ```
 
-Pour le moment, ce projet est pour usage personnel, les contributions ne sont pas ouvertes.
+5. 🔍 Access the application at `http://localhost:8080` and start scheduling!
 
-## Licence
+---
 
-Distribué sous la licence MIT. Voir `LICENSE` pour plus d'informations.
+## 📕 Configuration File (`config.json`)
+
+### 🔬 Structure Overview
+
+Dates in the `config.json` file should be formatted as `dd-mm-YY` for full dates or `dd-mm` for recurring holidays and events.
+
+The `config.json` file serves as the core customization hub:
+
+```json
+{
+  "agents": [
+    {
+      "name": "Agent1",
+      "preferences": {
+        "preferred": ["Jour", "CDP"],
+        "avoid": ["Nuit"]
+        },
+      "unavailable": ["17-11-2024", "07-12-2024"],
+      "training": ["19-11-2024"],
+      "exclusion": ["25-12-2024"],
+      "vacation": {
+        "start": "28-10-2024",
+        "end": "04-11-2024"
+      }
+   }
+  ],
+  "vacations": ["Jour", "Nuit", "CDP"],
+  "vacation_durations": {
+    "Jour": 12,
+    "Nuit": 12,
+    "CDP": 5.5,
+    "Conge": 7
+  },
+  "holidays": ["01-01", "25-12"]
+}
+```
+
+### ✏️ Customizable Parameters
+
+- **👥 Agents**:
+  - Define preferences, availability, training days, and vacation periods.
+- **⏳ Vacations**:
+  - Specify shift types and their durations.
+- **🎁 Holidays**:
+  - Add public holidays to consider in scheduling.
+
+---
+
+## 💡 Development Workflow
+
+### 🔧 Backend
+
+- Powered by Flask and Google OR-Tools.
+- Modular structure for adding constraints via the `generate_planning` function.
+
+### 🎩 Frontend
+
+- Built with Vue.js for a dynamic user experience.
+- Includes filters, customization options, and hot reloading for rapid development.
+
+### 🕵 Adding Constraints
+
+1. ✏️ Modify the `generate_planning` function in `app.py`.
+2. 🔧 Check that your constraint is well integrated and produces the desired effects.
+3. ✉️ Update documentation and configuration as needed.
+
+---
+
+## 🔍 Planned Features and Roadmap
+
+📔 As this is a personal project tailored to meet my current needs, no formal roadmap is planned. However, one potential improvement could be the 🌐 standardization of language throughout the 💻 code and 📝 comments.
+
+---
+
+## 🎉 Contributing
+
+Contributions are welcome! This project thrives on feedback and community input. Here’s how you can contribute:
+
+1. **Fork the Repository**: Create a copy of the project under your GitHub account.
+
+2. **Make Your Changes**: Work on the improvements you’d like to add. Be sure to follow the project’s coding style and guidelines.
+
+3. **Submit a Pull Request**: Propose your changes by creating a pull request. Provide a clear description of your updates and the problem they solve.
+
+### Areas to Contribute
+
+- **Bug Fixes**: Identify and resolve issues in the existing code.
+- **Feature Enhancements**: Add new functionalities or optimize existing ones.
+- **Documentation Improvements**: Enhance clarity, fix errors, or update outdated content.
+- **Code Standardization**: Help in uniformizing the language and comments in the codebase.
+
+Contributions of all kinds are appreciated, and we’re here to support you throughout the process!
+
+---
+
+## 📢 License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+---
+
+## 🌈 Acknowledgments
+
+Special thanks to the following:
+
+- [Google OR-Tools](https://developers.google.com/optimization)
+- [Vue.js](https://vuejs.org)
+- [Flask](https://flask.palletsprojects.com)
+
+The open-source community for inspiration and examples:
+
+- [Muafira Thasni - Nurse Scheduling](https://github.com/MuafiraThasni/Nurse-Scheduling)
+- [D-Wave Systems Examples - Nurse Scheduling](https://github.com/dwave-examples/nurse-scheduling)
+
+- [https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project](https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project)
+- [https://thoughtbot.com/blog/how-to-write-a-great-readme](https://thoughtbot.com/blog/how-to-write-a-great-readme)
+- [https://www.makeareadme.com](https://www.makeareadme.com)
+- [https://github.com/hackergrrl/art-of-readme](https://github.com/hackergrrl/art-of-readme)
+- [https://github.com/hackergrrl/common-readme](https://github.com/hackergrrl/common-readme)
+- [https://github.com/RichardLitt/standard-readme](https://github.com/RichardLitt/standard-readme)
+
+And **you**, for exploring or/and contributing to this project!
+
+---
+
+Enjoy scheduling smarter with the Schedule Optimization Project! ✨
