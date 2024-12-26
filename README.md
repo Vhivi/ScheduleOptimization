@@ -166,6 +166,11 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - [Vue.js](https://vuejs.org)
 - [Flask](https://flask.palletsprojects.com)
 
+For ideas and inspiration for this project, I would like to thank the following people:
+
+- [Muafira Thasni](https://github.com/MuafiraThasni/Nurse-Scheduling)
+- [D-Wave Systems Examples](https://github.com/dwave-examples/nurse-scheduling)
+
 ---
 
 Happy Scheduling! 🚀
