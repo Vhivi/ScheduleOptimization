@@ -189,7 +189,20 @@ Special thanks to the following:
 - [Google OR-Tools](https://developers.google.com/optimization)
 - [Vue.js](https://vuejs.org)
 - [Flask](https://flask.palletsprojects.com)
-- The open-source community for inspiration and examples.
+
+The open-source community for inspiration and examples:
+
+- [Muafira Thasni](https://github.com/MuafiraThasni/Nurse-Scheduling)
+- [D-Wave Systems Examples](https://github.com/dwave-examples/nurse-scheduling)
+
+- [https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project](https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project)
+- [https://thoughtbot.com/blog/how-to-write-a-great-readme](https://thoughtbot.com/blog/how-to-write-a-great-readme)
+- [https://www.makeareadme.com](https://www.makeareadme.com)
+- [https://github.com/hackergrrl/art-of-readme](https://github.com/hackergrrl/art-of-readme)
+- [https://github.com/hackergrrl/common-readme](https://github.com/hackergrrl/common-readme)
+- [https://github.com/RichardLitt/standard-readme](https://github.com/RichardLitt/standard-readme)
+
+And **you**, for exploring or/and contributing to this project!
 
 ---
 
