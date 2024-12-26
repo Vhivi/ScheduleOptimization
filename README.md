@@ -4,10 +4,9 @@
   - [Description](#description)
   - [⚠️ Warning ⚠️](#️-warning-️)
   - [Features](#features)
-  - [Installation](#installation)
-    - [Prerequisites](#prerequisites)
-    - [Setup](#setup)
   - [Usage](#usage)
+    - [Prerequisites](#prerequisites)
+    - [Follow these steps to run the project](#follow-these-steps-to-run-the-project)
   - [Configuration File (`config.json`)](#configuration-file-configjson)
   - [Development](#development)
     - [Backend](#backend)
@@ -38,7 +37,7 @@ It is the user's responsibility to ensure that the rules specific to their organ
 - **Frontend Visualization**:
   - A Vue.js-based interface to visualize and interact with generated schedules.
 
-## Installation
+## Usage
 
 ### Prerequisites
 
@@ -48,7 +47,7 @@ Before you start, make sure you have installed the following tools:
 - [Node.js](https://nodejs.org/)
 - [npm](https://www.npmjs.com/)
 
-### Setup
+### Follow these steps to run the project
 
 1. Clone the repository:
 
@@ -57,45 +56,26 @@ Before you start, make sure you have installed the following tools:
    cd schedule-optimization
    ```
 
-2. Set up the environment:
+2. Configure the application:
+   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and other parameters. (More details on configuration below.)
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # For Windows: .venv\Scripts\activate
-   ```
-
-3. Set up the frontend:
-
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
-4. Configure the application:
-   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and other parameters.
-
-5. Run the backend server:
+3. Run the backend server:
 
    ```bash
    cd ../backend
-   python app.py
+   flask run
    ```
 
-6. Run the frontend development server:
+4. Run the frontend development server:
 
    ```bash
    cd ../frontend
    npm run serve
    ```
 
-7. Access the application at [http://localhost:8080](http://localhost:8080).
+5. Access the application at [http://localhost:8080](http://localhost:8080).
 
-## Usage
-
-1. Define your configuration in `config.json`.
-2. Start both the backend and frontend servers.
-3. Open the frontend in your browser to visualize and manage schedules.
-4. Adjust constraints and regenerate schedules as needed.
+6. Generate a schedule by clicking the "Generate Schedule" button after choosing the desired date range.
 
 ## Configuration File (`config.json`)
 
