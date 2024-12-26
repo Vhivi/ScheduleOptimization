@@ -192,8 +192,8 @@ Special thanks to the following:
 
 The open-source community for inspiration and examples:
 
-- [Muafira Thasni](https://github.com/MuafiraThasni/Nurse-Scheduling)
-- [D-Wave Systems Examples](https://github.com/dwave-examples/nurse-scheduling)
+- [Muafira Thasni - Nurse Scheduling](https://github.com/MuafiraThasni/Nurse-Scheduling)
+- [D-Wave Systems Examples - Nurse Scheduling](https://github.com/dwave-examples/nurse-scheduling)
 
 - [https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project](https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project)
 - [https://thoughtbot.com/blog/how-to-write-a-great-readme](https://thoughtbot.com/blog/how-to-write-a-great-readme)
