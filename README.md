@@ -2,6 +2,7 @@
 
 - [Schedule Optimization Project](#schedule-optimization-project)
   - [Description](#description)
+  - [⚠️ Warning ⚠️](#️-warning-️)
   - [Features](#features)
   - [Installation](#installation)
     - [Prerequisites](#prerequisites)
@@ -19,6 +20,12 @@
 ## Description
 
 Schedule Optimization Project is a tool designed to generate optimized work schedules for a team of agents. It considers various constraints such as availability, training days, preferences, and more to create balanced schedules. The project aims to minimize scheduling conflicts while maximizing fairness and efficiency.
+
+## ⚠️ Warning ⚠️
+
+This project is specifically designed for the **generation of private security guard schedules**, taking into account the rules and constraints imposed by the **French Labour Code**.
+
+It is the user's responsibility to ensure that the rules specific to their organisation or sector are also respected. This project may require adjustments for other areas or legislative frameworks.
 
 ## Features
 
