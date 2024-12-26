@@ -1,85 +1,93 @@
-# Schedule Optimization Project
+# 📆 Schedule Optimization Project
 
-- [Schedule Optimization Project](#schedule-optimization-project)
-  - [Description](#description)
-  - [⚠️ Warning ⚠️](#️-warning-️)
-  - [Features](#features)
-  - [Usage](#usage)
-    - [Prerequisites](#prerequisites)
-    - [Follow these steps to run the project](#follow-these-steps-to-run-the-project)
-  - [Configuration File (`config.json`)](#configuration-file-configjson)
-  - [Development](#development)
-    - [Backend](#backend)
-    - [Frontend](#frontend)
-    - [Adding Constraints](#adding-constraints)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [Acknowledgments](#acknowledgments)
+## 🔬 Overview
 
-## Description
+📆 Schedule Optimization Project is a 🛠️ tool designed to generate optimized work schedules for a team of 👥 agents. It considers various constraints like ⏳ availability, 🎓 training days, 💖 preferences, and more to create ⚖️ balanced schedules. The project aims to minimize ⚡ scheduling conflicts while maximizing 🤝 fairness and 🚀 efficiency.
 
-Schedule Optimization Project is a tool designed to generate optimized work schedules for a team of agents. It considers various constraints such as availability, training days, preferences, and more to create balanced schedules. The project aims to minimize scheduling conflicts while maximizing fairness and efficiency.
+---
 
-## ⚠️ Warning ⚠️
+## ⚠️ Warning
 
-This project is specifically designed for the **generation of private security guard schedules**, taking into account the rules and constraints imposed by the **French Labour Code**.
+⚠️ This project is specifically designed for generating private security guard schedules, considering the rules and constraints imposed by the French Labour Code.
 
-It is the user's responsibility to ensure that the rules specific to their organisation or sector are also respected. This project may require adjustments for other areas or legislative frameworks.
+📌 It is the user's responsibility to ensure that the rules specific to their organization or sector are also respected. This project may require 🛠️ adjustments for other domains or legislative frameworks.
 
-## Features
+---
 
-- **Dynamic Schedule Generation**: Generate work schedules based on input data such as agents, vacations, and availability.
-- **Constraint Handling**:
-  - Hard Constraints: Rules that must always be respected (e.g., no overlapping vacations).
-  - Soft Constraints: Rules that should be respected as much as possible (e.g., preferences for specific shifts).
-- **Modular Configuration**:
-  - Easily configure agents, shifts, and other parameters through a `config.json` file.
-- **Frontend Visualization**:
-  - A Vue.js-based interface to visualize and interact with generated schedules.
+## ✨ Key Features
 
-## Usage
+### 📊 Intelligent Scheduling
 
-### Prerequisites
+- 🔄 Generate tailored schedules accommodating agent availability, vacations, and preferences.
+- ⚒️ Optimize workloads while adhering to strict and flexible constraints.
 
-Before you start, make sure you have installed the following tools:
+### ⚖️ Constraint Management
 
-- [Python 3.10+](https://www.python.org/)
-- [Node.js](https://nodejs.org/)
-- [npm](https://www.npmjs.com/)
+- **❌ Hard Constraints**: Rules strictly enforced (e.g., no overlapping shifts).
+- **💖 Soft Constraints**: Preferences considered for optimization (e.g., preferred shifts).
 
-### Follow these steps to run the project
+### 📂 Modular Configuration
 
-1. Clone the repository:
+- 🔨 Flexible parameters defined through the `config.json` file.
+- ✉️ Support for agent preferences, exclusions, and training days.
+
+### 🔧 Visual Interactivity
+
+- 🔍 Vue.js-powered frontend for seamless schedule visualization and interaction.
+
+---
+
+## 🚀 Setup and Usage
+
+### 🛠️ Prerequisites
+
+Ensure the following tools are installed:
+
+- 💻 Python 3.10+
+- 📦 Node.js and npm
+- 🔐 Git
+
+### 🔄 Installation Steps
+
+1. 🔧 Clone the repository:
 
    ```bash
    git clone https://github.com/your-username/schedule-optimization.git
    cd schedule-optimization
    ```
 
-2. Configure the application:
-   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and other parameters. (More details on configuration below.)
+2. ✏️ Configure the application:
 
-3. Run the backend server:
+   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
+
+3. 🔧 Start the backend server:
 
    ```bash
-   cd ../backend
+   cd backend
    flask run
    ```
 
-4. Run the frontend development server:
+4. 🎩 Launch the frontend server:
+
+   Note: The `npm install` step is mandatory only during the initial setup or when new dependencies are added. You can skip this step during subsequent launches if no changes have been made to the dependencies.
 
    ```bash
-   cd ../frontend
+   cd frontend
+   npm install
    npm run serve
    ```
 
-5. Access the application at [http://localhost:8080](http://localhost:8080).
+5. 🔍 Access the application at `http://localhost:8080` and start scheduling!
 
-6. Generate a schedule by clicking the "Generate Schedule" button after choosing the desired date range.
+---
 
-## Configuration File (`config.json`)
+## 📕 Configuration File (`config.json`)
 
-The `config.json` file is structured as follows:
+### 🔬 Structure Overview
+
+Dates in the `config.json` file should be formatted as `dd-mm-YY` for full dates or `dd-mm` for recurring holidays and events.
+
+The `config.json` file serves as the core customization hub:
 
 ```json
 {
@@ -87,77 +95,102 @@ The `config.json` file is structured as follows:
     {
       "name": "Agent1",
       "preferences": {
-        "preferred": ["Jour"],
+        "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
-      },
-      "unavailable": ["2024-01-01"],
-      "training": ["2024-01-05"],
+        },
+      "unavailable": ["17-11-2024", "07-12-2024"],
+      "training": ["19-11-2024"],
       "exclusion": ["25-12-2024"],
       "vacation": {
-        "start": "2024-02-01",
-        "end": "2024-02-10"
+        "start": "28-10-2024",
+        "end": "04-11-2024"
       }
-    }
+   }
   ],
-    "vacations": ["Jour", "Nuit", "CDP"],
+  "vacations": ["Jour", "Nuit", "CDP"],
   "vacation_durations": {
     "Jour": 12,
     "Nuit": 12,
     "CDP": 5.5,
     "Conge": 7
   },
-  "holidays": [
-    "01-01",
-    "21-04",
-    "01-05",
-    "08-05",
-    "29-05",
-    "09-06",
-    "14-07",
-    "15-08",
-    "01-11",
-    "11-11",
-    "25-12"
-  ]
+  "holidays": ["01-01", "25-12"]
 }
 ```
 
-## Development
+### ✏️ Customizable Parameters
 
-### Backend
+- **👥 Agents**:
+  - Define preferences, availability, training days, and vacation periods.
+- **⏳ Vacations**:
+  - Specify shift types and their durations.
+- **🎁 Holidays**:
+  - Add public holidays to consider in scheduling.
 
-The backend is built using Flask and Google OR-Tools. It handles schedule generation based on the constraints defined in `config.json`.
+---
 
-### Frontend
+## 💡 Development Workflow
 
-The frontend is developed using Vue.js. It provides a user-friendly interface for viewing and interacting with schedules.
+### 🔧 Backend
 
-### Adding Constraints
+- Powered by Flask and Google OR-Tools.
+- Modular structure for adding constraints via the `generate_planning` function.
 
-Constraints can be added or modified in the backend `app.py` file under the `generate_planning` function. They are categorized as:
+### 🎩 Frontend
 
-- **Hard Constraints**: Enforced without exceptions.
-- **Soft Constraints**: Included in the optimization objective but may not always be satisfied.
+- Built with Vue.js for a dynamic user experience.
+- Includes filters, customization options, and hot reloading for rapid development.
 
-## Contributing
+### 🕵 Adding Constraints
 
-Contributions are welcome! Please fork the repository and submit a pull request with your changes.
+1. ✏️ Modify the `generate_planning` function in `app.py`.
+2. 🔧 Check that your constraint is well integrated and produces the desired effects.
+3. ✉️ Update documentation and configuration as needed.
 
-## License
+---
+
+## 🔍 Planned Features and Roadmap
+
+📔 As this is a personal project tailored to meet my current needs, no formal roadmap is planned. However, one potential improvement could be the 🌐 standardization of language throughout the 💻 code and 📝 comments.
+
+---
+
+## 🎉 Contributing
+
+Contributions are welcome! This project thrives on feedback and community input. Here’s how you can contribute:
+
+1. **Fork the Repository**: Create a copy of the project under your GitHub account.
+
+2. **Make Your Changes**: Work on the improvements you’d like to add. Be sure to follow the project’s coding style and guidelines.
+
+3. **Submit a Pull Request**: Propose your changes by creating a pull request. Provide a clear description of your updates and the problem they solve.
+
+### Areas to Contribute
+
+- **Bug Fixes**: Identify and resolve issues in the existing code.
+- **Feature Enhancements**: Add new functionalities or optimize existing ones.
+- **Documentation Improvements**: Enhance clarity, fix errors, or update outdated content.
+- **Code Standardization**: Help in uniformizing the language and comments in the codebase.
+
+Contributions of all kinds are appreciated, and we’re here to support you throughout the process!
+
+---
+
+## 📢 License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
 
-## Acknowledgments
+---
+
+## 🌈 Acknowledgments
+
+Special thanks to the following:
 
 - [Google OR-Tools](https://developers.google.com/optimization)
 - [Vue.js](https://vuejs.org)
 - [Flask](https://flask.palletsprojects.com)
-
-For ideas and inspiration for this project, I would like to thank the following people:
-
-- [Muafira Thasni](https://github.com/MuafiraThasni/Nurse-Scheduling)
-- [D-Wave Systems Examples](https://github.com/dwave-examples/nurse-scheduling)
+- The open-source community for inspiration and examples.
 
 ---
 
-Happy Scheduling! 🚀
+Enjoy scheduling smarter with the Schedule Optimization Project! ✨
