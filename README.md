@@ -42,9 +42,11 @@ It is the user's responsibility to ensure that the rules specific to their organ
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Node.js (for the frontend)
-- npm or yarn
+Before you start, make sure you have installed the following tools:
+
+- [Python 3.10+](https://www.python.org/)
+- [Node.js](https://nodejs.org/)
+- [npm](https://www.npmjs.com/)
 
 ### Setup
 
