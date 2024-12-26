@@ -57,13 +57,11 @@ Before you start, make sure you have installed the following tools:
    cd schedule-optimization
    ```
 
-2. Set up the backend:
+2. Set up the environment:
 
    ```bash
-   cd backend
    python -m venv .venv
    source .venv/bin/activate  # For Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
    ```
 
 3. Set up the frontend:
