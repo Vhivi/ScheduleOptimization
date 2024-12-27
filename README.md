@@ -2,7 +2,7 @@
 
 ## 🔬 Overview
 
-📆 Schedule Optimization Project is a 🛠️ tool designed to generate optimized work schedules for a team of 👥 agents. It considers various constraints like ⏳ availability, 🎓 training days, 💖 preferences, and more to create ⚖️ balanced schedules. The project aims to minimize ⚡ scheduling conflicts while maximizing 🤝 fairness and 🚀 efficiency.
+📆 Schedule Optimization Project is a tool designed to generate optimized work schedules for a team of agents. It considers various constraints like availability, training days, preferences, and more to create balanced schedules. The project aims to minimize scheduling conflicts while maximizing fairness and efficiency.
 
 ---
 
@@ -151,7 +151,7 @@ The `config.json` file serves as the core customization hub:
 
 ## 🔍 Planned Features and Roadmap
 
-📔 As this is a personal project tailored to meet my current needs, no formal roadmap is planned. However, one potential improvement could be the 🌐 standardization of language throughout the 💻 code and 📝 comments.
+📔 As this is a personal project tailored to meet my current needs, no formal roadmap is planned. However, one potential improvement could be the standardization of language throughout the code and comments.
 
 ---
 
