@@ -1,0 +1,4 @@
+Flask==3.1.0
+Flask_Cors==5.0.0
+gunicorn
+ortools==9.11.4210
