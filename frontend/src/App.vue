@@ -39,6 +39,8 @@ import axios from 'axios';
 import PlanningTable from './components/PlanningTable.vue';
 import ConfigComponent from './components/ConfigComponent.vue';
 
+const API_BASE_URL = process.env.VUE_APP_API_URL;
+
 export default {
   components: {
     PlanningTable,
@@ -66,7 +68,7 @@ export default {
     async generatePlanning() {
       try {
         // Envoyer la requête à Flask pour générer le planning avec les dates de début et de fin
-        const response = await axios.post('http://127.0.0.1:5000/generate-planning', {
+        const response = await axios.post('${API_BASE_URL}/generate-planning', {
           start_date: this.startDate,
           end_date: this.endDate
         });
