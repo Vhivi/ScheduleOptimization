@@ -8,7 +8,7 @@ from flask_cors import CORS
 from ortools.sat.python import cp_model
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "https://schedule-optimization.vercel.app/"}})
 
 
 @app.route("/config")
