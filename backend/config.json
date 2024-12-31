@@ -6,12 +6,12 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
-      "unavailable": ["17-11-2024", "07-12-2024"],
-      "training": ["19-11-2024"],
-      "exclusion": ["25-12-2024"],
+      "unavailable": [],
+      "training": [],
+      "exclusion": [],
       "vacation": {
-        "start": "28-10-2024",
-        "end": "04-11-2024"
+        "start": "24-03-2025",
+        "end": "30-03-2025"
       }
       },
     {
@@ -22,8 +22,11 @@
         },
       "unavailable": [],
       "training": [],
-      "exclusion": ["31-12-2024", "01-01-2025"],
-      "vacation": {}
+      "exclusion": ["01-01-2025"],
+      "vacation": {
+        "start": "10-03-2025",
+        "end": "23-03-2025"
+      }
       },
     {
       "name": "Agent3",
@@ -31,9 +34,9 @@
         "preferred": ["Nuit"],
         "avoid": []
         },
-      "unavailable": ["25-11-2024", "06-12-2024", "21-01-2025"],
+      "unavailable": ["21-01-2025"],
       "training": [],
-      "exclusion": ["24-12-2024"],
+      "exclusion": [],
       "vacation": {}
       },
     {
@@ -42,13 +45,10 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
-      "unavailable": ["26-11-2024", "19-12-2024"],
+      "unavailable": [],
       "training": [],
-      "exclusion": ["31-12-2024", "01-01-2025", "11-01-2025", "12-01-2025"],
-      "vacation": {
-        "start": "05-12-2024",
-        "end": "11-12-2024"
-      }
+      "exclusion": ["01-01-2025", "11-01-2025", "12-01-2025"],
+      "vacation": {}
       },
     {
       "name": "Agent5",
@@ -56,10 +56,13 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
-      "unavailable": ["17-12-2024"],
+      "unavailable": ["08-03-2025", "12-03-2025"],
       "training": [],
-      "exclusion": ["24-12-2024", "25-12-2024"],
-      "vacation": {}
+      "exclusion": [],
+      "vacation": {
+        "start": "17-02-2025",
+        "end": "21-02-2025"
+      }
       },
     {
       "name": "Agent6",
@@ -67,12 +70,12 @@
         "preferred": ["Nuit"],
         "avoid": []
         },
-      "unavailable": ["07-12-2024", "11-12-2024"],
-      "training": ["20-11-2024"],
+      "unavailable": [],
+      "training": [],
       "exclusion": [],
       "vacation": {
-        "start": "11-11-2024",
-        "end": "17-11-2024"
+        "start": "24-02-2025",
+        "end": "09-03-2025"
       }
       }
   ],
