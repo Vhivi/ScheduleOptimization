@@ -324,6 +324,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
 
     for agent in agents:
         agent_name = agent["name"]
+        total_hours[agent_name] = 0 # Initialiser le total d'heures pour l'agent
 
         # Récupérer les informations de congés s'il y en a
         vacation = agent.get("vacation")
