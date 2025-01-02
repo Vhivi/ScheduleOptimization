@@ -6,6 +6,7 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
+      "restriction": [],
       "unavailable": [],
       "training": [],
       "exclusion": [],
@@ -20,6 +21,7 @@
         "preferred": ["Nuit"],
         "avoid": ["Jour", "CDP"]
         },
+      "restriction": ["Jour"],
       "unavailable": [],
       "training": [],
       "exclusion": ["01-01-2025"],
@@ -34,6 +36,7 @@
         "preferred": ["Nuit"],
         "avoid": []
         },
+      "restriction": [],
       "unavailable": ["21-01-2025"],
       "training": [],
       "exclusion": [],
@@ -45,7 +48,8 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
-      "unavailable": [],
+      "restriction": [],
+      "unavailable": ["08-02-2025", "09-02-2025"],
       "training": [],
       "exclusion": ["01-01-2025", "11-01-2025", "12-01-2025"],
       "vacation": {}
@@ -56,12 +60,13 @@
         "preferred": ["Jour", "CDP"],
         "avoid": ["Nuit"]
         },
+      "restriction": ["Nuit"],
       "unavailable": ["08-03-2025", "12-03-2025"],
       "training": [],
       "exclusion": [],
       "vacation": {
         "start": "17-02-2025",
-        "end": "21-02-2025"
+        "end": "23-02-2025"
       }
       },
     {
@@ -70,6 +75,7 @@
         "preferred": ["Nuit"],
         "avoid": []
         },
+      "restriction": [],
       "unavailable": [],
       "training": [],
       "exclusion": [],
