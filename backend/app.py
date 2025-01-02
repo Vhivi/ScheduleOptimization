@@ -536,6 +536,20 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
                         planning[(agent_name, monday, "Nuit")] == 0
                     ).OnlyEnforceIf([saturday_night, sunday_night])
     ########################################################
+    
+    ########################################################
+    # Appliquer les restrictions
+    for agent in agents:
+        agent_name = agent["name"]
+        
+        if "restriction" in agent:
+            restricted_vacations = agent["restriction"]
+            
+            # Interdire ces vacations pour l'agent tous les jours du planning
+            for day in week_schedule:
+                for restricted_vacation in restricted_vacations:
+                    model.Add(planning[(agent_name, day, restricted_vacation)] == 0)
+    ########################################################
 
     ########################################################
     # Soft Constraints
