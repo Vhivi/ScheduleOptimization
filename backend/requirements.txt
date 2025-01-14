@@ -1,0 +1,4 @@
+Flask==3.0.3
+Flask_Cors==5.0.0
+ortools==9.11.4210
+pytest==8.3.4
