@@ -3,3 +3,12 @@
 
 # Compiled source
 __pycache__/
+
+# Cache
+.pytest_cache/
+
+# Workspace environment
+.vscode/
+
+# Logs Files
+.coverage
