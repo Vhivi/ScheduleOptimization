@@ -62,7 +62,16 @@ def generate_planning_route():
                 # Stocker les jours de congés dans un dictionnaire {agent: [début, fin]}
                 dayOff[agent["name"]] = [vacation_start, vacation_end]
 
-    # # Récupérer les dates de début et de fin
+    # Retrieve start and end dates
+    # Check whether the dates are present in the query
+    if "start_date" not in request.json or "end_date" not in request.json:
+        return jsonify({"error": "Missing start_date or end_date"}), 400
+    # Check that the dates are valid
+    if not is_valid_date(request.json["start_date"]) or not is_valid_date(
+        request.json["end_date"]
+    ):
+        return jsonify({"error": "Invalid date format"}), 400
+
     start_date = request.json["start_date"]
     end_date = request.json["end_date"]
 
@@ -83,6 +92,34 @@ def generate_planning_route():
             "training": training,
         }
     )
+
+
+def is_valid_date(date_str):
+    """
+    Check if the given string is a valid date in the format YYYY-MM-DD
+    or if the given string is valid date even if it has the right format.
+
+    Args:
+        date_str (str): The date string to validate.
+
+    Returns:
+        bool: True if the date string is valid, False otherwise.
+    """
+
+    # Check if the date string is not None and is a string
+    # If not, return False
+    # This test is necessary to avoid TypeError when calling the strptime method
+    if date_str is None or not isinstance(date_str, str):
+        return False
+
+    # Check if the date string has the right format
+    # If not, return False
+    # This test is necessary to avoid ValueError when calling the strptime method
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 
 def get_week_schedule(start_date_str, end_date_str):
