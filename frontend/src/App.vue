@@ -12,7 +12,7 @@
       <button @click="generatePlanning">Générer le planning</button>
     </div>
 
-    <!-- Afficher le tableau uniquement lorsque planningResult est défini -->
+    <!-- Display the table only when planningResult is set -->
     <div v-if="planningResult">
       <PlanningTable
         :planning="planningResult"
@@ -25,6 +25,12 @@
         :training="trainingFromConfig"
       />
     </div>
+    <!-- Otherwise, display an error message if there is an error -->
+    <div v-else-if="errorMessage" class="error-card">
+      <span class="error-icon">⚠️</span>
+      <span class="error-text">{{ errorMessage }}</span>
+    </div>
+    <!-- Otherwise, display a message indicating that the schedule has not yet been generated -->
     <div v-else>
       <p>Le planning n'est pas encore généré.</p>
     </div>
@@ -59,7 +65,8 @@ export default {
       holidaysFromConfig: [], // Initialiser les jours fériés à partir de la configuration
       unavailableFromConfig: null, // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
       dayOffFromConfig: null, // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
-      trainingFromConfig: null // Initialement, aucune formation n'est définie, sera rempli à partir de la configuration
+      trainingFromConfig: null, // Initialement, aucune formation n'est définie, sera rempli à partir de la configuration
+      errorMessage: null // Initially, no error is defined, will be filled after the call to the API
     };
   },
   methods: {
@@ -77,8 +84,10 @@ export default {
         this.unavailableFromConfig = response.data.unavailable; // Stocker les indisponibilités à partir de la configuration
         this.dayOffFromConfig = response.data.dayOff; // Stocker les jours de congé à partir de la configuration
         this.trainingFromConfig = response.data.training; // Stocker les formations à partir de la configuration
+        this.errorMessage = response.data.error; // Stocke l'erreur pour affichage si nécessaire
       } catch (error) {
-        console.error('Erreur lors de la génération du planning :', error);
+        this.errorMessage = 'Erreur lors de la génération du planning : ' + error.response.data.error;
+        console.error('Erreur lors de la génération du planning :', error.response.data.error);
       }
     }
   }
@@ -97,5 +106,27 @@ button {
 
 button:hover {
   background-color: #0056b3;
+}
+
+.error-card {
+  background-color: #ffe6e6;
+  color: #c00;
+  border: 1px solid #c00;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4 8px rgba(0, 0, 0, 0.1);
+}
+
+.error-icon {
+  font-size: 24px;
+  margin-right: 12px;
+}
+
+.error-text {
+  font-size: 16px;
+  font-weight: bold;
 }
 </style>
