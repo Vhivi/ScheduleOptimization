@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  LANG: fr_FR.UTF-8
+
 jobs:
   build:
 
@@ -24,6 +27,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest pytest-cov
+        sudo apt-get update
+        sudo apt-get install -y locales
+        sudo locale-gen fr_FR.UTF-8
+        sudo update-locale LANG=fr_FR.UTF-8
         pip install -r ./backend/requirements.txt
     - name: Test with pytest
       run: |
