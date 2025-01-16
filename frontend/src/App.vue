@@ -30,6 +30,11 @@
       <span class="error-icon">⚠️</span>
       <span class="error-text">{{ errorMessage }}</span>
     </div>
+    <!-- Otherwise, display an info message if there is an info -->
+     <div v-else-if="infoMessage" class="info-card">
+      <span class="info-icon">ℹ️</span>
+      <span class="info-text">{{ infoMessage }}</span>
+    </div>
     <!-- Otherwise, display a message indicating that the schedule has not yet been generated -->
     <div v-else>
       <p>Le planning n'est pas encore généré.</p>
@@ -66,7 +71,8 @@ export default {
       unavailableFromConfig: null, // Initialement, aucune indisponibilité n'est définie, sera rempli à partir de la configuration
       dayOffFromConfig: null, // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
       trainingFromConfig: null, // Initialement, aucune formation n'est définie, sera rempli à partir de la configuration
-      errorMessage: null // Initially, no error is defined, will be filled after the call to the API
+      errorMessage: null, // Initially, no error is defined, will be filled after the call to the API
+      infoMessage: null // Initially, no information message is defined, will be filled in after the call to the API
     };
   },
   methods: {
@@ -84,10 +90,13 @@ export default {
         this.unavailableFromConfig = response.data.unavailable; // Stocker les indisponibilités à partir de la configuration
         this.dayOffFromConfig = response.data.dayOff; // Stocker les jours de congé à partir de la configuration
         this.trainingFromConfig = response.data.training; // Stocker les formations à partir de la configuration
-        this.errorMessage = response.data.error; // Stocke l'erreur pour affichage si nécessaire
       } catch (error) {
-        this.errorMessage = 'Erreur lors de la génération du planning : ' + error.response.data.error;
-        console.error('Erreur lors de la génération du planning :', error.response.data.error);
+        // If there is an error, check whether there is an info key in the response, otherwise display the error.
+        if (error.response.data.info) {
+          this.infoMessage = error.response.data.info;
+        } else {
+          this.errorMessage = 'Error when generating the schedule : ' + error.response.data.error;
+        }
       }
     }
   }
@@ -126,6 +135,28 @@ button:hover {
 }
 
 .error-text {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.info-card {
+  background-color: #e6f7ff;
+  color: #007bff;
+  border: 1px solid #007bff;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4 8px rgba(0, 0, 0, 0.1);
+}
+
+.info-icon {
+  font-size: 36px;
+  margin-right: 12px;
+}
+
+.info-text {
   font-size: 16px;
   font-weight: bold;
 }
