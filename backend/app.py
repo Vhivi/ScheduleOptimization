@@ -78,20 +78,23 @@ def generate_planning_route():
     # Calculer la liste des jours à partir des dates
     week_schedule = get_week_schedule(start_date, end_date)
 
-    # Appel de la fonction de génération de planning
+    # Calling up the schedule generation function
     result = generate_planning(agents, vacations, week_schedule, dayOff)
-
-    return jsonify(
-        {
-            "planning": result,
-            "vacation_durations": vacation_durations,
-            "week_schedule": week_schedule,
-            "holidays": holidays,
-            "unavailable": unavailable,
-            "dayOff": dayOff,
-            "training": training,
-        }
-    )
+    # If the result is a dict with an info key, return a 400 error.
+    if "info" in result:
+        return jsonify(result), 400
+    else:   # Otherwise, return the result
+        return jsonify(
+            {
+                "planning": result,
+                "vacation_durations": vacation_durations,
+                "week_schedule": week_schedule,
+                "holidays": holidays,
+                "unavailable": unavailable,
+                "dayOff": dayOff,
+                "training": training,
+            }
+        )
 
 
 def is_valid_date(date_str):
@@ -971,8 +974,8 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     )
     status = solver.Solve(model)
 
-    # Résultats
-    # Nous acceptons les solutions optimales et réalisables
+    # Results
+    # We accept optimal and feasible solutions
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         result = {}
         for agent in agents:
@@ -984,7 +987,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
                         result[agent_name].append((day, vacation))
         return result
     else:
-        return "No solution found."
+        return {"info": "No solution found."}
 
 
 if __name__ == "__main__":
