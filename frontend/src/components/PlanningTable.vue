@@ -68,6 +68,10 @@
     },
     methods: {
       splitByMonth(weekSchedule) {
+        if (!Array.isArray(weekSchedule)) {
+          console.warn("weekSchedule is not a valid array:", weekSchedule);
+          return {}; // Retourner un objet vide si ce n'est pas un tableau
+        }
         return weekSchedule.reduce((months, day) => {
           const monthKey = day.slice(8, 10); // Extraire le mois en abréviation (ex. Jan, Feb, etc.)
           if (!months[monthKey]) {
