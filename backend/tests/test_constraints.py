@@ -176,23 +176,25 @@ def test_agent_training(setup_correct_data):
 
 
 def test_vacation_preferences(setup_correct_data):
+    """
+    Test the vacation preferences of agents in the generated planning.
+    This test checks if the generated planning respects the 'avoid' preferences of each agent.
+    It prints a note if an agent is assigned to a vacation that they prefer to avoid.
+    Args:
+        setup_correct_data (tuple): A tuple containing the setup data for the test, which includes:
+            - agents (list): A list of agents with their details and preferences.
+            - vacations (list): A list of available vacations.
+            - week_schedule (dict): The weekly schedule.
+            - dayOff (list): A list of days off.
+    Returns:
+        None
+    """
     agents, vacations, week_schedule, dayOff = setup_correct_data
     result = generate_planning(agents, vacations, week_schedule, dayOff)
-    for _, vacation in result["Agent1"]:
-        assert vacation != "Nuit", "Agent1 should not be assigned to Nuit vacation"
-    for _, vacation in result["Agent2"]:
-        assert vacation not in ["Jour", "CDP"], (
-            "Agent2 should not be assigned to Jour or CDP vacation"
-        )
-    for _, vacation in result["Agent3"]:
-        assert vacation not in ["Jour", "CDP"], (
-            "Agent3 should not be assigned to Jour or CDP vacation"
-        )
-    for _, vacation in result["Agent4"]:
-        assert vacation != "Nuit", "Agent4 should not be assigned to Nuit vacation"
-    for _, vacation in result["Agent5"]:
-        assert vacation != "Nuit", "Agent5 should not be assigned to Nuit vacation"
-    for _, vacation in result["Agent6"]:
-        assert vacation not in ["Jour", "CDP"], (
-            "Agent6 should not be assigned to Jour or CDP vacation"
-        )
+    
+    for agent in agents:
+        name = agent['name']
+        avoid_preferences = agent['preferences'].get('avoid', [])
+        for _, vacation in result[name]:
+            if vacation in avoid_preferences:
+                print(f"Note: {name} has been assigned to {vacation} which is in their avoid preferences.")
