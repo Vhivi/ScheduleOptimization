@@ -1,5 +1,6 @@
 import json
 import locale
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -14,7 +15,8 @@ CORS(app)
 @app.route("/config")
 # Charger le fichier de configuration
 def load_config():
-    with open("config.json", "r") as config_file:
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    with open(config_path, "r") as config_file:
         return json.load(config_file)
 
 
@@ -364,7 +366,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
 
     for agent in agents:
         agent_name = agent["name"]
-        total_hours[agent_name] = 0 # Initialiser le total d'heures pour l'agent
+        total_hours[agent_name] = 0  # Initialiser le total d'heures pour l'agent
 
         # Récupérer les informations de congés s'il y en a
         vacation = agent.get("vacation")
@@ -576,15 +578,15 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
                         planning[(agent_name, monday, "Nuit")] == 0
                     ).OnlyEnforceIf([saturday_night, sunday_night])
     ########################################################
-    
+
     ########################################################
     # Appliquer les restrictions
     for agent in agents:
         agent_name = agent["name"]
-        
+
         if "restriction" in agent:
             restricted_vacations = agent["restriction"]
-            
+
             # Interdire ces vacations pour l'agent tous les jours du planning
             for day in week_schedule:
                 for restricted_vacation in restricted_vacations:
