@@ -576,7 +576,7 @@ def test_is_weekend_monday():
     three-letter abbreviation of the day in French (e.g., "Lun." for Monday).
 
     This test specifically checks if the function correctly identifies
-    "Lun. 03-01" as a weekend day.
+    "Lun. 03-01" as not a weekend day.
 
     Raises:
         AssertionError: If the function is_weekend returns False
@@ -595,7 +595,7 @@ def test_is_weekend_tuesday():
     three-letter abbreviation of the day in French (e.g., "Mar." for Tuesday).
 
     This test specifically checks if the function correctly identifies
-    "Mar. 04-01" as a weekend day.
+    "Mar. 04-01" as not a weekend day.
 
     Raises:
         AssertionError: If the function is_weekend returns False
@@ -603,3 +603,57 @@ def test_is_weekend_tuesday():
     """
 
     assert not is_weekend("Mar. 04-01")
+
+def test_is_weekend_wednesday():
+    """
+    Test case for the function is_weekend to check if a given date string
+    represents a Wednesday.
+
+    The date string format is assumed to be "Day. DD-MM", where "Day" is a
+    three-letter abbreviation of the day in French (e.g., "Mer." for Wednesday).
+
+    This test specifically checks if the function correctly identifies
+    "Mer. 05-01" as not a weekend day.
+
+    Raises:
+        AssertionError: If the function is_weekend returns False
+                        for the input "Mer. 05-01".
+    """
+
+    assert not is_weekend("Mer. 05-01")
+
+def test_is_weekend_thursday():
+    """
+    Test case for the function is_weekend to check if a given date string
+    represents a Thursday.
+
+    The date string format is assumed to be "Day. DD-MM", where "Day" is a
+    three-letter abbreviation of the day in French (e.g., "Jeu." for Thursday).
+
+    This test specifically checks if the function correctly identifies
+    "Jeu. 06-01" as not a weekend day.
+
+    Raises:
+        AssertionError: If the function is_weekend returns False
+                        for the input "Jeu. 06-01".
+    """
+
+    assert not is_weekend("Jeu. 06-01")
+
+def test_is_weekend_friday():
+    """
+    Test case for the function is_weekend to check if a given date string
+    represents a Friday.
+
+    The date string format is assumed to be "Day. DD-MM", where "Day" is a
+    three-letter abbreviation of the day in French (e.g., "Ven." for Friday).
+
+    This test specifically checks if the function correctly identifies
+    "Ven. 07-01" as not a weekend day.
+
+    Raises:
+        AssertionError: If the function is_weekend returns False
+                        for the input "Ven. 07-01".
+    """
+
+    assert not is_weekend("Ven. 07-01")
