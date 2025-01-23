@@ -290,31 +290,3 @@ def test_agent_training(setup_correct_data):
     assert ("Mer. 03-01", "Nuit") not in result["Agent5"]
     assert ("Ven. 05-01", "Jour") not in result["Agent6"]
     assert ("Ven. 05-01", "Nuit") not in result["Agent6"]
-
-
-def test_vacation_preferences(setup_correct_data):
-    """
-    Test the vacation preferences of agents in the generated planning.
-    This test checks if the generated planning respects the 'avoid' preferences of each agent.
-    It prints a note if an agent is assigned to a vacation that they prefer to avoid.
-    Args:
-        setup_correct_data (tuple): A tuple containing the setup data for the test, which includes:
-            - agents (list): A list of agents with their details and preferences.
-            - vacations (list): A list of available vacations.
-            - week_schedule (dict): The weekly schedule.
-            - dayOff (list): A list of days off.
-    Returns:
-        None
-    """
-
-    agents, vacations, week_schedule, dayOff = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
-
-    for agent in agents:
-        name = agent["name"]
-        avoid_preferences = agent["preferences"].get("avoid", [])
-        for _, vacation in result[name]:
-            if vacation in avoid_preferences:
-                print(
-                    f"Note: {name} has been assigned to {vacation} which is in their avoid preferences."
-                )
