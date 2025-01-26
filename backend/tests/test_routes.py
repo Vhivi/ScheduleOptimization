@@ -1,8 +1,9 @@
 import json
+from unittest.mock import mock_open, patch
+
 import pytest
-from unittest.mock import patch, mock_open
-from app import app
-from app import load_config
+from app import app, load_config
+
 
 @pytest.fixture
 def client():
@@ -16,9 +17,10 @@ def client():
         FlaskClient: A test client for the Flask application.
     """
 
-    app.config['TESTING'] = True
+    app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
+
 
 def test_home(client):
     """
@@ -35,12 +37,15 @@ def test_home(client):
         - The response status code should be 200 (OK).
         - The response data should contain the expected message.
     """
-    
-    response = client.get('/')
+
+    response = client.get("/")
     assert response.status_code == 200
-    assert b'Flask is up and running!' in response.data
-    
-@patch("builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}')
+    assert b"Flask is up and running!" in response.data
+
+
+@patch(
+    "builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}'
+)
 @patch("os.path.join", return_value="config.json")
 def test_load_config(mock_path_join, mock_open_file):
     """
@@ -63,7 +68,10 @@ def test_load_config(mock_path_join, mock_open_file):
     assert config == expected_config
     mock_open_file.assert_called_once_with("config.json", "r")
 
-@patch("builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}')
+
+@patch(
+    "builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}'
+)
 @patch("os.path.join", return_value="config.json")
 def test_config_route(mock_path_join, mock_open_file, client):
     """
@@ -87,6 +95,7 @@ def test_config_route(mock_path_join, mock_open_file, client):
     assert response.status_code == 200
     assert response.json == {"holidays": ["01-01-2023"]}
 
+
 def test_generate_planning_route_valid_data(client):
     """
     Test the /generate-planning route with valid data.
@@ -104,16 +113,16 @@ def test_generate_planning_route_valid_data(client):
         - The response JSON contains a "planning" key.
         - The "week_schedule" key in the response JSON contains 7 days.
     """
-    
-    data = {
-        "start_date": "2024-11-01",
-        "end_date": "2024-11-07"
-    }
-    response = client.post('/generate-planning', data=json.dumps(data), content_type='application/json')
+
+    data = {"start_date": "2024-11-01", "end_date": "2024-11-07"}
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
     assert len(result["week_schedule"]) == 7  # Checks that 7 days have been generated
+
 
 def test_generate_planning_route_invalid_date(client):
     """
@@ -129,13 +138,16 @@ def test_generate_planning_route_invalid_date(client):
     Asserts:
         The response status code is 400, indicating a bad request due to the invalid date.
     """
-    
+
     data = {
         "start_date": "2024-11-31",  # Invalid Date
-        "end_date": "2024-11-07"
+        "end_date": "2024-11-07",
     }
-    response = client.post('/generate-planning', data=json.dumps(data), content_type='application/json')
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
     assert response.status_code == 400  # Checks if the request fails
+
 
 def test_generate_planning_route_missing_data(client):
     """
@@ -150,5 +162,7 @@ def test_generate_planning_route_missing_data(client):
     Asserts:
         The response status code is 400, indicating that the server correctly identifies and handles the missing data.
     """
-    response = client.post('/generate-planning', data=json.dumps({}), content_type='application/json')
+    response = client.post(
+        "/generate-planning", data=json.dumps({}), content_type="application/json"
+    )
     assert response.status_code == 400  # Checks that missing data is managed
