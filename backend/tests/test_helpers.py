@@ -604,6 +604,7 @@ def test_is_weekend_tuesday():
 
     assert not is_weekend("Mar. 04-01")
 
+
 def test_is_weekend_wednesday():
     """
     Test case for the function is_weekend to check if a given date string
@@ -622,6 +623,7 @@ def test_is_weekend_wednesday():
 
     assert not is_weekend("Mer. 05-01")
 
+
 def test_is_weekend_thursday():
     """
     Test case for the function is_weekend to check if a given date string
@@ -639,6 +641,7 @@ def test_is_weekend_thursday():
     """
 
     assert not is_weekend("Jeu. 06-01")
+
 
 def test_is_weekend_friday():
     """
