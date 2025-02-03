@@ -76,12 +76,25 @@ def generate_planning_route():
 
     start_date = request.json["start_date"]
     end_date = request.json["end_date"]
+    
+    # Retrieve initial shifts, if supplied
+    initial_shifts = request.json.get("initial_shifts", {})
+
+    # Validate initial shifts
+    valid_agents = [agent["name"] for agent in agents]
+    valid_vacations = vacations
+    for agent_name, shifts in initial_shifts.items():
+        if agent_name not in valid_agents:
+            return jsonify({"error": f"Invalid agent: {agent_name}"}), 400
+        for _, vacation in shifts:
+            if vacation not in valid_vacations:
+                return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
 
     # Calculer la liste des jours à partir des dates
     week_schedule = get_week_schedule(start_date, end_date)
 
     # Calling up the schedule generation function
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    result = generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts)
     # If the result is a dict with an info key, return a 400 error.
     if "info" in result:
         return jsonify(result), 400
@@ -210,7 +223,7 @@ def is_weekend(day):
     return day_name in ["Sam.", "Dim."]
 
 
-def generate_planning(agents, vacations, week_schedule, dayOff):
+def generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts):
     model = cp_model.CpModel()
 
     weeks_split = split_into_weeks(week_schedule)  # Diviser week_schedule en semaines
@@ -239,6 +252,13 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     # Hard Constraints
     ########################################################
     # (Mettre ici toutes les contraintes incontournables)
+    
+    # Add initial shifts if provided
+    if initial_shifts:
+        for agent_name, shifts in initial_shifts.items():
+            for day, vacation in shifts:
+                if agent_name in [agent["name"] for agent in agents] and vacation in vacations:
+                    model.Add(planning[(agent_name, day, vacation)] == 1)
 
     # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:
