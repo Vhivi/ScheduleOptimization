@@ -92,9 +92,10 @@ def generate_planning_route():
 
     # Calculer la liste des jours à partir des dates
     week_schedule = get_week_schedule(start_date, end_date)
+    previous_week_schedule = get_previous_week_schedule(start_date)
 
     # Calling up the schedule generation function
-    result = generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts)
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
     # If the result is a dict with an info key, return a 400 error.
     if "info" in result:
         return jsonify(result), 400
@@ -140,6 +141,20 @@ def is_valid_date(date_str):
         return False
 
 
+def get_previous_week_schedule(start_date_str):
+    # Configuer le local pour utiliser les jours de la semaine en français
+    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
+    # Convertir la chaine en objet datetime
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
+    
+    previous_week_start = start_date - timedelta(days=7)
+
+    # Calculer les jours de la semaine précédente
+    return [
+        (previous_week_start + timedelta(days=i)).strftime("%a %d-%m").capitalize()
+        for i in range(7)
+    ] # Format : Jour abrégé + Date (ex: Lun 25-12)
+
 def get_week_schedule(start_date_str, end_date_str):
     # Configuer le local pour utiliser les jours de la semaine en français
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
@@ -149,11 +164,10 @@ def get_week_schedule(start_date_str, end_date_str):
 
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [
+    return [
         (start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize()
         for i in range(delta.days + 1)
     ]  # Format : Jour abrégé + Date (ex: Lun 25-12)
-    return week_schedule
 
 
 def split_into_weeks(week_schedule):
@@ -223,7 +237,7 @@ def is_weekend(day):
     return day_name in ["Sam.", "Dim."]
 
 
-def generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts):
+def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts):
     model = cp_model.CpModel()
 
     weeks_split = split_into_weeks(week_schedule)  # Diviser week_schedule en semaines
@@ -242,7 +256,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts):
     planning = {}
     for agent in agents:
         agent_name = agent["name"]  # Utiliser le nom de l'agent comme clé
-        for day in week_schedule:
+        for day in set(week_schedule + previous_week_schedule):  # Include both week_schedule and previous_week_schedule
             for vacation in vacations:
                 planning[(agent_name, day, vacation)] = model.NewBoolVar(
                     f"planning_{agent_name}_{day}_{vacation}"
@@ -253,12 +267,11 @@ def generate_planning(agents, vacations, week_schedule, dayOff, initial_shifts):
     ########################################################
     # (Mettre ici toutes les contraintes incontournables)
     
-    # Add initial shifts if provided
-    if initial_shifts:
-        for agent_name, shifts in initial_shifts.items():
-            for day, vacation in shifts:
-                if agent_name in [agent["name"] for agent in agents] and vacation in vacations:
-                    model.Add(planning[(agent_name, day, vacation)] == 1)
+    # Only apply initial shifts from the previous week
+    for agent_name, shifts in initial_shifts.items():
+        for day, vacation in shifts:
+            if agent_name in [agent["name"] for agent in agents] and vacation in vacations and day in previous_week_schedule:
+                model.Add(planning[(agent_name, day, vacation)] == 1)
 
     # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:
