@@ -1,5 +1,6 @@
 import pytest
 from app import (
+    get_previous_week_schedule,
     get_week_schedule,
     is_vacation_day,
     is_valid_date,
@@ -660,3 +661,39 @@ def test_is_weekend_friday():
     """
 
     assert not is_weekend("Ven. 07-01")
+
+
+@pytest.mark.parametrize("start_date_str, expected_output", [
+    # Test case 1: Standard date
+    ("2023-10-15", ["Dim. 08-10", "Lun. 09-10", "Mar. 10-10", "Mer. 11-10", "Jeu. 12-10", "Ven. 13-10", "Sam. 14-10"]),
+    
+    # Test case 2: Date at the beginning of the year
+    ("2023-01-05", ["Jeu. 29-12", "Ven. 30-12", "Sam. 31-12", "Dim. 01-01", "Lun. 02-01", "Mar. 03-01", "Mer. 04-01"]),
+    
+    # Test case 3: Date at the end of the year
+    ("2023-12-31", ["Dim. 24-12", "Lun. 25-12", "Mar. 26-12", "Mer. 27-12", "Jeu. 28-12", "Ven. 29-12", "Sam. 30-12"]),
+    
+    # Test case 4: Leap year date
+    ("2024-03-01", ["Ven. 23-02", "Sam. 24-02", "Dim. 25-02", "Lun. 26-02", "Mar. 27-02", "Mer. 28-02", "Jeu. 29-02"]),
+    
+    # Test case 5: Middle of the year
+    ("2023-07-15", ["Sam. 08-07", "Dim. 09-07", "Lun. 10-07", "Mar. 11-07", "Mer. 12-07", "Jeu. 13-07", "Ven. 14-07"]),
+    
+    # Test case 6: Date with single digit day and month
+    ("2023-04-05", ["Mer. 29-03", "Jeu. 30-03", "Ven. 31-03", "Sam. 01-04", "Dim. 02-04", "Lun. 03-04", "Mar. 04-04"]),
+    
+    # Test case 7: Date in February (non-leap year)
+    ("2023-02-20", ["Lun. 13-02", "Mar. 14-02", "Mer. 15-02", "Jeu. 16-02", "Ven. 17-02", "Sam. 18-02", "Dim. 19-02"]),
+])
+def test_get_previous_week_schedule(start_date_str, expected_output):
+    """
+    Tests the get_previous_week_schedule function to check if the function returns the 7-day before the date given.
+
+    Args:
+        start_date_str (str): The start date in string format.
+        expected_output (Any): The expected output of the function.
+
+    Asserts:
+        The function's output matches the expected output.
+    """
+    assert get_previous_week_schedule(start_date_str) == expected_output

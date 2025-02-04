@@ -64,7 +64,16 @@ def setup_correct_data():
         "Dim. 07-01",
     ]
     dayOff = ["01-01-2023", "02-01-2023"]
-    return agents, vacations, week_schedule, dayOff
+    previous_week_schedule = [
+        "Lun. 25-12",
+        "Mar. 26-12",
+        "Mer. 27-12",
+        "Jeu. 28-12",
+        "Ven. 29-12",
+        "Sam. 30-12",
+        "Dim. 31-12",
+        ]
+    return agents, vacations, week_schedule, dayOff, previous_week_schedule
 
 
 @pytest.fixture
@@ -161,6 +170,7 @@ def test_generate_planning_valid_data(setup_correct_data):
             - vacations (list): A list of vacation periods.
             - week_schedule (list): A list representing the weekly schedule.
             - dayOff (list): A list of days off.
+            - previous_week_schedule (list): A list representing the previous week's schedule.
 
     Asserts:
         - The result is an instance of a dictionary.
@@ -168,8 +178,8 @@ def test_generate_planning_valid_data(setup_correct_data):
           "Agent5", and "Agent6".
     """
 
-    agents, vacations, week_schedule, dayOff = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
     assert isinstance(result, dict)
     assert "Agent1" in result
     assert "Agent2" in result
@@ -177,6 +187,15 @@ def test_generate_planning_valid_data(setup_correct_data):
     assert "Agent4" in result
     assert "Agent5" in result
     assert "Agent6" in result
+
+
+def test_generate_planning_valid_data_with_initial_shifts(setup_correct_data):
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
+    initial_shifts = {"Agent1": [("Dim. 31-12", "Jour")], "Agent2": [("Dim. 31-12", "Nuit")]}
+
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
+    assert "Agent1" in result
+    assert "Agent2" in result
 
 
 def test_generate_planning_invalid_data(setup_incorrect_data):
@@ -195,7 +214,7 @@ def test_generate_planning_invalid_data(setup_incorrect_data):
     """
 
     agents, vacations, week_schedule, dayOff = setup_incorrect_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule=[], initial_shifts={})
     assert isinstance(result, dict)
     assert "info" in result
 
@@ -219,7 +238,7 @@ def test_generate_planning_valid_dataless(setup_correct_dataless):
     """
 
     agents, vacations, week_schedule, dayOff = setup_correct_dataless
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule=[], initial_shifts={})
     assert isinstance(result, dict)
     assert "info" in result
 
@@ -232,17 +251,20 @@ def test_agent_unavailability(setup_correct_data):
     (day or night) to agents on their specified unavailable dates.
 
     Args:
-        setup_correct_data (tuple): A fixture that provides the necessary data
-                                    for the test, including agents, vacations,
-                                    week schedule, and days off.
+        setup_correct_data (tuple): A tuple containing the following elements:
+            - agents (list): A list of agent names.
+            - vacations (list): A list of vacation periods.
+            - week_schedule (list): A list representing the weekly schedule.
+            - dayOff (list): A list of days off.
+            - previous_week_schedule (list): A list representing the previous week's schedule.
 
     Asserts:
         The test asserts that for each agent, the specified unavailable dates
         and shifts are not present in the generated planning result.
     """
 
-    agents, vacations, week_schedule, dayOff = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
     assert ("Lun. 01-01", "Jour") not in result["Agent1"]
     assert ("Lun. 01-01", "Nuit") not in result["Agent1"]
     assert ("Mer. 03-01", "Jour") not in result["Agent2"]
@@ -266,18 +288,19 @@ def test_agent_training(setup_correct_data):
 
     Args:
         setup_correct_data (tuple): A tuple containing the following elements:
-            - agents: List of agents.
-            - vacations: List of vacations.
-            - week_schedule: Weekly schedule.
-            - dayOff: List of days off.
+            - agents (list): A list of agent names.
+            - vacations (list): A list of vacation periods.
+            - week_schedule (list): A list representing the weekly schedule.
+            - dayOff (list): A list of days off.
+            - previous_week_schedule (list): A list representing the previous week's schedule.
 
     Asserts:
         The test checks that the specified agents do not have any shifts (day or night)
         on the days they are supposed to be in training.
     """
 
-    agents, vacations, week_schedule, dayOff = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
     assert ("Mar. 02-01", "Jour") not in result["Agent1"]
     assert ("Mar. 02-01", "Nuit") not in result["Agent1"]
     assert ("Jeu. 04-01", "Jour") not in result["Agent2"]
