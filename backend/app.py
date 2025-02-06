@@ -76,12 +76,26 @@ def generate_planning_route():
 
     start_date = request.json["start_date"]
     end_date = request.json["end_date"]
+    
+    # Retrieve initial shifts, if supplied
+    initial_shifts = request.json.get("initial_shifts", {})
+
+    # Validate initial shifts
+    valid_agents = [agent["name"] for agent in agents]
+    valid_vacations = vacations
+    for agent_name, shifts in initial_shifts.items():
+        if agent_name not in valid_agents:
+            return jsonify({"error": f"Invalid agent: {agent_name}"}), 400
+        for _, vacation in shifts:
+            if vacation not in valid_vacations:
+                return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
 
     # Calculer la liste des jours à partir des dates
     week_schedule = get_week_schedule(start_date, end_date)
+    previous_week_schedule = get_previous_week_schedule(start_date)
 
     # Calling up the schedule generation function
-    result = generate_planning(agents, vacations, week_schedule, dayOff)
+    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
     # If the result is a dict with an info key, return a 400 error.
     if "info" in result:
         return jsonify(result), 400
@@ -127,6 +141,47 @@ def is_valid_date(date_str):
         return False
 
 
+@app.route("/previous-week-schedule", methods=["POST"])
+def compute_previous_week_schedule():
+    try:
+        # Check if the start_date is present in the query
+        if "start_date" not in request.json:
+            return jsonify({"error": "Missing start_date"}), 400
+        # Check that the date is valid
+        if not is_valid_date(request.json["start_date"]):
+            return jsonify({"error": "Invalid date format"}), 400
+
+        start_date = request.json["start_date"]
+        previous_week_schedule = get_previous_week_schedule(start_date)
+        
+        agents = config["agents"]
+
+        return jsonify({
+            "previous_week_schedule": previous_week_schedule,
+            "agents": agents
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+def get_previous_week_schedule(start_date_str):
+    # Configuer le local pour utiliser les jours de la semaine en français
+    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
+    
+    try:
+        # Convertir la chaine en objet datetime
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
+    except ValueError as e:
+        raise ValueError("Invalid date format. Use YYYY-MM-DD.") from e
+    
+    previous_week_start = start_date - timedelta(days=7)
+
+    # Calculer les jours de la semaine précédente
+    return [
+        (previous_week_start + timedelta(days=i)).strftime("%a %d-%m").capitalize()
+        for i in range(7)
+    ] # Format : Jour abrégé + Date (ex: Lun 25-12)
+
 def get_week_schedule(start_date_str, end_date_str):
     # Configuer le local pour utiliser les jours de la semaine en français
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
@@ -136,11 +191,10 @@ def get_week_schedule(start_date_str, end_date_str):
 
     # Calculer les jours entre la date de début et la date de fin
     delta = end_date - start_date
-    week_schedule = [
+    return [
         (start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize()
         for i in range(delta.days + 1)
     ]  # Format : Jour abrégé + Date (ex: Lun 25-12)
-    return week_schedule
 
 
 def split_into_weeks(week_schedule):
@@ -210,7 +264,7 @@ def is_weekend(day):
     return day_name in ["Sam.", "Dim."]
 
 
-def generate_planning(agents, vacations, week_schedule, dayOff):
+def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts):
     model = cp_model.CpModel()
 
     weeks_split = split_into_weeks(week_schedule)  # Diviser week_schedule en semaines
@@ -229,7 +283,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     planning = {}
     for agent in agents:
         agent_name = agent["name"]  # Utiliser le nom de l'agent comme clé
-        for day in week_schedule:
+        for day in set(week_schedule + previous_week_schedule):  # Include both week_schedule and previous_week_schedule
             for vacation in vacations:
                 planning[(agent_name, day, vacation)] = model.NewBoolVar(
                     f"planning_{agent_name}_{day}_{vacation}"
@@ -239,6 +293,12 @@ def generate_planning(agents, vacations, week_schedule, dayOff):
     # Hard Constraints
     ########################################################
     # (Mettre ici toutes les contraintes incontournables)
+    
+    # Only apply initial shifts from the previous week
+    for agent_name, shifts in initial_shifts.items():
+        for day, vacation in shifts:
+            if agent_name in [agent["name"] for agent in agents] and vacation in vacations and day in previous_week_schedule:
+                model.Add(planning[(agent_name, day, vacation)] == 1)
 
     # Chaque agent peut travailler au plus une vacation par jour
     for agent in agents:

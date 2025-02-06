@@ -166,3 +166,58 @@ def test_generate_planning_route_missing_data(client):
         "/generate-planning", data=json.dumps({}), content_type="application/json"
     )
     assert response.status_code == 400  # Checks that missing data is managed
+
+
+def test_generate_planning_route_invalid_agent(client):
+    """
+    Test the /generate-planning route with an invalid agent.
+
+    This test sends a POST request to the /generate-planning endpoint with a payload
+    containing an invalid agent name. It verifies that the response status code is 400
+    and that the response JSON contains an error message indicating the invalid agent.
+
+    Args:
+        client (FlaskClient): The test client used to make requests to the Flask application.
+
+    Asserts:
+        - The response status code is 400.
+        - The response JSON contains the error message "Invalid agent: InvalidAgent".
+    """
+    data = {
+        "start_date": "2023-01-01",
+        "end_date": "2023-01-07",
+        "initial_shifts": {"InvalidAgent": [("Sam. 31-12", "Jour")]}
+    }
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.json == {"error": "Invalid agent: InvalidAgent"}
+
+def test_generate_planning_route_invalid_vacation(client):
+    """
+    Test the /generate-planning route with an invalid vacation entry.
+
+    This test sends a POST request to the /generate-planning endpoint with
+    a payload containing an invalid vacation entry for an agent. It verifies
+    that the response status code is 400 (Bad Request) and that the response
+    JSON contains the appropriate error message indicating the invalid vacation.
+
+    Args:
+        client (FlaskClient): The test client used to make requests to the Flask application.
+
+    Asserts:
+        - The response status code is 400.
+        - The response JSON contains the error message "Invalid vacation: InvalidVacation".
+    """
+    data = {
+        "start_date": "2023-01-01",
+        "end_date": "2023-01-07",
+        "initial_shifts": {"Agent1": [("Sam. 31-12", "InvalidVacation")]}
+    }
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.json == {"error": "Invalid vacation: InvalidVacation"}
+
