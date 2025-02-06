@@ -170,12 +170,28 @@ export default {
       }
     },
     async generatePlanning() {
+      const payload = {
+        start_date: this.startDate,
+        end_date: this.endDate
+      };
+
+      // Si le mode de continuité est activé, ajouter les données de la semaine précédente
+      if (this.isContinuityMode) {
+        payload.initial_shifts = {};
+        for (const agent in this.selectedShifts) {
+          payload.initial_shifts[agent] = [];
+          for (const day in this.selectedShifts[agent]) {
+            if (this.selectedShifts[agent][day]) {
+            payload.initial_shifts[agent].push([day, this.selectedShifts[agent][day]]);
+            }
+          }
+        }
+      }
+
       try {
         // Envoyer la requête à Flask pour générer le planning avec les dates de début et de fin
-        const response = await axios.post('http://127.0.0.1:5000/generate-planning', {
-          start_date: this.startDate,
-          end_date: this.endDate
-        });
+        const response = await axios.post('http://127.0.0.1:5000/generate-planning', payload);
+        
         this.planningResult = response.data.planning; // Stocker les données dans planningResult
         this.vacationDurations = response.data.vacation_durations; // Stocker les durées de vacation
         this.weekSchedule = response.data.week_schedule; // Stocker le calendrier de la période
