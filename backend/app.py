@@ -141,11 +141,38 @@ def is_valid_date(date_str):
         return False
 
 
+@app.route("/previous-week-schedule", methods=["POST"])
+def compute_previous_week_schedule():
+    try:
+        # Check if the start_date is present in the query
+        if "start_date" not in request.json:
+            return jsonify({"error": "Missing start_date"}), 400
+        # Check that the date is valid
+        if not is_valid_date(request.json["start_date"]):
+            return jsonify({"error": "Invalid date format"}), 400
+
+        start_date = request.json["start_date"]
+        previous_week_schedule = get_previous_week_schedule(start_date)
+        
+        agents = config["agents"]
+
+        return jsonify({
+            "previous_week_schedule": previous_week_schedule,
+            "agents": agents
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 def get_previous_week_schedule(start_date_str):
     # Configuer le local pour utiliser les jours de la semaine en français
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
-    # Convertir la chaine en objet datetime
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
+    
+    try:
+        # Convertir la chaine en objet datetime
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
+    except ValueError as e:
+        raise ValueError("Invalid date format. Use YYYY-MM-DD.") from e
     
     previous_week_start = start_date - timedelta(days=7)
 
