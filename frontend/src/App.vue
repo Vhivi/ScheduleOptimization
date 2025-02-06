@@ -8,6 +8,18 @@
       <label for="end">Date de fin :</label>
       <input type="date" id="end" name="end" v-model="endDate" />
     </div>
+    <!-- Sélecteur de mode -->
+    <div class="generation-mode">
+      <label>
+        <input type="radio" v-model="isContinuityMode" :value="false" />
+        Nouvelle génération
+      </label>
+      <label>
+        <input type="radio" v-model="isContinuityMode" :value="true" />
+        Génération avec continuité
+      </label>
+    </div>
+
     <div>
       <button @click="generatePlanning">Générer le planning</button>
     </div>
@@ -72,7 +84,7 @@ export default {
       dayOffFromConfig: null, // Initialement, aucun jour de congé n'est défini, sera rempli à partir de la configuration
       trainingFromConfig: null, // Initialement, aucune formation n'est définie, sera rempli à partir de la configuration
       errorMessage: null, // Initially, no error is defined, will be filled after the call to the API
-      infoMessage: null // Initially, no information message is defined, will be filled in after the call to the API
+      isContinuityMode: false, // Set generation mode to false
     };
   },
   methods: {
@@ -160,4 +172,12 @@ button:hover {
   font-size: 16px;
   font-weight: bold;
 }
+
+/* Style du toggle de sélection de mode */
+.generation-mode {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
 </style>
