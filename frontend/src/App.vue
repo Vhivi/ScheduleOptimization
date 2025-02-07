@@ -283,15 +283,43 @@ button:hover {
   margin-top: 15px;
 }
 
+/* Style des en-têtes de colonnes */
+.transition-table th {
+  background-color: #f4f4f4;
+  padding: 10px;
+}
+
+/* Bordures et espacement des cellules */
 .transition-table th, .transition-table td {
   border: 1px solid #ddd;
   padding: 8px;
   text-align: center;
 }
 
+/* Griser les samedis et dimanches */
+.transition-table td.weekend {
+  background-color: #dedede;
+}
+
+/* Couleur de fond des cellules sélectionnées */
+.transition-table td.jour {
+  background-color: #75fa79;
+}
+
+.transition-table td.nuit {
+  background-color: #9175fa;
+}
+
+.transition-table td.cdp {
+  background-color: #a59384;
+}
+
 /* Sélecteurs de vacation */
 .transition-table select {
   width: 100%;
   padding: 5px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
 }
 </style>
