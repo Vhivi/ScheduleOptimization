@@ -279,7 +279,6 @@ button:hover {
 
 /* Tableau de transition */
 .transition-table {
-  width: 100%;
   border-collapse: collapse;
   margin-top: 15px;
 }
