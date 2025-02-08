@@ -73,7 +73,7 @@ def setup_correct_data():
         "Ven. 29-12",
         "Sam. 30-12",
         "Dim. 31-12",
-        ]
+    ]
     return agents, vacations, week_schedule, dayOff, previous_week_schedule
 
 
@@ -179,8 +179,17 @@ def test_generate_planning_valid_data(setup_correct_data):
           "Agent5", and "Agent6".
     """
 
-    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = (
+        setup_correct_data
+    )
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff,
+        previous_week_schedule,
+        initial_shifts={},
+    )
     assert isinstance(result, dict)
     assert "Agent1" in result
     assert "Agent2" in result
@@ -209,8 +218,17 @@ def test_generate_planning_valid_data_with_initial_shifts(setup_correct_data):
     Asserts:
         The result contains the keys "Agent1" and "Agent2".
     """
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = (
+        setup_correct_data
+    )
+    initial_shifts = {
+        "Agent1": [("Dim. 31-12", "Jour")],
+        "Agent2": [("Dim. 31-12", "Nuit")],
+    }
 
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
+    result = generate_planning(
+        agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts
+    )
     assert "Agent1" in result
     assert "Agent2" in result
 
@@ -231,7 +249,14 @@ def test_generate_planning_invalid_data(setup_incorrect_data):
     """
 
     agents, vacations, week_schedule, dayOff = setup_incorrect_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule=[], initial_shifts={})
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff,
+        previous_week_schedule=[],
+        initial_shifts={},
+    )
     assert isinstance(result, dict)
     assert "info" in result
 
@@ -255,7 +280,14 @@ def test_generate_planning_valid_dataless(setup_correct_dataless):
     """
 
     agents, vacations, week_schedule, dayOff = setup_correct_dataless
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule=[], initial_shifts={})
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff,
+        previous_week_schedule=[],
+        initial_shifts={},
+    )
     assert isinstance(result, dict)
     assert "info" in result
 
@@ -280,8 +312,17 @@ def test_agent_unavailability(setup_correct_data):
         and shifts are not present in the generated planning result.
     """
 
-    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = (
+        setup_correct_data
+    )
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff,
+        previous_week_schedule,
+        initial_shifts={},
+    )
     assert ("Lun. 01-01", "Jour") not in result["Agent1"]
     assert ("Lun. 01-01", "Nuit") not in result["Agent1"]
     assert ("Mer. 03-01", "Jour") not in result["Agent2"]
@@ -316,8 +357,17 @@ def test_agent_training(setup_correct_data):
         on the days they are supposed to be in training.
     """
 
-    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts={})
+    agents, vacations, week_schedule, dayOff, previous_week_schedule = (
+        setup_correct_data
+    )
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff,
+        previous_week_schedule,
+        initial_shifts={},
+    )
     assert ("Mar. 02-01", "Jour") not in result["Agent1"]
     assert ("Mar. 02-01", "Nuit") not in result["Agent1"]
     assert ("Jeu. 04-01", "Jour") not in result["Agent2"]
