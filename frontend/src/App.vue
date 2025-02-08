@@ -33,7 +33,7 @@
         <tbody>
           <tr v-for="agent in agents" :key="agent.name">
             <td>{{ agent.name }}</td>
-            <td v-for="day in previousWeekSchedule" :key="day">
+            <td v-for="day in previousWeekSchedule" :key="day" :class="[getWeekendClass(day), getVacationClass(agent.name, day)]">
               <select v-model="selectedShifts[agent.name][day]">
                 <option value="">-</option>
                 <option v-for="vacation in vacations" :key="vacation" :value="vacation">
@@ -207,7 +207,23 @@ export default {
           this.errorMessage = 'Error when generating the schedule : ' + error.response.data.error;
         }
       }
-    }
+    },
+    // Détecte si un jour fait partie du week-end
+    getWeekendClass(day) {
+      // Si le jour commence par "Sam" ou "Dim", on retourne "weekend"
+      // Sinon, on retourne une chaîne vide
+      return day.startsWith("Sam") || day.startsWith("Dim") ? "weekend" : "";
+    },
+    // Applique une classe en fonction de la vacation sélectionnée
+    getVacationClass(agentName, day) {
+      const vacation = this.selectedShifts[agentName][day];
+      // Si une vacation est sélectionnée, on la retourne en minuscule
+      if (vacation) {
+        return vacation.toLowerCase();
+      }
+      // Sinon, on retourne une chaîne vide
+      return "";
+    },
   }
 };
 </script>
@@ -279,20 +295,47 @@ button:hover {
 
 /* Tableau de transition */
 .transition-table {
-  width: 100%;
   border-collapse: collapse;
   margin-top: 15px;
 }
 
+/* Style des en-têtes de colonnes */
+.transition-table th {
+  background-color: #f4f4f4;
+  padding: 10px;
+}
+
+/* Bordures et espacement des cellules */
 .transition-table th, .transition-table td {
   border: 1px solid #ddd;
   padding: 8px;
   text-align: center;
 }
 
+/* Griser les samedis et dimanches */
+.transition-table td.weekend {
+  background-color: #dedede;
+}
+
+/* Couleur de fond des cellules sélectionnées */
+.transition-table td.jour {
+  background-color: #75fa79;
+}
+
+.transition-table td.nuit {
+  background-color: #9175fa;
+}
+
+.transition-table td.cdp {
+  background-color: #a59384;
+}
+
 /* Sélecteurs de vacation */
 .transition-table select {
   width: 100%;
   padding: 5px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
 }
 </style>

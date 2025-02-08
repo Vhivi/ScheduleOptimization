@@ -77,7 +77,7 @@ def generate_planning_route():
     start_date = request.json["start_date"]
     end_date = request.json["end_date"]
     
-    # Retrieve initial shifts, if supplied
+    # Retrieve initial shifts, if supplied otherwise default to an empty dictionary
     initial_shifts = request.json.get("initial_shifts", {})
 
     # Validate initial shifts
