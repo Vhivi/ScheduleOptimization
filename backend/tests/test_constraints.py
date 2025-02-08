@@ -13,6 +13,7 @@ def setup_correct_data():
             - vacations (list): A list of vacation types.
             - week_schedule (list): A list of strings representing the week schedule.
             - dayOff (list): A list of dates representing days off.
+            - previous_week_schedule (list): A list of strings representing the previous week's schedule.
     """
 
     agents = [
@@ -190,8 +191,24 @@ def test_generate_planning_valid_data(setup_correct_data):
 
 
 def test_generate_planning_valid_data_with_initial_shifts(setup_correct_data):
-    agents, vacations, week_schedule, dayOff, previous_week_schedule = setup_correct_data
-    initial_shifts = {"Agent1": [("Dim. 31-12", "Jour")], "Agent2": [("Dim. 31-12", "Nuit")]}
+    """
+    Test the generate_planning function with valid data and initial shifts.
+
+    This test ensures that the generate_planning function correctly incorporates
+    initial shifts into the generated planning. It verifies that the resulting
+    planning includes the specified initial shifts for the agents.
+
+    Args:
+        setup_correct_data (tuple): A tuple containing the following elements:
+            - agents (list): A list of agent names.
+            - vacations (list): A list of vacation periods.
+            - week_schedule (list): A list representing the weekly schedule.
+            - dayOff (list): A list of days off.
+            - previous_week_schedule (list): A list representing the previous week's schedule.
+
+    Asserts:
+        The result contains the keys "Agent1" and "Agent2".
+    """
 
     result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
     assert "Agent1" in result
