@@ -165,50 +165,50 @@ def compute_previous_week_schedule():
 
 
 def get_previous_week_schedule(start_date_str):
-    # Configuer le local pour utiliser les jours de la semaine en français
+    # Configure the locale to use the days of the week in French
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
     
     try:
-        # Convertir la chaine en objet datetime
+        # Convert the string into a datetime object
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
     except ValueError as e:
         raise ValueError("Invalid date format. Use YYYY-MM-DD.") from e
     
     previous_week_start = start_date - timedelta(days=7)
 
-    # Calculer les jours de la semaine précédente
+    # Calculate the days of the previous week
     return [
         (previous_week_start + timedelta(days=i)).strftime("%a %d-%m").capitalize()
         for i in range(7)
-    ] # Format : Jour abrégé + Date (ex: Lun 25-12)
+    ] # Format: Shortened day + Date (e.g. Lun 25-12)
 
 def get_week_schedule(start_date_str, end_date_str):
-    # Configuer le local pour utiliser les jours de la semaine en français
+    # Configure the locale to use the days of the week in French
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
-    # Convertir les chaines en objets datetime
+    # Convert strings into datetime objects
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d")  # Format date / ISO 8601
 
-    # Calculer les jours entre la date de début et la date de fin
+    # Calculate the days between the start date and the end date
     delta = end_date - start_date
     return [
         (start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize()
         for i in range(delta.days + 1)
-    ]  # Format : Jour abrégé + Date (ex: Lun 25-12)
+    ]  # Format : Shortened day + Date (e.g. Lun 25-12)
 
 
 def split_into_weeks(week_schedule):
-    # Diviser la liste des jours en semaines calendaires (lundi à dimanche)
+    # Divide the list of days into calendar weeks (Monday to Sunday)
     weeks = []
     current_week = []
 
     for day in week_schedule:
-        # Ajouter le jour à la semaine courante
+        # Add the day to the current week
         current_week.append(day)
 
-        # Si le jour est un dimanche ou le dernier jour du planning, terminer la semaine
-        day_name = day.split(" ")[0]  # Extraire le nom du jour (ex: Lun.)
-        if day_name == "Dim." or day == week_schedule[-1]:  # Dimanche ou dernier jour
+        # If the day is a Sunday or the last day of the schedule, end the week
+        day_name = day.split(" ")[0]  # Extract the name of the day (e.g. Lun.)
+        if day_name == "Dim." or day == week_schedule[-1]:  # Sunday or last day
             weeks.append(current_week)
             current_week = []
 
@@ -216,23 +216,23 @@ def split_into_weeks(week_schedule):
 
 
 def split_by_month_or_period(week_schedule):
-    # Divise week_schedule en période mensuelle ou unique selon la durée
+    # Divides week_schedule into monthly or single periods according to duration
     periods = []
     current_period = []
     previous_month = None
 
     for day in week_schedule:
-        # Extraire le mois (format : Lun 25-12)
-        current_month = day.split(" ")[1].split("-")[1]  # Extraire le mois (ex: 12)
+        # Extract month (format: Lun 25-12)
+        current_month = day.split(" ")[1].split("-")[1]  # Extract the month (e.g. 12)
 
-        # Si changement de mois, commencer une nouvelle période
+        # If the month changes, start a new period
         if previous_month and current_month != previous_month:
             periods.append(current_period)
             current_period = []
         current_period.append(day)
         previous_month = current_month
 
-    # Ajouter la dernière période
+    # Add the last period
     if current_period:
         periods.append(current_period)
 
@@ -240,18 +240,18 @@ def split_by_month_or_period(week_schedule):
 
 
 def is_vacation_day(agent_name, day, dayOff):
-    """Vérifie si le jour est un jour de congé pour cet agent."""
+    """Checks whether the day is a day off for this agent."""
     if agent_name in dayOff:
         vacation_start, vacation_end = dayOff[agent_name]
-        # Convertir les dates de congé et le jour en objets datetime pour comparaison
+        # Convert holiday dates and the day into datetime objects for comparison
         vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
         vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
-        day_part = day.split(" ")[1]  # Extraire la date (ex: 25-12)
+        day_part = day.split(" ")[1]  # Extract the date (e.g. 25-12)
         day_date = datetime.strptime(
             f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
         )
 
-        # Vérifier si le jour est entre la date de début et de fin du congé
+        # Check if the day is between the holiday start and end dates
         return vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
             day
         )
@@ -259,7 +259,7 @@ def is_vacation_day(agent_name, day, dayOff):
 
 
 def is_weekend(day):
-    """Détermine si un jour est un samedi ou un dimanche."""
+    """Determines whether a day is Saturday or Sunday."""
     day_name = day.split(" ")[0]
     return day_name in ["Sam.", "Dim."]
 
