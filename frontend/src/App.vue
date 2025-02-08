@@ -33,7 +33,7 @@
         <tbody>
           <tr v-for="agent in agents" :key="agent.name">
             <td>{{ agent.name }}</td>
-            <td v-for="day in previousWeekSchedule" :key="day">
+            <td v-for="day in previousWeekSchedule" :key="day" :class="[getWeekendClass(day), getVacationClass(agent.name, day)]">
               <select v-model="selectedShifts[agent.name][day]">
                 <option value="">-</option>
                 <option v-for="vacation in vacations" :key="vacation" :value="vacation">
@@ -207,7 +207,23 @@ export default {
           this.errorMessage = 'Error when generating the schedule : ' + error.response.data.error;
         }
       }
-    }
+    },
+    // Détecte si un jour fait partie du week-end
+    getWeekendClass(day) {
+      // Si le jour commence par "Sam" ou "Dim", on retourne "weekend"
+      // Sinon, on retourne une chaîne vide
+      return day.startsWith("Sam") || day.startsWith("Dim") ? "weekend" : "";
+    },
+    // Applique une classe en fonction de la vacation sélectionnée
+    getVacationClass(agentName, day) {
+      const vacation = this.selectedShifts[agentName][day];
+      // Si une vacation est sélectionnée, on la retourne en minuscule
+      if (vacation) {
+        return vacation.toLowerCase();
+      }
+      // Sinon, on retourne une chaîne vide
+      return "";
+    },
   }
 };
 </script>
