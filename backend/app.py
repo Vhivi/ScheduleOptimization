@@ -13,7 +13,7 @@ CORS(app)
 
 
 @app.route("/config")
-# Charger le fichier de configuration
+# Loading the configuration file
 def load_config():
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
     with open(config_path, "r") as config_file:
@@ -21,10 +21,10 @@ def load_config():
 
 
 config = load_config()
-weekend_days = ["Sam", "Dim"]  # Jours du week-end abrégés
+weekend_days = ["Sam", "Dim"]  # Shortened weekend days
 holidays = config[
     "holidays"
-]  # Jours fériés à remettre à jour chaque année, notamment pour le lundi de Pâques
+]  # Public holidays to be updated each year, in particular for Easter Monday
 
 
 @app.route("/")
@@ -34,7 +34,7 @@ def home():
 
 @app.route("/generate-planning", methods=["POST"])
 def generate_planning_route():
-    # Récupération des données à partir du fichier JSON
+    # Retrieving data from the JSON file
     agents = config["agents"]
     vacations = config["vacations"]
     vacation_durations = config["vacation_durations"]
@@ -43,17 +43,17 @@ def generate_planning_route():
     dayOff = {}
     training = {}
 
-    # Récupérer les jours de formation des agents et les stocker dans un dictionnaire {agent: [jours]}
+    # Retrieve agent training days and store them in a dictionary {agent: [days]}.
     for agent in agents:
         if "training" in agent:
             training[agent["name"]] = agent["training"]
 
-    # Récupérer les jours d'indisponibilité des agents et les stocker dans un dictionnaire {agent: [jours]}
+    # Retrieve agent unavailability days and store them in a dictionary {agent: [days]}.
     for agent in agents:
         if "unavailable" in agent:
             unavailable[agent["name"]] = agent["unavailable"]
 
-    # Récupérer les jours de congés des agents
+    # Recovering employees' holiday days
     for agent in agents:
         if "vacation" in agent:
             vacation = agent["vacation"]
@@ -61,7 +61,7 @@ def generate_planning_route():
                 vacation_start = vacation["start"]
                 vacation_end = vacation["end"]
 
-                # Stocker les jours de congés dans un dictionnaire {agent: [début, fin]}
+                # Store holiday days in a dictionary {agent: [start, end]}
                 dayOff[agent["name"]] = [vacation_start, vacation_end]
 
     # Retrieve start and end dates
@@ -90,7 +90,7 @@ def generate_planning_route():
             if vacation not in valid_vacations:
                 return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
 
-    # Calculer la liste des jours à partir des dates
+    # Calculate the list of days from dates
     week_schedule = get_week_schedule(start_date, end_date)
     previous_week_schedule = get_previous_week_schedule(start_date)
 
