@@ -396,27 +396,27 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Un agent ne travaille pas quand il est en formation
-    # Une formation est une journée où l'agent ne peut pas avoir de vacation quelle qu'elle soit.
+    # An agent does not work while on training
+    # A training session is a day on which the agent is not allowed to do any work.
     for agent in agents:
         agent_name = agent["name"]
 
         if "training" in agent:
-            # Récupérer les jours de formation de l'agent
+            # Retrieve the agent's training days
             training_days = agent["training"]
 
-            # Parcourir chaque jour de formation
+            # Browse each training day
             for training_date in training_days:
-                # Extraire la portion date du jour
+                # Extract today's date
                 training_day = datetime.strptime(training_date, "%d-%m-%Y").strftime(
                     "%d-%m"
                 )
 
-                # Interdire toutes les vacations pour l'agent ce jour
+                # Forbid the agent from working any shifts on this day
                 for day in week_schedule:
                     if (
                         training_day in day
-                    ):  # Vérifie si le jour correspond à une formation
+                    ):  # Checks whether the day corresponds to training
                         for vacation in vacations:
                             model.Add(planning[(agent_name, day, vacation)] == 0)
     ########################################################
