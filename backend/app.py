@@ -502,24 +502,24 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Interdire une vacation de nuit avant une indisponibilité
+    # Prohibiting a night shift before a period of unavailability
     for agent in agents:
         agent_name = agent["name"]
 
         if "unavailable" in agent:
-            # Récupérer les jours d'indisponibilité de l'agent
+            # Retrieve the days the agent is unavailable
             unavailable_days = [
                 datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
                 for date in agent["unavailable"]
             ]
 
-            # Interdire la vacation de nuit la veille de l'indisponibilité
+            # Prohibit night shifts the day before the unavailability period
             for day_idx, day in enumerate(
                 week_schedule[:-1]
-            ):  # Ignorer le dernier jour
+            ):  # Ignoring the last day
                 next_day = week_schedule[day_idx + 1]
 
-                # Vérifie si le jour suivant est une indisponibilité
+                # Checks if the next day is unavailable
                 if any(
                     unavailable_day in next_day for unavailable_day in unavailable_days
                 ):
