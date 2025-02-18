@@ -527,24 +527,24 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Interdire une vacation de nuit avant une formation
+    # Prohibit a night shift before a training course
     for agent in agents:
         agent_name = agent["name"]
 
         if "training" in agent:
-            # Récupérer les jours de formation de l'agent
+            # Retrieve the agent's training days
             training_days = [
                 datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
                 for date in agent["training"]
             ]
 
-            # Interdire la vacation de nuit la veille de la formation
+            # Prohibit night shifts the day before training sessions
             for day_idx, day in enumerate(
                 week_schedule[:-1]
-            ):  # Ignorer le dernier jour
+            ):  # Ignore the last day
                 next_day = week_schedule[day_idx + 1]
 
-                # Vérifie si le jour suivant est une formation
+                # Checks if the next day is a training day
                 if any(training_day in next_day for training_day in training_days):
                     model.Add(planning[(agent_name, day, "Nuit")] == 0)
     ########################################################
