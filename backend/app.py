@@ -479,25 +479,25 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Limitation à 3 vacations de Jour par semaine
-    # Convertir week_schedule en objet datetime pour faciliter le regroupement par semaine
+    # Limited to 3 day shifts per week
+    # Convert week_schedule into a datetime object to facilitate grouping by week
     week_days = [
         (day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in week_schedule
     ]
     weeks_dict = defaultdict(list)
 
-    # Regrouper les jours par semaine
+    # Group days by week
     for day_str, day_date in week_days:
-        # `isocalendar()` renvoie un tuple (année, semaine, jour) ce qui permet de regrouper par semaine
-        # Utiliser une clé lisible en chaîne de caractères pour le regroupement (année-semaine)
+        # isocalendar() returns a tuple (year, week, day) which can be grouped by week
+        # Use a string-readable key for grouping (year-week)
         week_number = day_date.isocalendar()[:2]
         weeks_dict[week_number].append(day_str)
 
-    # Limiter à 3 vacations de Jour par semaine
+    # Limit to 3 day shifts per week
     for agent in agents:
         agent_name = agent["name"]
         for week, days in weeks_dict.items():
-            # Limiter les vacations "Jour" à 3 par semaine pour cet agent
+            # Limit "Day" shifts to 3 per week for this agent
             model.Add(sum(planning[(agent_name, day, "Jour")] for day in days) <= 3)
     ########################################################
 
