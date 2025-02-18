@@ -422,15 +422,15 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Congés des agents
+    # Staff leave
     date_format_full = "%d-%m-%Y"
     total_hours = {}
 
     for agent in agents:
         agent_name = agent["name"]
-        total_hours[agent_name] = 0  # Initialiser le total d'heures pour l'agent
+        total_hours[agent_name] = 0  # Initialise the total number of hours for the agent
 
-        # Récupérer les informations de congés s'il y en a
+        # Retrieve leave information if available
         vacation = agent.get("vacation")
         if (
             vacation
@@ -442,35 +442,35 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
             vacation_end = datetime.strptime(vacation["end"], date_format_full)
 
             for day_str in week_schedule:
-                # Extrait le jour et le mois et compléter avec l'année de vacation_start
-                day_part = day_str.split(" ")[1]  # Extrait la date au format %d-%m
-                # Identifier le format et convertir le jour en objet datetime
+                # Extract the day and month and complete with the year of vacation_start
+                day_part = day_str.split(" ")[1]  # Extracts the date in %d-%m format
+                # Identify the format and convert the day into a datetime object
                 try:
                     day_date = datetime.strptime(
                         f"{day_part}-{vacation_start.year}", date_format_full
                     )
                 except ValueError:
-                    continue  # Ignorer la dates mal formées
+                    continue  # Ignore malformed dates
 
-                # Si le jour est un jour de congé, interdire toutes les vacations
+                # If the day is a leave, prohibit all shifts
                 if vacation_start <= day_date <= vacation_end:
                     for vacation in vacations:
                         model.Add(planning[(agent_name, day_str, vacation)] == 0)
 
-                    # Calcul des heures pour les jours de congés (7 heures du lundi au samedi)
-                    if day_date.weekday() < 6:  # lundi (0) à samedi (5)
-                        total_hours[agent_name] += 70  # 7 heures * 10
+                    # Calculating hours for days off (7 hours from Monday to Saturday)
+                    if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
+                        total_hours[agent_name] += 70  # 7 hours * 10
                         # model.Add(total_hours[agent_name])
 
-            # Si le congé commence un lundi, ajoutez l'indisponibilité du week-end précédent
-            if vacation_start.weekday() == 0:  # lundi (0)
+            # If the leave starts on a Monday, add the unavailability from the previous weekend
+            if vacation_start.weekday() == 0:  # Monday (0)
                 previous_saturday = vacation_start - timedelta(days=2)
                 previous_sunday = vacation_start - timedelta(days=1)
 
                 for weekend_day in [previous_saturday, previous_sunday]:
                     weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
 
-                    # Vérifie si le jour est dans la semaine de planification
+                    # Checks if the day is in the planning week
                     if weekend_str in week_schedule:
                         for vacation in vacations:
                             model.Add(
