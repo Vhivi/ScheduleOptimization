@@ -550,12 +550,12 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Limiter les vacations avant et après une formation
+    # Limiting pre- and post-training shifts
     for agent in agents:
         agent_name = agent["name"]
 
         if "training" in agent:
-            # Récupérer les jours de formation de l'agent
+            # Retrieve the agent's training days
             training_days = [
                 datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
                 for date in agent["training"]
@@ -563,22 +563,22 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
 
             for day_idx, day in enumerate(week_schedule):
                 if any(training_day in day for training_day in training_days):
-                    # Vérifier le jour précédent (veille de la formation)
+                    # Check the day before the course
                     if day_idx > 0:
                         previous_day = week_schedule[day_idx - 1]
 
-                        # Si une vacation est attribuée la veille, elle doit être CDP ou rien
+                        # If a shift is allocated the day before, it must be CDP or nothing
                         for vacation in vacations:
                             if vacation != "CDP":
                                 model.Add(
                                     planning[(agent_name, previous_day, vacation)] == 0
                                 )
 
-                    # Vérifier le jour suivant (lendemain de la formation)
+                    # Check the following day (the day after the course)
                     if day_idx < len(week_schedule) - 1:
                         next_day = week_schedule[day_idx + 1]
 
-                        # Si une vacation est attribuée le lendemain, elle doit être CDP, Nuit ou rien
+                        # If a shift is allocated the following day, it must be CDP, Night or nothing.
                         allowed_vacations = ["CDP", "Nuit"]
                         for vacation in vacations:
                             if vacation not in allowed_vacations:
