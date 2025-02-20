@@ -642,14 +642,14 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Appliquer les restrictions
+    # Applying restrictions
     for agent in agents:
         agent_name = agent["name"]
 
         if "restriction" in agent:
             restricted_vacations = agent["restriction"]
 
-            # Interdire ces vacations pour l'agent tous les jours du planning
+            # Prohibit these shifts for the agent every day of the schedule
             for day in week_schedule:
                 for restricted_vacation in restricted_vacations:
                     model.Add(planning[(agent_name, day, restricted_vacation)] == 0)
