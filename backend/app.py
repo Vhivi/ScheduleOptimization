@@ -702,16 +702,16 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Contrainte d'équilibre par période
+    # Balancing constraint per period
 
-    # Diviser week_schedule en périodes mensuelles ou uniques
+    # Split week_schedule into monthly or single periods
     periods = split_by_month_or_period(week_schedule)
 
     for period in periods:
         total_hours = {}
         for agent in agents:
             agent_name = agent["name"]
-            # Calcul des heures totales par agent sur la période
+            # Calculation of total hours per agent over the period
             total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
                     planning[(agent_name, day, "Jour")] * jour_duration
@@ -721,21 +721,21 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                 )
             )
 
-    # Définir min_hours et max_hours pour l'équilibrage
+    # Define min_hours and max_hours for balancing
     min_hours = model.NewIntVar(
         0, 100000, "min_hours_period"
-    )  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
+    )  # Lower limit - Adjust terminals (*10) if necessary
     max_hours = model.NewIntVar(
         0, 100000, "max_hours_period"
-    )  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
+    )  # Upper limit - Adjust terminals (*10) if necessary
 
-    # Ajouter des contraintes pour chaque agent
+    # Add constraints for each agent
     for agent_name in total_hours:
         model.Add(min_hours <= total_hours[agent_name])
         model.Add(total_hours[agent_name] <= max_hours)
 
-    # Limiter l'écart d'heure entre les agents
-    max_difference = 240  # Ajuster la flexibilité si nécessaire (*10)
+    # Limiting the time difference between agents
+    max_difference = 240  # Adjust flexibility if necessary (*10)
     model.Add(max_hours - min_hours <= max_difference)
     ########################################################
 
