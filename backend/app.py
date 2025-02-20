@@ -615,14 +615,14 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Interdire la vacation nuit du lundi si l'agent à travailler le week-end
+    # Prohibit the Monday night shift if the agent has to work at the weekend
     for agent in agents:
         agent_name = agent["name"]
 
         for day_idx, day in enumerate(
             week_schedule[:-2]
-        ):  # on parcourt jusqu'à l'avant-dernier jour
-            # On vérifie si le jour est un samedi
+        ):  # We browse until the penultimate day
+            # Check if the day is a Saturday
             if "Sam" in day:
                 sunday_idx = day_idx + 1
                 monday_idx = day_idx + 2
@@ -631,11 +631,11 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                     sunday = week_schedule[sunday_idx]
                     monday = week_schedule[monday_idx]
 
-                    # Récupérer les variables de travail de nuit pour samedi et dimanche et auncune vacation le lundi
+                    # Retrieve night shift variables for Saturday and Sunday and no shifts on Monday
                     saturday_night = planning[(agent_name, day, "Nuit")]
                     sunday_night = planning[(agent_name, sunday, "Nuit")]
 
-                    # Créer une variable booléenne pour forcer l'agent à ne pas travailler le lundi
+                    # Create a Boolean variable to force the agent not to work on Mondays
                     model.Add(
                         planning[(agent_name, monday, "Nuit")] == 0
                     ).OnlyEnforceIf([saturday_night, sunday_night])
