@@ -588,28 +588,28 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Interdire une vacation pour une exclusion de vacation
+    # Prohibit a shift for a shift exclusion
     for agent in agents:
         agent_name = agent["name"]
 
         if "exclusion" in agent:
-            # Récupérer les vacations à exclure
+            # Retrieve shifts to be excluded
             exclusion_dates = agent["exclusion"]
 
-            # Parcourir chaque date d'exclusion
+            # Browse each exclusion date
             for exclusion_date in exclusion_dates:
-                # Extraire la portion date de l'exclusion
+                # Extract the date portion of the exclusion
                 exclusion_day = datetime.strptime(exclusion_date, "%d-%m-%Y").strftime(
                     "%d-%m"
                 )
 
-                # Interdire toutes les vacations pour l'agent ce jour
+                # Prohibit the agent from working any shifts on this day
                 for day_str in week_schedule:
-                    day_date = day_str.split(" ")[1]  # Extraire la date (dd-mm)
+                    day_date = day_str.split(" ")[1]  # Extract date (dd-mm)
 
                     if (
                         exclusion_day == day_date
-                    ):  # Vérifie si le jour correspond à une exclusion
+                    ):  # Checks whether the day corresponds to an exclusion
                         for vacation in vacations:
                             model.Add(planning[(agent_name, day_str, vacation)] == 0)
     ########################################################
