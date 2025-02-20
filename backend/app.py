@@ -658,10 +658,10 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
     # Soft Constraints
     ########################################################
-    # (Mettre ici toutes les contraintes [souples] qui influencent l'objectif global)
+    # (Put here all the [soft] constraints that influence the overall objective)
 
     ########################################################
-    # Contrainte d'équilibre : tous les agents doivent avoir un volume horaire similaire
+    # Balance constraint: all agents must have a similar volume of working hours
     total_hours = {}
     for agent in agents:
         agent_name = agent["name"]
@@ -670,7 +670,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
             + planning[(agent_name, day, "Nuit")] * nuit_duration
             + planning[(agent_name, day, "CDP")] * cdp_duration
             +
-            # Ajout de la durée de congé pour chaque jour de congé détecté
+            # Leave duration added for each day of leave detected
             (
                 conge_duration
                 if is_vacation_day(agent_name, day, dayOff) and not is_weekend(day)
@@ -682,23 +682,23 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
             f"Congé pour {agent_name}: {sum((conge_duration if is_vacation_day(agent_name, day, dayOff) else 0) for day in week_schedule)}"
         )
 
-    # Imposer que la différence entre le minimum et le maximum d'heures travaillées par les agents soit limitée
+    # Impose a limit on the difference between the minimum and maximum hours worked by employees
     min_hours = model.NewIntVar(
         0, 10000, "min_hours"
-    )  # Limite inférieure - Ajuster les bornes (*10) si nécessaire
+    )  # Lower limit - Adjust terminals (*10) if necessary
     max_hours = model.NewIntVar(
         0, 10000, "max_hours"
-    )  # Limite supérieure - Ajuster les bornes (*10) si nécessaire
+    )  # Upper limit - Adjust terminals (*10) if necessary
 
-    # Contrainte pour équilibrer les heures travaillées entre agents
+    # Constraint on balancing hours worked between agents
     for agent_name in total_hours:
         model.Add(min_hours <= total_hours[agent_name])
         model.Add(total_hours[agent_name] <= max_hours)
 
-    # Contraindre la différence entre max_hours et min_hours pour un équilibre global
+    # Constraining the difference between max_hours and min_hours for global equilibrium
     model.Add(
         max_hours - min_hours <= 240
-    )  # Ajuster la flexibilité si nécessaire (*10)
+    )  # Adjust flexibility if necessary (*10)
     ########################################################
 
     ########################################################
