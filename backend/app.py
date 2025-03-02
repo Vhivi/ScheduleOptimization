@@ -740,17 +740,17 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Ajouter l'équilibrage des week-ends complets
+    # Add balancing for full weekends
 
     total_weekends = sum(
         1 for day in week_schedule if "Sam" in day
-    )  # Nombre total de week-ends dans la période
-    # Doublez la cible pour tenir compte de deux vacations (Jour et Nuit) par week-end
+    )  # Total number of weekends in the period
+    # Double the target to take account of two shifts (Day and Night) per weekend
     target_weekends_per_agent = (total_weekends * 2) // len(
         agents
-    )  # Nombre de week-ends idéal par agent
+    )  # Ideal number of weekends per agent
 
-    # Initialiser les compteurs de week-ends travaillés pour chaque agent
+    # Initialise the number of weekends worked for each agent
     weekends_worked = {}
     for agent in agents:
         agent_name = agent["name"]
@@ -758,7 +758,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
             0, total_weekends, f"weekends_worked_{agent_name}"
         )
 
-        # Calculer le nombre de week-ends complets travaillés pour chaque agent
+        # Calculate the number of full weekends worked for each agent
         weekend_count = []
         for day_idx, day in enumerate(week_schedule):
             if (
@@ -769,13 +769,13 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                 saturday = day
                 sunday = week_schedule[day_idx + 1]
 
-                # Variables booléennes pour le travail le samedi et le dimanche
+                # Boolean variables for working on Saturdays and Sundays
                 saturday_work = model.NewBoolVar(
                     f"{agent_name}_works_saturday_{saturday}"
                 )
                 sunday_work = model.NewBoolVar(f"{agent_name}_works_sunday_{sunday}")
 
-                # Ajouter les contraintes pour assigner ces variables
+                # Add constraints to assign these variables
                 model.Add(
                     planning[(agent_name, saturday, "Jour")]
                     + planning[(agent_name, saturday, "Nuit")]
@@ -798,7 +798,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                     == 0
                 ).OnlyEnforceIf(sunday_work.Not())
 
-                # L'agent travaille un week-end complet si les deux jours sont travaillés
+                # The employee works a full weekend if both days are worked
                 works_weekend = model.NewBoolVar(
                     f"{agent_name}_works_weekend_{saturday}_{sunday}"
                 )
@@ -809,23 +809,23 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                     works_weekend.Not()
                 )
 
-                # Ajouter works_weekend à la liste des week-ends travaillés
+                # Add works_weekend to the list of weekends worked
                 weekend_count.append(works_weekend)
 
-        # Assignation de la somme des week-ends travaillés
+        # Assignment of the sum of weekends worked
         model.Add(weekends_worked[agent_name] == sum(weekend_count))
 
-    # Ajouter l'objectif pour équilibrer les week-ends travaillés
+    # Add the objective of balancing weekends worked
     min_weekends = model.NewIntVar(0, total_weekends, "min_weekends")
     max_weekends = model.NewIntVar(0, total_weekends, "max_weekends")
     for agent_name in weekends_worked:
         model.Add(min_weekends <= weekends_worked[agent_name])
         model.Add(weekends_worked[agent_name] <= max_weekends)
 
-    # Minimiser l'écart entre le minimum et le maximum de week-ends travaillés par les agents
+    # Minimise the difference between the minimum and maximum number of weekends worked by agents
     model.Minimize(max_weekends - min_weekends)
 
-    # Calcul de l'équilibrage des week-ends travaillés
+    # Calculating the balance of weekends worked
     weekend_balancing_terms = []
 
     for agent in agents:
@@ -837,16 +837,16 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
             0, (total_weekends * 2) ** 2, f"squared_difference_weekends_{agent_name}"
         )
 
-        # Calculer la différence entre les week-ends travaillés et le nombre de week-ends cible
+        # Calculate the difference between weekends worked and the target number of weekends
         model.Add(difference == weekends_worked[agent_name] - target_weekends_per_agent)
 
-        # Définir le carré de la différence
+        # Define the square of the difference
         model.AddMultiplicationEquality(squared_difference, [difference, difference])
 
-        # Ajouter ce carré à l'objectif d'équilibrage des week-ends
+        # Add this square to the weekend balancing objective
         weekend_balancing_terms.append(squared_difference)
 
-    # Équilibrage des week-ends travaillés
+    # Balancing of worked weekends
     weekend_balancing_objective = cp_model.LinearExpr.Sum(weekend_balancing_terms)
     ########################################################
 
