@@ -853,27 +853,27 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
     # Mixed Constraints
     ########################################################
-    # (Mettre ici toutes les contraintes qui combinent les contraintes dures et souples)
-    # (Pensez à les retravailler pour dissocier les contraintes dures et souples)
+    # (Put here all the constraints that combine hard and soft constraints)
+    # (Think about reworking them to separate hard and soft constraints)
 
     ########################################################
-    # Limitation du nombre de Nuit à 3 par semaine et gestion des vacations Jour et CDP
+    # Limit the number of Nights to 3 per week and manage Day and CDP shifts
     for agent in agents:
         agent_name = agent["name"]
 
         for week in weeks_split:
-            # Limiter le nombre de vacation Nuit à 3 par semaine (du lundi au dimanche)
+            # Limit the number of Nights to 3 per week (from Monday to Sunday)
             model.Add(sum(planning[(agent_name, day, "Nuit")] for day in week) <= 3)
 
-            # Calculer le total d'heures pour Jour et CDP par semaine
+            # Calculate the total hours for Day and CDP per week
             total_heures = sum(
                 planning[(agent_name, day, "Jour")] * jour_duration
                 + planning[(agent_name, day, "CDP")] * cdp_duration
                 for day in week
             )
 
-            # Limiter à 36 heures par semaine
-            model.Add(total_heures <= 360)  # 36 heures * 10
+            # Limit to 36 hours per week
+            model.Add(total_heures <= 360)  # 36 hours * 10
     ########################################################
 
     ########################################################
@@ -980,16 +980,16 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     ########################################################
 
     ########################################################
-    # Objectifs
+    # Objectives
     ########################################################
 
-    # Poids pour chaque composante de l'objectif
+    # Weights for each component of the objective function
     weight_preferred = 100
     weight_other = 1
     weight_avoid = -250
     # variance_weight = 100
 
-    # Maximiser les vacations préférées avec un poids supplémentaire
+    # Maximize preferred vacations with an additional weight
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
             planning[(agent["name"], day, vacation)] * weight_preferred
@@ -1000,7 +1000,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         )
     )
 
-    # Ajouter un poids normal pour les autres vacations
+    # Add a normal weight for the other shifts
     objective_other_vacations = cp_model.LinearExpr.Sum(
         list(
             planning[(agent["name"], day, vacation)] * weight_other
@@ -1011,7 +1011,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         )
     )
 
-    # Pénaliser les vacations non désirées (évitées)
+    # Penalising unwanted (avoided) shifts
     penalized_vacations = cp_model.LinearExpr.Sum(
         list(
             planning[(agent["name"], day, vacation)] * weight_avoid
@@ -1022,19 +1022,19 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         )
     )
 
-    # Maximiser l'objectif global, avec une préférence marquée pour les vacations préférées et équilibre des heures
+    # Maximize the overall objective, with a strong preference for preferred shifts and balancing hours
     model.Maximize(
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
         - weekend_balancing_objective
-        # (variance_weight * total_variance)  # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
+        # (variance_weight * total_variance)  # ! Temporarily suspended similar hours constraint
     )
 
     # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = (
-        120  # Limite de temps de résolution en secondes
+        120  # Limit of resolution time in seconds
     )
     status = solver.Solve(model)
 
