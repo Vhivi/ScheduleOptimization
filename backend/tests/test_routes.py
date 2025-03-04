@@ -186,13 +186,14 @@ def test_generate_planning_route_invalid_agent(client):
     data = {
         "start_date": "2023-01-01",
         "end_date": "2023-01-07",
-        "initial_shifts": {"InvalidAgent": [("Sam. 31-12", "Jour")]}
+        "initial_shifts": {"InvalidAgent": [("Sam. 31-12", "Jour")]},
     }
     response = client.post(
         "/generate-planning", data=json.dumps(data), content_type="application/json"
     )
     assert response.status_code == 400
     assert response.json == {"error": "Invalid agent: InvalidAgent"}
+
 
 def test_generate_planning_route_invalid_vacation(client):
     """
@@ -213,11 +214,10 @@ def test_generate_planning_route_invalid_vacation(client):
     data = {
         "start_date": "2023-01-01",
         "end_date": "2023-01-07",
-        "initial_shifts": {"Agent1": [("Sam. 31-12", "InvalidVacation")]}
+        "initial_shifts": {"Agent1": [("Sam. 31-12", "InvalidVacation")]},
     }
     response = client.post(
         "/generate-planning", data=json.dumps(data), content_type="application/json"
     )
     assert response.status_code == 400
     assert response.json == {"error": "Invalid vacation: InvalidVacation"}
-
