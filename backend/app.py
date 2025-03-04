@@ -53,13 +53,16 @@ def generate_planning_route():
         if "unavailable" in agent:
             unavailable[agent["name"]] = agent["unavailable"]
 
-    # Recovering employees' holiday days
+    # Recovering employees' leave days
     for agent in agents:
+        # Check if the agent has leave days
         if "vacations" in agent:
             dayOff[agent["name"]] = []
+            # Browse each leave day period
             for vac in agent["vacations"]:
+                # Check if the leave period is a dictionary and contains the start and end keys
                 if isinstance(vac, dict) and "start" in vac and "end" in vac:
-                    # Store holiday days in a dictionary {agent: [start, end]}
+                    # Store leave days in a dictionary {agent: [start, end]}
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
 
     # Retrieve start and end dates
