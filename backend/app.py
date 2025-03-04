@@ -55,14 +55,12 @@ def generate_planning_route():
 
     # Recovering employees' holiday days
     for agent in agents:
-        if "vacation" in agent:
-            vacation = agent["vacation"]
-            if isinstance(vacation, dict) and "start" in vacation and "end" in vacation:
-                vacation_start = vacation["start"]
-                vacation_end = vacation["end"]
-
-                # Store holiday days in a dictionary {agent: [start, end]}
-                dayOff[agent["name"]] = [vacation_start, vacation_end]
+        if "vacations" in agent:
+            dayOff[agent["name"]] = []
+            for vac in agent["vacations"]:
+                if isinstance(vac, dict) and "start" in vac and "end" in vac:
+                    # Store holiday days in a dictionary {agent: [start, end]}
+                    dayOff[agent["name"]].append([vac["start"], vac["end"]])
 
     # Retrieve start and end dates
     # Check whether the dates are present in the query
