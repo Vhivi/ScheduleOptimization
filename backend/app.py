@@ -238,23 +238,27 @@ def split_by_month_or_period(week_schedule):
 
 
 def is_vacation_day(agent_name, day, dayOff):
-    """Checks whether the day is a day off for this agent."""
+    """Checks whether the day corresponds to leave for the agent,
+    by checking all the periods defined in dayOff."""
     if agent_name in dayOff:
-        vacation_start, vacation_end = dayOff[agent_name]
-        # Convert holiday dates and the day into datetime objects for comparison
-        vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
-        vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
         day_part = day.split(" ")[1]  # Extract the date (e.g. 25-12)
-        day_date = datetime.strptime(
-            f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
-        )
-
-        # Check if the day is between the holiday start and end dates
-        return vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
-            day
-        )
+        for period in dayOff[agent_name]:
+            vacation_start, vacation_end = period   # Extract the start and end dates
+            # Convert holiday dates and the day into datetime objects for comparison
+            vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
+            vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
+            try:
+                day_date = datetime.strptime(
+                    f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
+                )
+            except ValueError:
+                continue
+            # Check if the day is between the holiday start and end dates
+            if vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
+                day
+            ):
+                return True
     return False
-
 
 def is_weekend(day):
     """Determines whether a day is Saturday or Sunday."""
