@@ -466,8 +466,14 @@ def day_off():
     """
 
     return {
-        "Agent1": ["01-01-2023", "10-01-2023"],
-        "Agent2": ["15-01-2023", "20-01-2023"],
+        "Agent1": [
+            ["01-01-2023", "07-01-2023"],
+            ["11-01-2023", "14-01-2023"]
+            ],
+        "Agent2": [
+            ["15-01-2023", "21-01-2023"],
+            ["22-01-2023", "28-01-2023"]
+            ],
     }
 
 
@@ -482,8 +488,10 @@ def test_is_vacation_day_true(day_off):
         The function asserts that the is_vacation_day function returns True for the specified agents and dates.
     """
 
-    assert is_vacation_day("Agent1", "Lun. 02-01", day_off)
-    assert is_vacation_day("Agent2", "Mer. 18-01", day_off)
+    assert is_vacation_day("Agent1", "Mar. 03-01", day_off)
+    assert is_vacation_day("Agent1", "Ven. 13-01", day_off)
+    assert is_vacation_day("Agent2", "Lun. 16-01", day_off)
+    assert is_vacation_day("Agent2", "Jeu. 26-01", day_off)
 
 
 def test_is_vacation_day_false(day_off):
@@ -497,7 +505,7 @@ def test_is_vacation_day_false(day_off):
         The function is_vacation_day should return False for the given agent and date combinations.
     """
 
-    assert not is_vacation_day("Agent1", "Lun. 11-01", day_off)
+    assert not is_vacation_day("Agent1", "Dim. 10-01", day_off)
     assert not is_vacation_day("Agent2", "Dim. 22-01", day_off)
 
 
