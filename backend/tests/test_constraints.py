@@ -22,18 +22,26 @@ def setup_correct_data():
             "unavailable": ["01-01-2023"],
             "training": ["02-01-2023"],
             "preferences": {"preferred": ["Jour", "CDP"], "avoid": ["Nuit"]},
+            "vacations": [
+                { "start": "03-01-2023", "end": "05-01-2023" },
+                { "start": "06-01-2023", "end": "07-01-2023" }
+            ]
         },
         {
             "name": "Agent2",
             "unavailable": ["03-01-2023"],
             "training": ["04-01-2023"],
             "preferences": {"preferred": ["Nuit"], "avoid": ["Jour", "CDP"]},
+            "vacations": [
+                { "start": "01-01-2023", "end": "02-01-2023" }
+            ]
         },
         {
             "name": "Agent3",
             "unavailable": ["05-01-2023"],
             "training": ["06-01-2023"],
             "preferences": {"preferred": ["Nuit"], "avoid": []},
+            "vacations": []
         },
         {
             "name": "Agent4",
