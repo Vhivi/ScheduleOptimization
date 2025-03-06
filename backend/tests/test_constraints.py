@@ -23,8 +23,7 @@ def setup_correct_data():
             "training": ["02-01-2023"],
             "preferences": {"preferred": ["Jour", "CDP"], "avoid": ["Nuit"]},
             "vacations": [
-                { "start": "03-01-2023", "end": "05-01-2023" },
-                { "start": "06-01-2023", "end": "07-01-2023" }
+                { "start": "03-01-2023", "end": "05-01-2023" }
             ]
         },
         {
