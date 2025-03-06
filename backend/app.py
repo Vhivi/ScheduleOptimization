@@ -436,51 +436,47 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         total_hours[agent_name] = 0  # Initialise the total number of hours for the agent
 
         # Retrieve leave information if available
-        vacation = agent.get("vacation")
-        if (
-            vacation
-            and isinstance(vacation, dict)
-            and "start" in vacation
-            and "end" in vacation
-        ):
-            vacation_start = datetime.strptime(vacation["start"], date_format_full)
-            vacation_end = datetime.strptime(vacation["end"], date_format_full)
+        if "vacations" in agent and isinstance(agent["vacations"], list):
+            for vac in agent["vacations"]:
+                if isinstance(vac, dict) and "start" in vac and "end" in vac:
+                    vacation_start = datetime.strptime(vac["start"], date_format_full)
+                    vacation_end = datetime.strptime(vac["end"], date_format_full)
 
-            for day_str in week_schedule:
-                # Extract the day and month and complete with the year of vacation_start
-                day_part = day_str.split(" ")[1]  # Extracts the date in %d-%m format
-                # Identify the format and convert the day into a datetime object
-                try:
-                    day_date = datetime.strptime(
-                        f"{day_part}-{vacation_start.year}", date_format_full
-                    )
-                except ValueError:
-                    continue  # Ignore malformed dates
-
-                # If the day is a leave, prohibit all shifts
-                if vacation_start <= day_date <= vacation_end:
-                    for vacation in vacations:
-                        model.Add(planning[(agent_name, day_str, vacation)] == 0)
-
-                    # Calculating hours for days off (7 hours from Monday to Saturday)
-                    if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
-                        total_hours[agent_name] += 70  # 7 hours * 10
-                        # model.Add(total_hours[agent_name])
-
-            # If the leave starts on a Monday, add the unavailability from the previous weekend
-            if vacation_start.weekday() == 0:  # Monday (0)
-                previous_saturday = vacation_start - timedelta(days=2)
-                previous_sunday = vacation_start - timedelta(days=1)
-
-                for weekend_day in [previous_saturday, previous_sunday]:
-                    weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
-
-                    # Checks if the day is in the planning week
-                    if weekend_str in week_schedule:
-                        for vacation in vacations:
-                            model.Add(
-                                planning[(agent_name, weekend_str, vacation)] == 0
+                    # For each day of the schedule
+                    for day_str in week_schedule:
+                        # Extract the day and month and complete with the year of vacation_start
+                        day_part = day_str.split(" ")[1]    # Extract the date in %d-%m format
+                        # Identify the format and convert the day into a datetime object
+                        try:
+                            day_date = datetime.strptime(
+                                f"{day_part}-{vacation_start.year}", date_format_full
                             )
+                        except ValueError:
+                            continue  # Ignore malformed dates
+
+                        # If the day is a leave, prohibit all shifts
+                        if vacation_start <= day_date <= vacation_end:
+                            for vacation in vacations:
+                                model.Add(planning[(agent_name, day_str, vacation)] == 0)
+
+                            # Calculating hours for days off (7 hours from Monday to Saturday)
+                            if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
+                                total_hours[agent_name] += 70  # 7 hours * 10
+
+                    # If the leave starts on a Monday, add the unavailability from the previous weekend
+                    if vacation_start.weekday() == 0:  # Monday (0)
+                        previous_saturday = vacation_start - timedelta(days=2)
+                        previous_sunday = vacation_start - timedelta(days=1)
+
+                        for weekend_day in [previous_saturday, previous_sunday]:
+                            weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
+
+                            # Checks if the day is in the planning week
+                            if weekend_str in week_schedule:
+                                for vacation in vacations:
+                                    model.Add(
+                                        planning[(agent_name, weekend_str, vacation)] == 0
+                                    )
     ########################################################
 
     ########################################################
