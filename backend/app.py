@@ -438,6 +438,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         # Retrieve leave information if available
         if "vacations" in agent and isinstance(agent["vacations"], list):
             for vac in agent["vacations"]:
+                # Check if the leave period is a dictionary and contains the start and end keys
                 if isinstance(vac, dict) and "start" in vac and "end" in vac:
                     vacation_start = datetime.strptime(vac["start"], date_format_full)
                     vacation_end = datetime.strptime(vac["end"], date_format_full)
@@ -471,8 +472,8 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                         for weekend_day in [previous_saturday, previous_sunday]:
                             weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
 
-                            # Checks if the day is in the planning week
-                            if weekend_str in week_schedule:
+                            # Checks if the day is in the planning week or previous week schedule
+                            if weekend_str in week_schedule or weekend_str in previous_week_schedule:
                                 for vacation in vacations:
                                     model.Add(
                                         planning[(agent_name, weekend_str, vacation)] == 0
@@ -678,9 +679,6 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                 else 0
             )
             for day in week_schedule
-        )
-        print(
-            f"Congé pour {agent_name}: {sum((conge_duration if is_vacation_day(agent_name, day, dayOff) else 0) for day in week_schedule)}"
         )
 
     # Impose a limit on the difference between the minimum and maximum hours worked by employees
@@ -1035,7 +1033,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = (
-        120  # Limit of resolution time in seconds
+        600  # Limit of resolution time in seconds
     )
     status = solver.Solve(model)
 
