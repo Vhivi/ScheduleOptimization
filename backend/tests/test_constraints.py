@@ -52,13 +52,19 @@ def setup_correct_data():
             "name": "Agent5",
             "unavailable": ["02-01-2023"],
             "training": ["03-01-2023"],
-            "preferences": {"preferred": ["JourCDP"], "avoid": ["Nuit"]},
+            "preferences": {"preferred": ["Jour", "CDP"], "avoid": ["Nuit"]},
         },
         {
             "name": "Agent6",
             "unavailable": ["04-01-2023"],
             "training": ["05-01-2023"],
             "preferences": {"preferred": ["Nuit"], "avoid": []},
+        },
+        {
+            "name": "Agent7",
+            "unavailable": ["06-01-2023"],
+            "training": ["07-01-2023"],
+            "preferences": {"preferred": ["Jour"], "avoid": ["Nuit"]},
         },
     ]
     vacations = ["Jour", "Nuit", "CDP"]
@@ -219,6 +225,18 @@ def setup_staff_leave_weekend():
             "unavailable": [],
             "training": [],
             "preferences": {"preferred": ["Nuit"], "avoid": []},
+        },
+        {
+            "name": "Agent7",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+        },
+        {
+            "name": "Agent8",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
         },
     ]
     vacations = ["Jour", "Nuit", "CDP"]
@@ -465,8 +483,20 @@ def test_agent_training(setup_correct_data):
     
 def test_staff_leave_weekend(setup_staff_leave_weekend):
     """
-    Vérifie que si un agent a une période de congé débutant un lundi,
-    les shifts du week-end précédent (samedi et dimanche) ne sont pas attribués.
+    Checks if an agent has a period of leave starting on a Monday,
+    shifts from the previous weekend (Saturday and Sunday) are not allocated.
+    
+    Args:
+        setup_staff_leave_weekend (tuple): A tuple containing the following elements:
+            - agents (list): A list of agent names.
+            - vacations_list (list): A list of vacation periods.
+            - week_schedule (list): A list representing the weekly schedule.
+            - dayOff (list): A list of days off.
+            - previous_week_schedule (list): A list representing the previous week's schedule.
+            
+    Asserts:
+        The test checks that the specified agents do not have any shifts (day or night)
+        on the days they are supposed to be in training.
     """
     agents, vacations_list, week_schedule, dayOff, previous_week_schedule = setup_staff_leave_weekend
     
