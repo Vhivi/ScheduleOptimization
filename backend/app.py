@@ -1033,7 +1033,7 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = (
-        600  # Limit of resolution time in seconds
+        120  # Limit of resolution time in seconds
     )
     status = solver.Solve(model)
 
