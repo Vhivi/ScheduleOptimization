@@ -124,22 +124,36 @@
           return false; // Retourner false si aucun jour de congé n'est défini
         }
 
-        const vacation = this.dayOff[agent] || {}; // Obtenir les jours de congé pour cet agent
+        // On suppose que this.dayOff[agent] est un tableau de périodes, chaque période étant un tableau [dateDebut, dateFin]
+        const vacations = this.dayOff[agent] || {}; // Obtenir les jours de congé pour cet agent
         const dayPart = day.split(" ")[1]; // Extraire la partie date (dd-mm)
 
         // Ajouter une année fictive pour les comparaisons
         const referenceYear = new Date().getFullYear();
-        const vacationStartDate = new Date(`${vacation[0].slice(6, 10)}-${vacation[0].slice(3, 5)}-${vacation[0].slice(0, 2)}`); // Convertir la date de début au format YYYY-mm-dd
-        const vacationEndDate = new Date(`${vacation[1].slice(6, 10)}-${vacation[1].slice(3, 5)}-${vacation[1].slice(0, 2)}`); // Convertir la date de fin au format YYYY-mm-dd
         const currentDate = new Date(`${referenceYear}-${dayPart.slice(3, 5)}-${dayPart.slice(0, 2)}`); // Convertir la date actuelle au format YYYY-mm-dd
 
-        if (vacationStartDate > vacationEndDate) {
-          // Si la date de début est supérieure à la date de fin, c'est un congé qui chevauche l'année
-          return currentDate >= vacationStartDate || currentDate <= vacationEndDate;
-        }
+        // Itérer sur chaque période de congés pour vérifier que le jour courant y est compris
+        for (let i = 0; i < vacations.length; i++) {
+          const period = vacations[i];
+          if (!period || period.length < 2) continue; // Ignorer les périodes invalides
 
-        // Sinon, c'est un congé normal
-        return vacationStartDate <= currentDate && currentDate <= vacationEndDate;
+          // Convertir les dates de début et de fin de la période au format YYYY-mm-dd
+          const vacationStartDate = new Date(`${period[0].slice(6, 10)}-${period[0].slice(3, 5)}-${period[0].slice(0, 2)}`);
+          const vacationEndDate = new Date(`${period[1].slice(6, 10)}-${period[1].slice(3, 5)}-${period[1].slice(0, 2)}`);
+          
+          // Vérifier si la date de début est supérieure à la date de fin (vacances qui chevauchent l'année)
+          if (vacationStartDate > vacationEndDate) {
+            // Si la date de début est supérieure à la date de fin, c'est un congé qui chevauche l'année
+            if (currentDate >= vacationStartDate || currentDate <= vacationEndDate) {
+              return true; // Retourner true si le jour est dans la période de congé
+            }
+          } else {
+            if (vacationStartDate <= currentDate && currentDate <= vacationEndDate) {
+              return true; // Retourner true si le jour est dans la période de congé
+            }
+          }
+        }
+        return false; // Retourner false si le jour n'est pas un jour de congé
       },
       isUnavailable(agent, day) { // Vérifie si un jour est une indisponibilité
         // Vérifie si les indisponibilités exsitent pour cet agent

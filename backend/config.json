@@ -10,10 +10,10 @@
       "unavailable": [],
       "training": [],
       "exclusion": [],
-      "vacation": {
-        "start": "24-03-2025",
-        "end": "30-03-2025"
-      }
+      "vacations": [
+        { "start": "06-01-2025", "end": "12-01-2025" },
+        { "start": "19-05-2025", "end": "25-05-2025" }
+      ]
       },
     {
       "name": "Agent2",
@@ -25,10 +25,9 @@
       "unavailable": [],
       "training": [],
       "exclusion": ["01-01-2025"],
-      "vacation": {
-        "start": "10-03-2025",
-        "end": "23-03-2025"
-      }
+      "vacations": [
+        { "start": "10-03-2025", "end": "23-03-2025" }
+      ]
       },
     {
       "name": "Agent3",
@@ -40,7 +39,10 @@
       "unavailable": ["21-01-2025"],
       "training": [],
       "exclusion": [],
-      "vacation": {}
+      "vacations": [
+        { "start": "21-04-2025", "end": "27-04-2025" },
+        { "start": "12-05-2025", "end": "18-05-2025" }
+      ]
       },
     {
       "name": "Agent4",
@@ -52,7 +54,10 @@
       "unavailable": ["08-02-2025", "09-02-2025"],
       "training": [],
       "exclusion": ["01-01-2025", "11-01-2025", "12-01-2025"],
-      "vacation": {}
+      "vacations": [
+        { "start": "05-05-2025", "end": "11-05-2025" },
+        { "start": "26-05-2025", "end": "31-05-2025" }
+      ]
       },
     {
       "name": "Agent5",
@@ -61,13 +66,12 @@
         "avoid": ["Nuit"]
         },
       "restriction": ["Nuit"],
-      "unavailable": ["08-03-2025", "12-03-2025"],
+      "unavailable": ["08-03-2025", "12-03-2025", "07-04-2025"],
       "training": [],
       "exclusion": [],
-      "vacation": {
-        "start": "17-02-2025",
-        "end": "23-02-2025"
-      }
+      "vacations": [
+        { "start": "14-04-2025", "end": "20-04-2025" }
+      ]
       },
     {
       "name": "Agent6",
@@ -79,10 +83,9 @@
       "unavailable": [],
       "training": [],
       "exclusion": [],
-      "vacation": {
-        "start": "24-02-2025",
-        "end": "09-03-2025"
-      }
+      "vacations": [
+        { "start": "24-02-2025", "end": "09-03-2025" }
+      ]
       }
   ],
   "vacations": ["Jour", "Nuit", "CDP"],

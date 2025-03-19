@@ -2,7 +2,7 @@
 
 ## 🔬 Overview
 
-📆 Schedule Optimization Project is a tool designed to generate optimized work schedules for a team of agents. It considers various constraints like availability, training days, preferences, and more to create balanced schedules. The project aims to minimize scheduling conflicts while maximizing fairness and efficiency.
+📆 Schedule Optimization Project is a tool designed to generate optimized work schedules for a team of agents. It considers various constraints like availability, training days, preferences, and more like **multiple leave periods** to create balanced schedules. The project aims to minimize scheduling conflicts while maximizing fairness and efficiency.
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### 📊 Intelligent Scheduling
 
-- 🔄 Generate tailored schedules accommodating agent availability, vacations, and preferences.
+- 🔄 Generate tailored schedules accommodating agent availability, leaves, and preferences.
 - ⚒️ Optimize workloads while adhering to strict and flexible constraints.
 
 ### ⚖️ Constraint Management
@@ -29,7 +29,7 @@
 ### 📂 Modular Configuration
 
 - 🔨 Flexible parameters defined through the `config.json` file.
-- ✉️ Support for agent preferences, exclusions, and training days.
+- ✉️ Support for agent preferences, exclusions, training days, and **multiple leave periods**.
 
 ### 🔧 Visual Interactivity
 
@@ -101,11 +101,25 @@ The `config.json` file serves as the core customization hub:
       "unavailable": ["17-11-2024", "07-12-2024"],
       "training": ["19-11-2024"],
       "exclusion": ["25-12-2024"],
-      "vacation": {
-        "start": "28-10-2024",
-        "end": "04-11-2024"
-      }
-   }
+      "vacations": [  // Multiple leave periods
+        { "start": "28-10-2024", "end": "04-11-2024" },
+        { "start": "15-12-2024", "end": "20-12-2024" }
+      ]
+   },
+   {
+      "name": "Agent2",
+      "preferences": {
+        "preferred": ["Nuit"],
+        "avoid": ["Jour", "CDP"]
+      },
+      "unavailable": [],
+      "training": [],
+      "exclusion": [],
+      "vacations": [  // Single leave period
+        { "start": "10-03-2025", "end": "23-03-2025" }
+      ]
+    }
+    // ... Add more agents as needed
   ],
   "vacations": ["Jour", "Nuit", "CDP"],
   "vacation_durations": {
@@ -121,7 +135,7 @@ The `config.json` file serves as the core customization hub:
 ### ✏️ Customizable Parameters
 
 - **👥 Agents**:
-  - Define preferences, availability, training days, and vacation periods.
+  - Define preferences (type of shift required), unavailability (specific days agents cannot work), training days (dates agents will be unavailable for work), and leave periods (dates agents will be on vacation).
 - **⏳ Vacations**:
   - Specify shift types and their durations.
 - **🎁 Holidays**:

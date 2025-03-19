@@ -53,16 +53,17 @@ def generate_planning_route():
         if "unavailable" in agent:
             unavailable[agent["name"]] = agent["unavailable"]
 
-    # Recovering employees' holiday days
+    # Recovering employees' leave days
     for agent in agents:
-        if "vacation" in agent:
-            vacation = agent["vacation"]
-            if isinstance(vacation, dict) and "start" in vacation and "end" in vacation:
-                vacation_start = vacation["start"]
-                vacation_end = vacation["end"]
-
-                # Store holiday days in a dictionary {agent: [start, end]}
-                dayOff[agent["name"]] = [vacation_start, vacation_end]
+        # Check if the agent has leave days
+        if "vacations" in agent:
+            dayOff[agent["name"]] = []
+            # Browse each leave day period
+            for vac in agent["vacations"]:
+                # Check if the leave period is a dictionary and contains the start and end keys
+                if isinstance(vac, dict) and "start" in vac and "end" in vac:
+                    # Store leave days in a dictionary {agent: [start, end]}
+                    dayOff[agent["name"]].append([vac["start"], vac["end"]])
 
     # Retrieve start and end dates
     # Check whether the dates are present in the query
@@ -240,23 +241,27 @@ def split_by_month_or_period(week_schedule):
 
 
 def is_vacation_day(agent_name, day, dayOff):
-    """Checks whether the day is a day off for this agent."""
+    """Checks whether the day corresponds to leave for the agent,
+    by checking all the periods defined in dayOff."""
     if agent_name in dayOff:
-        vacation_start, vacation_end = dayOff[agent_name]
-        # Convert holiday dates and the day into datetime objects for comparison
-        vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
-        vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
         day_part = day.split(" ")[1]  # Extract the date (e.g. 25-12)
-        day_date = datetime.strptime(
-            f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
-        )
-
-        # Check if the day is between the holiday start and end dates
-        return vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
-            day
-        )
+        for period in dayOff[agent_name]:
+            vacation_start, vacation_end = period   # Extract the start and end dates
+            # Convert holiday dates and the day into datetime objects for comparison
+            vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
+            vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
+            try:
+                day_date = datetime.strptime(
+                    f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
+                )
+            except ValueError:
+                continue
+            # Check if the day is between the holiday start and end dates
+            if vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
+                day
+            ):
+                return True
     return False
-
 
 def is_weekend(day):
     """Determines whether a day is Saturday or Sunday."""
@@ -431,51 +436,48 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         total_hours[agent_name] = 0  # Initialise the total number of hours for the agent
 
         # Retrieve leave information if available
-        vacation = agent.get("vacation")
-        if (
-            vacation
-            and isinstance(vacation, dict)
-            and "start" in vacation
-            and "end" in vacation
-        ):
-            vacation_start = datetime.strptime(vacation["start"], date_format_full)
-            vacation_end = datetime.strptime(vacation["end"], date_format_full)
+        if "vacations" in agent and isinstance(agent["vacations"], list):
+            for vac in agent["vacations"]:
+                # Check if the leave period is a dictionary and contains the start and end keys
+                if isinstance(vac, dict) and "start" in vac and "end" in vac:
+                    vacation_start = datetime.strptime(vac["start"], date_format_full)
+                    vacation_end = datetime.strptime(vac["end"], date_format_full)
 
-            for day_str in week_schedule:
-                # Extract the day and month and complete with the year of vacation_start
-                day_part = day_str.split(" ")[1]  # Extracts the date in %d-%m format
-                # Identify the format and convert the day into a datetime object
-                try:
-                    day_date = datetime.strptime(
-                        f"{day_part}-{vacation_start.year}", date_format_full
-                    )
-                except ValueError:
-                    continue  # Ignore malformed dates
-
-                # If the day is a leave, prohibit all shifts
-                if vacation_start <= day_date <= vacation_end:
-                    for vacation in vacations:
-                        model.Add(planning[(agent_name, day_str, vacation)] == 0)
-
-                    # Calculating hours for days off (7 hours from Monday to Saturday)
-                    if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
-                        total_hours[agent_name] += 70  # 7 hours * 10
-                        # model.Add(total_hours[agent_name])
-
-            # If the leave starts on a Monday, add the unavailability from the previous weekend
-            if vacation_start.weekday() == 0:  # Monday (0)
-                previous_saturday = vacation_start - timedelta(days=2)
-                previous_sunday = vacation_start - timedelta(days=1)
-
-                for weekend_day in [previous_saturday, previous_sunday]:
-                    weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
-
-                    # Checks if the day is in the planning week
-                    if weekend_str in week_schedule:
-                        for vacation in vacations:
-                            model.Add(
-                                planning[(agent_name, weekend_str, vacation)] == 0
+                    # For each day of the schedule
+                    for day_str in week_schedule:
+                        # Extract the day and month and complete with the year of vacation_start
+                        day_part = day_str.split(" ")[1]    # Extract the date in %d-%m format
+                        # Identify the format and convert the day into a datetime object
+                        try:
+                            day_date = datetime.strptime(
+                                f"{day_part}-{vacation_start.year}", date_format_full
                             )
+                        except ValueError:
+                            continue  # Ignore malformed dates
+
+                        # If the day is a leave, prohibit all shifts
+                        if vacation_start <= day_date <= vacation_end:
+                            for vacation in vacations:
+                                model.Add(planning[(agent_name, day_str, vacation)] == 0)
+
+                            # Calculating hours for days off (7 hours from Monday to Saturday)
+                            if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
+                                total_hours[agent_name] += 70  # 7 hours * 10
+
+                    # If the leave starts on a Monday, add the unavailability from the previous weekend
+                    if vacation_start.weekday() == 0:  # Monday (0)
+                        previous_saturday = vacation_start - timedelta(days=2)
+                        previous_sunday = vacation_start - timedelta(days=1)
+
+                        for weekend_day in [previous_saturday, previous_sunday]:
+                            weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
+
+                            # Checks if the day is in the planning week or previous week schedule
+                            if weekend_str in week_schedule or weekend_str in previous_week_schedule:
+                                for vacation in vacations:
+                                    model.Add(
+                                        planning[(agent_name, weekend_str, vacation)] == 0
+                                    )
     ########################################################
 
     ########################################################
@@ -677,9 +679,6 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
                 else 0
             )
             for day in week_schedule
-        )
-        print(
-            f"Congé pour {agent_name}: {sum((conge_duration if is_vacation_day(agent_name, day, dayOff) else 0) for day in week_schedule)}"
         )
 
     # Impose a limit on the difference between the minimum and maximum hours worked by employees
