@@ -265,8 +265,8 @@ def is_vacation_day(agent_name, day, dayOff):
 
 def is_weekend(day):
     """Determines whether a day is Saturday or Sunday."""
-    day_name = day.split(" ")[0]
-    return day_name in ["Sam.", "Dim."]
+    day_name = day.split(" ")[0].rstrip(".")  # Extract the name of the day (e.g. Lun.)
+    return day_name in ["Sam", "Dim"]  # Check if it's Saturday or Sunday
 
 
 def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts):
