@@ -329,11 +329,11 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     # Each shift must be assigned to an agent each day, except for the CDP shift at weekends and on public holidays.
     for day in week_schedule:
         day_date = day.split(" ")[1]  # Extract date
-        is_weekend = day.startswith(("Sam", "Dim"))  # Check if it's a weekend
+        day_is_weekend = day.startswith(("Sam", "Dim"))  # Check if it's a weekend
         for vacation in vacations:
             # Exclusion from the CDP shift at weekends and public holidays
             if vacation == "CDP" and (
-                is_weekend or day_date in holidays
+                day_is_weekend or day_date in holidays
             ):
                 # Do not assign the CDP shift at weekends or on public holidays
                 model.Add(
@@ -665,10 +665,10 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
 
     ########################################################
     # Balance constraint: all agents must have a similar volume of working hours
-    total_hours = {}
+    workload_hours = {}
     for agent in agents:
         agent_name = agent["name"]
-        total_hours[agent_name] = sum(
+        workload_hours[agent_name] = sum(
             planning[(agent_name, day, "Jour")] * jour_duration
             + planning[(agent_name, day, "Nuit")] * nuit_duration
             + planning[(agent_name, day, "CDP")] * cdp_duration
