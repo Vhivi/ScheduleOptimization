@@ -1036,6 +1036,10 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
         120  # Limit of resolution time in seconds
     )
     status = solver.Solve(model)
+    # Log the solution
+    print("OR-Tools Status:", solver.StatusName(status),
+          "     conflicts :", solver.NumConflicts(),
+          "     branches :", solver.NumBranches())
 
     # Results
     # We accept optimal and feasible solutions
