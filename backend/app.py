@@ -329,10 +329,11 @@ def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_sc
     # Each shift must be assigned to an agent each day, except for the CDP shift at weekends and on public holidays.
     for day in week_schedule:
         day_date = day.split(" ")[1]  # Extract date
+        is_weekend = day.startswith(("Sam", "Dim"))  # Check if it's a weekend
         for vacation in vacations:
             # Exclusion from the CDP shift at weekends and public holidays
             if vacation == "CDP" and (
-                "Sam" in day or "Dim" in day or day_date in holidays
+                is_weekend or day_date in holidays
             ):
                 # Do not assign the CDP shift at weekends or on public holidays
                 model.Add(
