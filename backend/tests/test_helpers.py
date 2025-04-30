@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from app import (
     get_previous_week_schedule,
@@ -6,6 +8,7 @@ from app import (
     is_valid_date,
     is_weekend,
     split_by_month_or_period,
+    split_date_range_by_month,
     split_into_weeks,
 )
 
@@ -466,14 +469,8 @@ def day_off():
     """
 
     return {
-        "Agent1": [
-            ["01-01-2023", "07-01-2023"],
-            ["11-01-2023", "14-01-2023"]
-            ],
-        "Agent2": [
-            ["15-01-2023", "21-01-2023"],
-            ["22-01-2023", "28-01-2023"]
-            ],
+        "Agent1": [["01-01-2023", "07-01-2023"], ["11-01-2023", "14-01-2023"]],
+        "Agent2": [["15-01-2023", "21-01-2023"], ["22-01-2023", "28-01-2023"]],
     }
 
 
@@ -779,3 +776,107 @@ def test_get_previous_week_schedule(start_date_str, expected_output):
         The function's output matches the expected output.
     """
     assert get_previous_week_schedule(start_date_str) == expected_output
+
+
+def test_same_day():
+    """
+    Test that the split_date_range_by_month function correctly handles a date range where the start and end dates are
+    the same.
+
+    This test verifies that when the start and end dates are identical, the function returns a single period tuple
+    containing the same start and end datetime objects.
+
+    Args:
+        None
+
+    Asserts:
+        The function should return a list containing a single tuple with the start and end dates being the same.
+    """
+    start = datetime(2023, 4, 15)
+    end = datetime(2023, 4, 15)
+    periods = split_date_range_by_month(start, end)
+    # Expect single period from start to end (same day)
+    assert len(periods) == 1
+    assert periods[0] == (start, end)
+
+
+def test_single_month():
+    """
+    Test that the split_date_range_by_month function correctly handles a date range that falls entirely within a
+    single month.
+
+    This test verifies that when the start and end dates are in the same month, the function returns a list containing
+    a single period tuple (start, end) covering the entire range.
+
+    Args:
+        None
+
+    Asserts:
+        The function should return a list containing a single tuple with the start and end dates being the same.
+    """
+    # Range within the same month but spanning several days
+    start = datetime(2023, 3, 5)
+    end = datetime(2023, 3, 20)
+    periods = split_date_range_by_month(start, end)
+    # Entire range is within one period
+    assert len(periods) == 1
+    assert periods[0] == (start, end)
+
+
+def test_multiple_months():
+    """
+    Test the split_date_range_by_month function with a date range spanning three months.
+
+    Args:
+        None
+
+    Asserts:
+        - The function should return a list containing three tuples.
+        - The first tuple should cover the period from the start date to the end of March.
+        - The second tuple should cover the entire month of April.
+        - The third tuple should cover from the start of May to the end date.
+    """
+    # Range spanning three months: mid-March to early May
+    start = datetime(2023, 3, 15)
+    end = datetime(2023, 5, 10)
+    periods = split_date_range_by_month(start, end)
+
+    # First period: 2023-03-15 to 2023-03-31
+    expected_first_end = datetime(2023, 3, 31)
+    # Second period: 2023-04-01 to 2023-04-30
+    expected_second_start = datetime(2023, 4, 1)
+    expected_second_end = datetime(2023, 4, 30)
+    # Third period: 2023-05-01 to 2023-05-10
+    expected_third_start = datetime(2023, 5, 1)
+
+    assert len(periods) == 3
+    assert periods[0] == (start, expected_first_end)
+    assert periods[1] == (expected_second_start, expected_second_end)
+    assert periods[2] == (expected_third_start, end)
+
+
+def test_december_to_january():
+    """
+    Tests that a date range spanning from December to January is correctly split into two periods.
+
+    Args:
+        None
+
+    Asserts:
+        - The function should return a list containing two tuples.
+        - The first tuple should cover the period from December 20, 2023 to December 31, 2023.
+        - The second tuple should cover the period from January 1, 2024 to January 10, 2024.
+    """
+    # Test case that spans from December to January
+    start = datetime(2023, 12, 20)
+    end = datetime(2024, 1, 10)
+    periods = split_date_range_by_month(start, end)
+
+    # First period: 2023-12-20 to 2023-12-31
+    expected_first_end = datetime(2023, 12, 31)
+    # Second period: 2024-01-01 to 2024-01-10
+    expected_second_start = datetime(2024, 1, 1)
+
+    assert len(periods) == 2
+    assert periods[0] == (start, expected_first_end)
+    assert periods[1] == (expected_second_start, end)
