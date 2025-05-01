@@ -75,9 +75,20 @@ def generate_planning_route():
     ):
         return jsonify({"error": "Invalid date format"}), 400
 
-    start_date = request.json["start_date"]
-    end_date = request.json["end_date"]
-    
+    # Retrieve the complete schedule in several periods
+    start_date = datetime.strptime(
+        request.json["start_date"], "%Y-%m-%d"
+    )  # Format date / ISO 8601
+    end_date = datetime.strptime(
+        request.json["end_date"], "%Y-%m-%d"
+    )  # Format date / ISO 8601
+    periods = split_date_range_by_month(start_date, end_date)
+
+    full_planning = {}
+    for agent in agents:
+        agent_name = agent["name"]
+        full_planning[agent_name] = []
+
     # Retrieve initial shifts, if supplied otherwise default to an empty dictionary
     initial_shifts = request.json.get("initial_shifts", {})
 
@@ -91,27 +102,68 @@ def generate_planning_route():
             if vacation not in valid_vacations:
                 return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
 
-    # Calculate the list of days from dates
-    week_schedule = get_week_schedule(start_date, end_date)
-    previous_week_schedule = get_previous_week_schedule(start_date)
+    for chunk_start, chunk_end in periods:
+        # Convert the start and end dates into strings
+        start_date_str = chunk_start.strftime("%Y-%m-%d")
+        end_date_str = chunk_end.strftime("%Y-%m-%d")
 
-    # Calling up the schedule generation function
-    result = generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts)
-    # If the result is a dict with an info key, return a 400 error.
-    if "info" in result:
-        return jsonify(result), 400
-    else:   # Otherwise, return the result
-        return jsonify(
-            {
-                "planning": result,
-                "vacation_durations": vacation_durations,
-                "week_schedule": week_schedule,
-                "holidays": holidays,
-                "unavailable": unavailable,
-                "dayOff": dayOff,
-                "training": training,
-            }
+        # Calculate the list of days from dates
+        week_schedule = get_week_schedule(start_date_str, end_date_str)
+        previous_week_schedule = get_previous_week_schedule(start_date_str)
+
+        # Calling up the schedule generation function
+        result = generate_planning(
+            agents,
+            vacations,
+            week_schedule,
+            dayOff,
+            previous_week_schedule,
+            initial_shifts,
         )
+
+        # If the result is a dict with an info key, return a 400 error.
+        if "info" in result:
+            return jsonify(result), 400
+
+        # Accumulate the results of each period in the full planning
+        for name, shifts in result.items():
+            # Add the shifts to the full planning for each agent
+            if name not in full_planning:
+                full_planning[name] = []
+            full_planning[name].extend(shifts)
+
+        # Prepare initial_shifts for the next iteration
+        # Recalculate the previous_week_schedule for the day following chunk_end
+        next_start = chunk_end + timedelta(days=1)
+        next_previous = get_previous_week_schedule(next_start.strftime("%Y-%m-%d"))
+
+        new_intial_shifts = {}
+        for name, shifts in full_planning.items():
+            # Only keep shifts from the previous week
+            selected = []
+            for day, vacation in shifts:
+                if day in next_previous:
+                    selected.append((day, vacation))
+            if selected:
+                new_intial_shifts[name] = selected
+
+        initial_shifts = new_intial_shifts
+
+    # Once all segments have been calculated, return everything
+    original_week_schedule = get_week_schedule(
+        request.json["start_date"], request.json["end_date"]
+    )
+    return jsonify(
+        {
+            "planning": full_planning,
+            "vacation_durations": vacation_durations,
+            "week_schedule": original_week_schedule,
+            "holidays": holidays,
+            "unavailable": unavailable,
+            "dayOff": dayOff,
+            "training": training,
+        }
+    )
 
 
 def is_valid_date(date_str):
