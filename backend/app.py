@@ -206,13 +206,12 @@ def compute_previous_week_schedule():
 
         start_date = request.json["start_date"]
         previous_week_schedule = get_previous_week_schedule(start_date)
-        
+
         agents = config["agents"]
 
-        return jsonify({
-            "previous_week_schedule": previous_week_schedule,
-            "agents": agents
-        })
+        return jsonify(
+            {"previous_week_schedule": previous_week_schedule, "agents": agents}
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -220,20 +219,23 @@ def compute_previous_week_schedule():
 def get_previous_week_schedule(start_date_str):
     # Configure the locale to use the days of the week in French
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
-    
+
     try:
         # Convert the string into a datetime object
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
+        start_date = datetime.strptime(
+            start_date_str, "%Y-%m-%d"
+        )  # Format date / ISO 8601
     except ValueError as e:
         raise ValueError("Invalid date format. Use YYYY-MM-DD.") from e
-    
+
     previous_week_start = start_date - timedelta(days=7)
 
     # Calculate the days of the previous week
     return [
         (previous_week_start + timedelta(days=i)).strftime("%a %d-%m").capitalize()
         for i in range(7)
-    ] # Format: Shortened day + Date (e.g. Lun 25-12)
+    ]  # Format: Shortened day + Date (e.g. Lun 25-12)
+
 
 def get_week_schedule(start_date_str, end_date_str):
     # Configure the locale to use the days of the week in French
@@ -298,7 +300,7 @@ def is_vacation_day(agent_name, day, dayOff):
     if agent_name in dayOff:
         day_part = day.split(" ")[1]  # Extract the date (e.g. 25-12)
         for period in dayOff[agent_name]:
-            vacation_start, vacation_end = period   # Extract the start and end dates
+            vacation_start, vacation_end = period  # Extract the start and end dates
             # Convert holiday dates and the day into datetime objects for comparison
             vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
             vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
@@ -314,6 +316,7 @@ def is_vacation_day(agent_name, day, dayOff):
             ):
                 return True
     return False
+
 
 def is_weekend(day):
     """Determines whether a day is Saturday or Sunday."""
@@ -380,7 +383,9 @@ def generate_planning(
     planning = {}
     for agent in agents:
         agent_name = agent["name"]  # Use agent name as key
-        for day in set(week_schedule + previous_week_schedule):  # Include both week_schedule and previous_week_schedule
+        for day in set(
+            week_schedule + previous_week_schedule
+        ):  # Include both week_schedule and previous_week_schedule
             for vacation in vacations:
                 planning[(agent_name, day, vacation)] = model.NewBoolVar(
                     f"planning_{agent_name}_{day}_{vacation}"
@@ -390,11 +395,15 @@ def generate_planning(
     # Hard Constraints
     ########################################################
     # (Put all the unavoidable constraints here)
-    
+
     # Only apply initial shifts from the previous week
     for agent_name, shifts in initial_shifts.items():
         for day, vacation in shifts:
-            if agent_name in [agent["name"] for agent in agents] and vacation in vacations and day in previous_week_schedule:
+            if (
+                agent_name in [agent["name"] for agent in agents]
+                and vacation in vacations
+                and day in previous_week_schedule
+            ):
                 model.Add(planning[(agent_name, day, vacation)] == 1)
 
     # Each agent may work a maximum of one shift per day
@@ -424,9 +433,7 @@ def generate_planning(
         day_is_weekend = day.startswith(("Sam", "Dim"))  # Check if it's a weekend
         for vacation in vacations:
             # Exclusion from the CDP shift at weekends and public holidays
-            if vacation == "CDP" and (
-                day_is_weekend or day_date in holidays
-            ):
+            if vacation == "CDP" and (day_is_weekend or day_date in holidays):
                 # Do not assign the CDP shift at weekends or on public holidays
                 model.Add(
                     sum(planning[(agent["name"], day, "CDP")] for agent in agents) == 0
@@ -526,7 +533,9 @@ def generate_planning(
 
     for agent in agents:
         agent_name = agent["name"]
-        total_hours[agent_name] = 0  # Initialise the total number of hours for the agent
+        total_hours[agent_name] = (
+            0  # Initialise the total number of hours for the agent
+        )
 
         # Retrieve leave information if available
         if "vacations" in agent and isinstance(agent["vacations"], list):
@@ -539,7 +548,9 @@ def generate_planning(
                     # For each day of the schedule
                     for day_str in week_schedule:
                         # Extract the day and month and complete with the year of vacation_start
-                        day_part = day_str.split(" ")[1]    # Extract the date in %d-%m format
+                        day_part = day_str.split(" ")[
+                            1
+                        ]  # Extract the date in %d-%m format
                         # Identify the format and convert the day into a datetime object
                         try:
                             day_date = datetime.strptime(
@@ -551,7 +562,9 @@ def generate_planning(
                         # If the day is a leave, prohibit all shifts
                         if vacation_start <= day_date <= vacation_end:
                             for vacation in vacations:
-                                model.Add(planning[(agent_name, day_str, vacation)] == 0)
+                                model.Add(
+                                    planning[(agent_name, day_str, vacation)] == 0
+                                )
 
                             # Calculating hours for days off (7 hours from Monday to Saturday)
                             if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
@@ -566,10 +579,14 @@ def generate_planning(
                             weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
 
                             # Checks if the day is in the planning week or previous week schedule
-                            if weekend_str in week_schedule or weekend_str in previous_week_schedule:
+                            if (
+                                weekend_str in week_schedule
+                                or weekend_str in previous_week_schedule
+                            ):
                                 for vacation in vacations:
                                     model.Add(
-                                        planning[(agent_name, weekend_str, vacation)] == 0
+                                        planning[(agent_name, weekend_str, vacation)]
+                                        == 0
                                     )
     ########################################################
 
@@ -609,9 +626,7 @@ def generate_planning(
             ]
 
             # Prohibit night shifts the day before the unavailability period
-            for day_idx, day in enumerate(
-                week_schedule[:-1]
-            ):  # Ignoring the last day
+            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignoring the last day
                 next_day = week_schedule[day_idx + 1]
 
                 # Checks if the next day is unavailable
@@ -634,9 +649,7 @@ def generate_planning(
             ]
 
             # Prohibit night shifts the day before training sessions
-            for day_idx, day in enumerate(
-                week_schedule[:-1]
-            ):  # Ignore the last day
+            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignore the last day
                 next_day = week_schedule[day_idx + 1]
 
                 # Checks if the next day is a training day
@@ -788,9 +801,7 @@ def generate_planning(
         model.Add(total_hours[agent_name] <= max_hours)
 
     # Constraining the difference between max_hours and min_hours for global equilibrium
-    model.Add(
-        max_hours - min_hours <= 240
-    )  # Adjust flexibility if necessary (*10)
+    model.Add(max_hours - min_hours <= 240)  # Adjust flexibility if necessary (*10)
     ########################################################
 
     ########################################################
@@ -800,11 +811,11 @@ def generate_planning(
     periods = split_by_month_or_period(week_schedule)
 
     for period in periods:
-        total_hours = {}
+        period_total_hours = {}
         for agent in agents:
             agent_name = agent["name"]
             # Calculation of total hours per agent over the period
-            total_hours[agent_name] = cp_model.LinearExpr.Sum(
+            period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
                     planning[(agent_name, day, "Jour")] * jour_duration
                     + planning[(agent_name, day, "Nuit")] * nuit_duration
@@ -1125,14 +1136,17 @@ def generate_planning(
 
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = (
-        120  # Limit of resolution time in seconds
-    )
+    solver.parameters.max_time_in_seconds = 600  # Limit of resolution time in seconds
     status = solver.Solve(model)
     # Log the solution
-    print("OR-Tools Status:", solver.StatusName(status),
-          "     conflicts :", solver.NumConflicts(),
-          "     branches :", solver.NumBranches())
+    print(
+        "OR-Tools Status:",
+        solver.StatusName(status),
+        "     conflicts :",
+        solver.NumConflicts(),
+        "     branches :",
+        solver.NumBranches(),
+    )
 
     # Results
     # We accept optimal and feasible solutions
