@@ -321,7 +321,47 @@ def is_weekend(day):
     return day_name in ["Sam", "Dim"]  # Check if it's Saturday or Sunday
 
 
-def generate_planning(agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts):
+def split_date_range_by_month(start: datetime, end: datetime) -> list:
+    """
+    Splits a datetime range into contiguous monthly periods.
+    Each period starts from the current date and ends on the last day of that month (or the specified end date,
+    whichever comes first).
+
+    Args:
+        start (datetime): The starting datetime of the range.
+        end (datetime): The ending datetime of the range.
+
+    Returns:
+        List[Tuple[datetime, datetime]]: A list of tuples where each tuple represents the start and end datetimes
+        of a monthly period. The function partitions the range such that each period covers the span from the current
+        date to the last day of that month (or the specified end date, whichever comes first).
+
+    Notes:
+        - If the specified range spans multiple months, the function divides the range into one or more periods where
+        each period corresponds to a full month segment, except possibly the last one.
+        - The function assumes that start <= end.
+    """
+    periods = []
+    current = start
+
+    while current <= end:
+        # first day of the following month
+        if current.month == 12:
+            next_month = datetime(current.year + 1, 1, 1)
+        else:
+            next_month = datetime(current.year, current.month + 1, 1)
+        # last day of the current period
+        last = min(end, next_month - timedelta(days=1))
+
+        periods.append((current, last))
+        current = last + timedelta(days=1)
+
+    return periods
+
+
+def generate_planning(
+    agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts
+):
     model = cp_model.CpModel()
 
     weeks_split = split_into_weeks(week_schedule)  # Divide week_schedule into weeks
