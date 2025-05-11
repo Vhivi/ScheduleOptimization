@@ -59,7 +59,7 @@ Ensure the following tools are installed:
 
 2. ✏️ Configure the application:
 
-   - Edit the `config.json` file in the `backend` directory to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
+   - Edit the `backend/config.json` file to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
 
 3. 🔧 Start the backend server:
 
