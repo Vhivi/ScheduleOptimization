@@ -171,7 +171,11 @@ The `config.json` file serves as the core customization hub:
 
 ## 🎉 Contributing
 
-Contributions are welcome! This project thrives on feedback and community input. Here’s how you can contribute:
+Contributions are welcome! This project thrives on feedback and community input.
+
+Before contributing, please take a look at our [ARCHITECTURE.md](ARCHITECTURE.md) file to understand the project's architecture and design decisions.
+
+Here’s how you can contribute:
 
 1. **Fork the Repository**: Create a copy of the project under your GitHub account.
 
@@ -203,6 +207,7 @@ Special thanks to the following:
 - [Google OR-Tools](https://developers.google.com/optimization)
 - [Vue.js](https://vuejs.org)
 - [Flask](https://flask.palletsprojects.com)
+- [Mermaid](https://github.com/mermaid-js/mermaid) for diagramming support in Architecture.md
 
 The open-source community for inspiration and examples:
 
