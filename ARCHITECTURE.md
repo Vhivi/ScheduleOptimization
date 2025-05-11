@@ -29,13 +29,13 @@ graph TD
 - **Build Tools:** Node.js, npm
 - **Testing:** Pytest (backend), Jest (frontend)
 
-### DESIGN DECISIONS
+### DESIGN DECISIONS (no order of importance)
 
-1- **Separation of Concerns:** The project separates the frontend and backend, allowing independent development and testing.
-2- **RESTful API:** The backend exposes REST APIs for communication, ensuring a clean interface between the frontend and backend.
-3- **Configurable Design:** The use of config.json allows users to customize agent preferences, vacations, and constraints without modifying the code.
-4- **Vue.js for Interactivity:** The frontend leverages Vue.js for dynamic and reactive user interfaces.
-5- **Google OR-Tools:** The backend uses OR-Tools for efficient constraint-based scheduling.
+- **Separation of Concerns:** The project separates the frontend and backend, allowing independent development and testing.
+- **RESTful API:** The backend exposes REST APIs for communication, ensuring a clean interface between the frontend and backend.
+- **Configurable Design:** The use of config.json allows users to customize agent preferences, vacations, and constraints without modifying the code.
+- **Vue.js for Interactivity:** The frontend leverages Vue.js for dynamic and reactive user interfaces.
+- **Google OR-Tools:** The backend uses OR-Tools for efficient constraint-based scheduling.
 
 ### GETTING STARTED
 
@@ -116,10 +116,10 @@ The project is divided into two main components: **Frontend** and **Backend**.
 
 ```plaintext
 backend/
-    ├── app.py                # Backend entry point
-    ├── config.json           # Configuration file
-    └── tests/                # Backend unit tests
-|
+│   ├── app.py                # Backend entry point
+│   ├── config.json           # Configuration file
+│   └── tests/                # Backend unit tests
+│
 frontend/
     ├── src/                  # Frontend source code
     │   ├── main.js           # Frontend entry point
