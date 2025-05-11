@@ -6,8 +6,6 @@ The **Schedule Optimization Project** is a tool designed to generate optimized w
 
 ### Architecture Diagram
 
-![Architecture Diagram](./architecture/architecture_diagram.svg)
-
 ```mermaid
 graph TD
     A[User] -->|Interacts With| E[Frontend - Vue.js]
