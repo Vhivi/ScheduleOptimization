@@ -37,45 +37,6 @@ graph TD
 - **Vue.js for Interactivity:** The frontend leverages Vue.js for dynamic and reactive user interfaces.
 - **Google OR-Tools:** The backend uses OR-Tools for efficient constraint-based scheduling.
 
-### GETTING STARTED
-
-Prerequisites
-
-- Python 3.10+
-- Node.js and npm
-- Flask
-
-Steps
-
-1. Clone the repository:
-
-    ```bash
-    git clone https://github.com/Vhivi/ScheduleOptimization.git
-    cd ScheduleOptimization
-    ```
-
-2. Configure the application:
-
-    - Edit `backend/config.json` to define agents, shifts, and constraints.
-
-3. Start the backend server:
-
-    ```bash
-    cd backend
-    pip install -r requirements.txt
-    python app.py
-    ```
-
-4. Start the frontend server:
-
-    ```bash
-    cd frontend
-    npm install
-    npm run serve
-    ```
-
-5. Access the application at <http://localhost:8080>.
-
 ### OVERVIEW OF KEY COMPONENTS
 
 The project is divided into two main components: **Frontend** and **Backend**.
