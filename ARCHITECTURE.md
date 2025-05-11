@@ -145,7 +145,9 @@ frontend/
 ### ADDITIONAL NOTES
 
 **Error Handling:** The backend handles errors related to user data (ex. invalid constraints) and returns clear error messages to the frontend (we try, at least).
+
 **Scalability:** Although designed for medium-sized teams, the project can be extended to handle more complex schedules by adjusting constraints and optimizing algorithms.
+
 **Testing:**
 
 - **Backend :** Unit tests for the API and optimization algorithms are in backend/tests/.
