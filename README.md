@@ -45,6 +45,7 @@ Ensure the following tools are installed:
 
 - 💻 Python 3.10+
 - 📦 Node.js and npm
+- 📦 Flask
 - 🔐 Git
 
 ### 🔄 Installation Steps
@@ -52,8 +53,8 @@ Ensure the following tools are installed:
 1. 🔧 Clone the repository:
 
    ```bash
-   git clone https://github.com/your-username/schedule-optimization.git
-   cd schedule-optimization
+   git clone https://github.com/Vhivi/ScheduleOptimization.git
+   cd ScheduleOptimization
    ```
 
 2. ✏️ Configure the application:
