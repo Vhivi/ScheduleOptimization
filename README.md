@@ -87,6 +87,27 @@ Ensure the following tools are installed:
 
 ---
 
+## ✅ Testing
+
+Run tests before opening a pull request:
+
+### Backend (Python 3.10 virtual environment)
+
+```bash
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m pytest -q
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm test -- --runInBand
+```
+
+---
+
 ## 📕 Configuration File (`config.json`)
 
 ### 🔬 Structure Overview
@@ -166,6 +187,16 @@ The `config.json` file serves as the core customization hub:
 1. ✏️ Modify the `generate_planning` function in `app.py`.
 2. 🔧 Check that your constraint is well integrated and produces the desired effects.
 3. ✉️ Update documentation and configuration as needed.
+
+---
+
+## 🧰 Maintenance Policy
+
+- Keep dependency updates incremental and low risk by default (minor and patch versions first).
+- Run backend and frontend tests for each dependency update batch.
+- Use `npm audit fix` without `--force` in regular maintenance batches.
+- Handle breaking updates (for example major Jest/jsdom upgrades) in dedicated pull requests.
+- Keep `CHANGELOG.md` updated under `Unreleased` for each maintenance batch.
 
 ---
 
