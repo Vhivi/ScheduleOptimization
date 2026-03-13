@@ -11,6 +11,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Documented backend virtual environment setup and a reproducible pytest baseline run using Python 3.10.
 - Updated backend dependencies to current compatible releases for Flask, Flask-Cors, and pytest.
+- Updated frontend dependencies with non-breaking releases for Vue, core-js, and Babel tooling.
+
+### Security
+
+- Applied npm audit non-breaking fixes; 4 low-severity frontend vulnerabilities remain and require breaking upgrades (Jest/jsdom stack) for full remediation.
 
 ## [0.7.3] - 2026-03-12
 
