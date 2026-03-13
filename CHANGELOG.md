@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Reclassified frontend test tooling packages (`jest`, `jest-environment-jsdom`, `babel-jest`, `@vue/test-utils`, `@vue/vue3-jest`, `jest-serializer-vue`) from runtime dependencies to `devDependencies`.
+
+### Security
+
+- Resolved the remaining frontend runtime audit findings; `npm audit --omit=dev` now reports no vulnerabilities.
+
 ## [0.7.4] - 2026-03-13
 
 ### Changed
