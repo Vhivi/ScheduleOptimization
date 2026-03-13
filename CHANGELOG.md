@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Documented backend virtual environment setup and a reproducible pytest baseline run using Python 3.10.
+- Updated backend dependencies to current compatible releases for Flask, Flask-Cors, and pytest.
 
 ## [0.7.3] - 2026-03-12
 
