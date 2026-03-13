@@ -61,10 +61,15 @@ Ensure the following tools are installed:
 
    - Edit the `backend/config.json` file to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
 
-3. 🔧 Start the backend server:
+3. 🔧 Setup and run the backend (recommended with a virtual environment):
 
    ```bash
    cd backend
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   python -m pytest -q
    flask run
    ```
 

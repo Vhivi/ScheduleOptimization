@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Documented backend virtual environment setup and a reproducible pytest baseline run using Python 3.10.
+
 ## [0.7.3] - 2026-03-12
 
 ### Fixed
