@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-03-15
+
 ### Added
 
 - Added a dedicated English configuration reference (`docs/config-reference.md`).
