@@ -112,7 +112,7 @@ def test_generate_planning_route_valid_data(client):
     This test sends a POST request to the /generate-planning endpoint with a valid
     date range and checks if the response status code is 200 (OK). It also verifies
     that the response contains a "planning" key and that the "week_schedule" key
-    contains 7 days.
+    contains 2 days.
 
     Args:
         client: The test client used to make requests to the application.
@@ -120,17 +120,18 @@ def test_generate_planning_route_valid_data(client):
     Assertions:
         - The response status code is 200.
         - The response JSON contains a "planning" key.
-        - The "week_schedule" key in the response JSON contains 7 days.
+        - The "week_schedule" key in the response JSON contains 2 days.
     """
 
-    data = {"start_date": "2024-11-01", "end_date": "2024-11-07"}
+    # Keep a short weekday-only range to stay feasible with config.example.json used in CI.
+    data = {"start_date": "2026-01-05", "end_date": "2026-01-06"}
     response = client.post(
         "/generate-planning", data=json.dumps(data), content_type="application/json"
     )
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
-    assert len(result["week_schedule"]) == 7  # Checks that 7 days have been generated
+    assert len(result["week_schedule"]) == 2  # Checks that 2 days have been generated
 
 
 def test_generate_planning_route_invalid_date(client):
