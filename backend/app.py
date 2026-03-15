@@ -366,6 +366,16 @@ def generate_planning(
     agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts
 ):
     model = cp_model.CpModel()
+    solver_config = config.get("solver", {})
+    max_time_seconds = int(solver_config.get("max_time_seconds", 600))
+    global_max_gap = int(solver_config.get("global_max_gap", 240))
+    period_max_gap = int(solver_config.get("period_max_gap", 240))
+    relative_gap_limit = float(solver_config.get("relative_gap_limit", 0.10))
+    num_search_workers = int(solver_config.get("num_search_workers", 0))
+    optimize_period_balance = bool(
+        solver_config.get("optimize_period_balance", False)
+    )
+    period_balance_weight = int(solver_config.get("period_balance_weight", 2))
 
     weeks_split = split_into_weeks(week_schedule)  # Divide week_schedule into weeks
 
@@ -529,14 +539,10 @@ def generate_planning(
     ########################################################
     # Staff leave
     date_format_full = "%d-%m-%Y"
-    total_hours = {}
+    leave_paid_hours_by_day = defaultdict(int)
 
     for agent in agents:
         agent_name = agent["name"]
-        total_hours[agent_name] = (
-            0  # Initialise the total number of hours for the agent
-        )
-
         # Retrieve leave information if available
         if "vacations" in agent and isinstance(agent["vacations"], list):
             for vac in agent["vacations"]:
@@ -566,9 +572,11 @@ def generate_planning(
                                     planning[(agent_name, day_str, vacation)] == 0
                                 )
 
-                            # Calculating hours for days off (7 hours from Monday to Saturday)
+                            # Paid leave hours (Monday to Saturday): 7h * 10
                             if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
-                                total_hours[agent_name] += 70  # 7 hours * 10
+                                leave_paid_hours_by_day[(agent_name, day_str)] = (
+                                    conge_duration
+                                )
 
                     # If the leave starts on a Monday, add the unavailability from the previous weekend
                     if vacation_start.weekday() == 0:  # Monday (0)
@@ -769,22 +777,19 @@ def generate_planning(
     # (Put here all the [soft] constraints that influence the overall objective)
 
     ########################################################
-    # Balance constraint: all agents must have a similar volume of working hours
-    workload_hours = {}
+    # Balance constraint: all agents must have a similar volume of paid hours
+    # (worked shifts + paid leave)
+    paid_hours = {}
     for agent in agents:
         agent_name = agent["name"]
-        workload_hours[agent_name] = sum(
+        paid_hours[agent_name] = cp_model.LinearExpr.Sum(
+            list(
             planning[(agent_name, day, "Jour")] * jour_duration
             + planning[(agent_name, day, "Nuit")] * nuit_duration
             + planning[(agent_name, day, "CDP")] * cdp_duration
-            +
-            # Leave duration added for each day of leave detected
-            (
-                conge_duration
-                if is_vacation_day(agent_name, day, dayOff) and not is_weekend(day)
-                else 0
-            )
+            + leave_paid_hours_by_day[(agent_name, day)]
             for day in week_schedule
+            )
         )
 
     # Impose a limit on the difference between the minimum and maximum hours worked by employees
@@ -795,13 +800,13 @@ def generate_planning(
         0, 10000, "max_hours"
     )  # Upper limit - Adjust terminals (*10) if necessary
 
-    # Constraint on balancing hours worked between agents
-    for agent_name in total_hours:
-        model.Add(min_hours <= total_hours[agent_name])
-        model.Add(total_hours[agent_name] <= max_hours)
+    # Constraint on balancing paid hours between agents
+    for agent_name in paid_hours:
+        model.Add(min_hours <= paid_hours[agent_name])
+        model.Add(paid_hours[agent_name] <= max_hours)
 
     # Constraining the difference between max_hours and min_hours for global equilibrium
-    model.Add(max_hours - min_hours <= 240)  # Adjust flexibility if necessary (*10)
+    model.Add(max_hours - min_hours <= global_max_gap)
     ########################################################
 
     ########################################################
@@ -810,36 +815,38 @@ def generate_planning(
     # Split week_schedule into monthly or single periods
     periods = split_by_month_or_period(week_schedule)
 
-    for period in periods:
+    period_balancing_terms = []
+    for period_idx, period in enumerate(periods):
         period_total_hours = {}
         for agent in agents:
             agent_name = agent["name"]
-            # Calculation of total hours per agent over the period
+            # Calculation of total paid hours per agent over the period
             period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
                     planning[(agent_name, day, "Jour")] * jour_duration
                     + planning[(agent_name, day, "Nuit")] * nuit_duration
                     + planning[(agent_name, day, "CDP")] * cdp_duration
+                    + leave_paid_hours_by_day[(agent_name, day)]
                     for day in period
                 )
             )
 
-    # Define min_hours and max_hours for balancing
-    min_hours = model.NewIntVar(
-        0, 100000, "min_hours_period"
-    )  # Lower limit - Adjust terminals (*10) if necessary
-    max_hours = model.NewIntVar(
-        0, 100000, "max_hours_period"
-    )  # Upper limit - Adjust terminals (*10) if necessary
+        min_period_hours = model.NewIntVar(
+            0, 100000, f"min_hours_period_{period_idx}"
+        )
+        max_period_hours = model.NewIntVar(
+            0, 100000, f"max_hours_period_{period_idx}"
+        )
+        for agent in agents:
+            agent_name = agent["name"]
+            model.Add(min_period_hours <= period_total_hours[agent_name])
+            model.Add(period_total_hours[agent_name] <= max_period_hours)
+        period_gap = model.NewIntVar(0, 100000, f"period_gap_{period_idx}")
+        model.Add(period_gap == max_period_hours - min_period_hours)
+        model.Add(period_gap <= period_max_gap)
+        period_balancing_terms.append(period_gap)
 
-    # Add constraints for each agent
-    for agent_name in total_hours:
-        model.Add(min_hours <= total_hours[agent_name])
-        model.Add(total_hours[agent_name] <= max_hours)
-
-    # Limiting the time difference between agents
-    max_difference = 240  # Adjust flexibility if necessary (*10)
-    model.Add(max_hours - min_hours <= max_difference)
+    period_balancing_objective = cp_model.LinearExpr.Sum(period_balancing_terms)
     ########################################################
 
     ########################################################
@@ -1125,18 +1132,25 @@ def generate_planning(
         )
     )
 
-    # Maximize the overall objective, with a strong preference for preferred shifts and balancing hours
-    model.Maximize(
+    # Maximize the overall objective, with a strong preference for preferred shifts.
+    objective = (
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
         - weekend_balancing_objective
-        # (variance_weight * total_variance)  # ! Temporarily suspended similar hours constraint
     )
+    if optimize_period_balance:
+        objective -= period_balance_weight * period_balancing_objective
+    # (variance_weight * total_variance)  # ! Temporarily suspended similar hours constraint
+    model.Maximize(objective)
 
     # Solver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 600  # Limit of resolution time in seconds
+    if num_search_workers > 0:
+        solver.parameters.num_search_workers = num_search_workers
+    if relative_gap_limit > 0:
+        solver.parameters.relative_gap_limit = relative_gap_limit
+    solver.parameters.max_time_in_seconds = max_time_seconds
     status = solver.Solve(model)
     # Log the solution
     print(
@@ -1146,6 +1160,8 @@ def generate_planning(
         solver.NumConflicts(),
         "     branches :",
         solver.NumBranches(),
+        "     execution time :",
+        f"{solver.WallTime():.4f} seconds",
     )
 
     # Results

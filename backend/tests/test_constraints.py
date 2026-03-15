@@ -479,6 +479,82 @@ def test_agent_training(setup_correct_data):
     assert ("Mer. 03-01", "Nuit") not in result["Agent5"]
     assert ("Ven. 05-01", "Jour") not in result["Agent6"]
     assert ("Ven. 05-01", "Nuit") not in result["Agent6"]
+
+
+def test_generate_planning_paid_leave_hours_balancing_regression():
+    """
+    Regression test: paid leave hours must be included in balancing with worked hours.
+
+    With a strong paid-leave asymmetry, the solver should still find a solution when
+    worked shifts can compensate the global balance.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [{"start": "06-01-2025", "end": "11-01-2025"}],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+        },
+        {
+            "name": "Agent3",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+        },
+        {
+            "name": "Agent4",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+        },
+        {
+            "name": "Agent5",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+        },
+        {
+            "name": "Agent6",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+        },
+    ]
+    vacations = ["Jour", "Nuit", "CDP"]
+    week_schedule = [
+        "Lun. 06-01",
+        "Mar. 07-01",
+        "Mer. 08-01",
+        "Jeu. 09-01",
+        "Ven. 10-01",
+        "Sam. 11-01",
+        "Dim. 12-01",
+    ]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+    )
+
+    assert isinstance(result, dict)
+    assert "info" not in result
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)
