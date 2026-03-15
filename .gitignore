@@ -12,3 +12,6 @@ __pycache__/
 
 # Logs Files
 .coverage
+
+# Local backend runtime configuration
+backend/config.json
