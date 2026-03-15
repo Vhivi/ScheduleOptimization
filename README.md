@@ -110,63 +110,24 @@ npm test -- --runInBand
 
 ## 📕 Configuration File (`config.json`)
 
-### 🔬 Structure Overview
+Use these files together:
 
-Dates in the `config.json` file should be formatted as `dd-mm-YY` for full dates or `dd-mm` for recurring holidays and events.
+- Reference guide: `docs/config-reference.md`
+- JSON schema: `backend/config.schema.json`
+- Ready-to-copy example: `backend/config.example.json`
 
-The `config.json` file serves as the core customization hub:
+Important date formats:
 
-```json
-{
-  "agents": [
-    {
-      "name": "Agent1",
-      "preferences": {
-        "preferred": ["Jour", "CDP"],
-        "avoid": ["Nuit"]
-        },
-      "unavailable": ["17-11-2024", "07-12-2024"],
-      "training": ["19-11-2024"],
-      "exclusion": ["25-12-2024"],
-      "vacations": [  // Multiple leave periods
-        { "start": "28-10-2024", "end": "04-11-2024" },
-        { "start": "15-12-2024", "end": "20-12-2024" }
-      ]
-   },
-   {
-      "name": "Agent2",
-      "preferences": {
-        "preferred": ["Nuit"],
-        "avoid": ["Jour", "CDP"]
-      },
-      "unavailable": [],
-      "training": [],
-      "exclusion": [],
-      "vacations": [  // Single leave period
-        { "start": "10-03-2025", "end": "23-03-2025" }
-      ]
-    }
-    // ... Add more agents as needed
-  ],
-  "vacations": ["Jour", "Nuit", "CDP"],
-  "vacation_durations": {
-    "Jour": 12,
-    "Nuit": 12,
-    "CDP": 5.5,
-    "Conge": 7
-  },
-  "holidays": ["01-01", "25-12"]
-}
-```
+- Full dates: `dd-mm-YYYY`
+- Recurring holidays: `dd-mm`
 
-### ✏️ Customizable Parameters
+Core sections in `config.json`:
 
-- **👥 Agents**:
-  - Define preferences (type of shift required), unavailability (specific days agents cannot work), training days (dates agents will be unavailable for work), and leave periods (dates agents will be on vacation).
-- **⏳ Vacations**:
-  - Specify shift types and their durations.
-- **🎁 Holidays**:
-  - Add public holidays to consider in scheduling.
+- `agents`: people and individual constraints (preferences, unavailable dates, training, exclusions, leave periods)
+- `vacations`: generated shift types (`Jour`, `Nuit`, `CDP`)
+- `vacation_durations`: paid-hour durations for each shift plus `Conge`
+- `holidays`: recurring public holidays
+- `solver`: optional runtime and fairness tuning
 
 ---
 

@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scheduleoptimization.local/backend/config.schema.json",
+  "title": "Schedule Optimization Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agents",
+    "vacations",
+    "vacation_durations",
+    "holidays"
+  ],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/agent"
+      }
+    },
+    "vacations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/shift"
+      }
+    },
+    "vacation_durations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Jour",
+        "Nuit",
+        "CDP",
+        "Conge"
+      ],
+      "properties": {
+        "Jour": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "Nuit": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "CDP": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "Conge": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "holidays": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])$"
+      }
+    },
+    "solver": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_time_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "relative_gap_limit": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "num_search_workers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "global_max_gap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "period_max_gap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "optimize_period_balance": {
+          "type": "boolean"
+        },
+        "period_balance_weight": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shift": {
+      "type": "string",
+      "enum": [
+        "Jour",
+        "Nuit",
+        "CDP"
+      ]
+    },
+    "date_full": {
+      "type": "string",
+      "pattern": "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-\\d{4}$"
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "preferences",
+        "restriction",
+        "unavailable",
+        "training",
+        "exclusion",
+        "vacations"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preferences": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preferred",
+            "avoid"
+          ],
+          "properties": {
+            "preferred": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/shift"
+              }
+            },
+            "avoid": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/shift"
+              }
+            }
+          }
+        },
+        "restriction": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/shift"
+          }
+        },
+        "unavailable": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/date_full"
+          }
+        },
+        "training": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/date_full"
+          }
+        },
+        "exclusion": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/date_full"
+          }
+        },
+        "vacations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "$ref": "#/$defs/date_full"
+              },
+              "end": {
+                "$ref": "#/$defs/date_full"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
