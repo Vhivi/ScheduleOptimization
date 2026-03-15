@@ -46,8 +46,9 @@ def test_home(client):
 @patch(
     "builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}'
 )
+@patch("os.path.exists", return_value=True)
 @patch("os.path.join", return_value="config.json")
-def test_load_config(mock_path_join, mock_open_file):
+def test_load_config(mock_path_join, mock_path_exists, mock_open_file):
     """
     Test function for load_config.
 
@@ -66,14 +67,22 @@ def test_load_config(mock_path_join, mock_open_file):
     expected_config = {"holidays": ["01-01-2023"]}
     config = load_config()
     assert config == expected_config
-    mock_open_file.assert_called_once_with("config.json", "r")
+    mock_open_file.assert_called_once_with("config.json", "r", encoding="utf-8")
+
+
+@patch("os.path.exists", return_value=False)
+@patch("os.path.join", return_value="config.json")
+def test_load_config_missing_file_raises_clear_error(mock_path_join, mock_path_exists):
+    with pytest.raises(FileNotFoundError, match="backend/config\\.json"):
+        load_config()
 
 
 @patch(
     "builtins.open", new_callable=mock_open, read_data='{"holidays": ["01-01-2023"]}'
 )
+@patch("os.path.exists", return_value=True)
 @patch("os.path.join", return_value="config.json")
-def test_config_route(mock_path_join, mock_open_file, client):
+def test_config_route(mock_path_join, mock_path_exists, mock_open_file, client):
     """
     Test the /config route to ensure it returns the correct configuration data.
 

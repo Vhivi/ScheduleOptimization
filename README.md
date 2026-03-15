@@ -59,7 +59,15 @@ Ensure the following tools are installed:
 
 2. ✏️ Configure the application:
 
-   - Edit the `backend/config.json` file to define agents, shifts, and constraints. Detailed instructions for configuring `config.json` are provided in the Configuration File section below.
+   - Create your local config from the example:
+
+   ```bash
+   cd backend
+   cp config.example.json config.json
+   ```
+
+   - Then edit `backend/config.json` to define agents, shifts, and constraints.
+   - `backend/config.json` is intentionally local and ignored by Git.
 
 3. 🔧 Setup and run the backend (recommended with a virtual environment):
 
@@ -115,6 +123,15 @@ Use these files together:
 - Reference guide: `docs/config-reference.md`
 - JSON schema: `backend/config.schema.json`
 - Ready-to-copy example: `backend/config.example.json`
+
+Before running the backend, create your local runtime file:
+
+```bash
+cd backend
+cp config.example.json config.json
+```
+
+`backend/config.json` is local-only and ignored by Git.
 
 Important date formats:
 

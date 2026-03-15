@@ -31,6 +31,8 @@ jobs:
         sudo locale-gen fr_FR.UTF-8
         sudo update-locale LANG=fr_FR.UTF-8
         pip install -r ./backend/requirements.txt
+    - name: Create local backend config for tests
+      run: cp ./backend/config.example.json ./backend/config.json
     - name: Run backend tests
       run: |
         cd backend

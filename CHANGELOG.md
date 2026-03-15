@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Made `backend/config.json` a local-only file by ignoring it in Git and removing it from version control tracking.
+- Added explicit backend startup/config loading guidance: copy `backend/config.example.json` to `backend/config.json`.
+- Updated backend CI to create `backend/config.json` from the example before running tests.
+
 ## [0.7.7] - 2026-03-15
 
 ### Added

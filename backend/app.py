@@ -16,7 +16,12 @@ CORS(app)
 # Loading the configuration file
 def load_config():
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    with open(config_path, "r") as config_file:
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(
+            "Missing backend/config.json. Copy backend/config.example.json to "
+            "backend/config.json and adjust it for your local environment."
+        )
+    with open(config_path, "r", encoding="utf-8") as config_file:
         return json.load(config_file)
 
 

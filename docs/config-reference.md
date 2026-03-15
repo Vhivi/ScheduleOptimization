@@ -6,6 +6,11 @@ For machine validation, use:
 - Schema: `backend/config.schema.json`
 - Example: `backend/config.example.json`
 
+## Local File Policy
+
+- `backend/config.json` is a local runtime file and is ignored by Git.
+- To initialize it, copy `backend/config.example.json` to `backend/config.json`.
+
 ## Date Formats
 
 - Full dates: `dd-mm-YYYY` (example: `05-03-2026`)
