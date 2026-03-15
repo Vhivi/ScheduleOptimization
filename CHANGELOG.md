@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-03-15
+
 ### Changed
 
 - Made `backend/config.json` a local-only file by ignoring it in Git and removing it from version control tracking.
