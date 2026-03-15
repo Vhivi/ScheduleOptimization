@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-03-15
+
+### Fixed
+
+- Resolved a planning infeasibility regression where global hour balancing was accidentally constrained against leave-only constants instead of total paid hours.
+- Updated balancing logic to use paid hours consistently (worked shifts plus paid leave) and enforce per-period balance with a configurable capped gap.
+- Improved generation performance for continuity-heavy monthly chunks by adding configurable solver stop criteria (`relative_gap_limit`) while keeping the existing time limit.
+- Added a backend regression test to ensure planning generation remains feasible with asymmetric paid-leave distributions.
+
 ## [0.7.5] - 2026-03-13
 
 ### Changed
