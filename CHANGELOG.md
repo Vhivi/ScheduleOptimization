@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-03-15
+
+### Added
+
+- Added a dedicated English configuration reference (`docs/config-reference.md`).
+- Added `backend/config.schema.json` and `backend/config.example.json` for user-friendly configuration and machine validation.
+- Added backend schema validation tests to ensure `config.json` and the example file remain valid.
+
+### Changed
+
+- Updated the README configuration section to point to the new reference, schema, and example files.
+- Added `jsonschema` to backend dependencies for automated config validation tests.
+
 ## [0.7.6] - 2026-03-15
 
 ### Fixed
