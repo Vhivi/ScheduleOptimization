@@ -15,6 +15,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added explicit backend startup/config loading guidance: copy `backend/config.example.json` to `backend/config.json`.
 - Updated backend CI to create `backend/config.json` from the example before running tests.
 
+### Fixed
+
+- Updated `test_generate_planning_route_valid_data` to use a date range that is feasible with `backend/config.example.json`, preventing CI failures caused by solver infeasibility.
+
 ## [0.7.7] - 2026-03-15
 
 ### Added
