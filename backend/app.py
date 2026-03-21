@@ -210,24 +210,22 @@ def parse_json_object_payload():
 
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
-    try:
-        # Check if the start_date is present in the query
-        if "start_date" not in request.json:
-            return jsonify({"error": "Missing start_date"}), 400
-        # Check that the date is valid
-        if not is_valid_date(request.json["start_date"]):
-            return jsonify({"error": "Invalid date format"}), 400
+    payload, payload_error = parse_json_object_payload()
+    if payload_error is not None:
+        return payload_error
 
-        start_date = request.json["start_date"]
-        previous_week_schedule = get_previous_week_schedule(start_date)
+    # Check if the start_date is present in the query
+    if "start_date" not in payload:
+        return jsonify({"error": "Missing start_date"}), 400
+    # Check that the date is valid
+    if not is_valid_date(payload["start_date"]):
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
-        agents = config["agents"]
+    start_date = payload["start_date"]
+    previous_week_schedule = get_previous_week_schedule(start_date)
 
-        return jsonify(
-            {"previous_week_schedule": previous_week_schedule, "agents": agents}
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    agents = config["agents"]
+    return jsonify({"previous_week_schedule": previous_week_schedule, "agents": agents})
 
 
 def get_previous_week_schedule(start_date_str):
