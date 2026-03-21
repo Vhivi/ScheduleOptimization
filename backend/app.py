@@ -39,6 +39,10 @@ def home():
 
 @app.route("/generate-planning", methods=["POST"])
 def generate_planning_route():
+    payload, payload_error = parse_json_object_payload()
+    if payload_error is not None:
+        return payload_error
+
     # Retrieving data from the JSON file
     agents = config["agents"]
     vacations = config["vacations"]
@@ -71,22 +75,24 @@ def generate_planning_route():
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
 
     # Retrieve start and end dates
-    # Check whether the dates are present in the query
-    if "start_date" not in request.json or "end_date" not in request.json:
+    # Check whether the dates are present in the payload
+    if "start_date" not in payload or "end_date" not in payload:
         return jsonify({"error": "Missing start_date or end_date"}), 400
+    
     # Check that the dates are valid
-    if not is_valid_date(request.json["start_date"]) or not is_valid_date(
-        request.json["end_date"]
-    ):
-        return jsonify({"error": "Invalid date format"}), 400
+    if not is_valid_date(payload["start_date"]) or not is_valid_date(payload["end_date"]):
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
     # Retrieve the complete schedule in several periods
     start_date = datetime.strptime(
-        request.json["start_date"], "%Y-%m-%d"
+        payload["start_date"], "%Y-%m-%d"
     )  # Format date / ISO 8601
     end_date = datetime.strptime(
-        request.json["end_date"], "%Y-%m-%d"
+        payload["end_date"], "%Y-%m-%d"
     )  # Format date / ISO 8601
+    if end_date < start_date:
+        return jsonify({"error": "end_date must be greater than or equal to start_date"}), 400
+
     periods = split_date_range_by_month(start_date, end_date)
 
     full_planning = {}
@@ -95,15 +101,36 @@ def generate_planning_route():
         full_planning[agent_name] = []
 
     # Retrieve initial shifts, if supplied otherwise default to an empty dictionary
-    initial_shifts = request.json.get("initial_shifts", {})
+    initial_shifts = payload.get("initial_shifts", {})
+    if not isinstance(initial_shifts, dict):
+        return jsonify({"error": "initial_shifts must be an object"}), 400
 
     # Validate initial shifts
     valid_agents = [agent["name"] for agent in agents]
     valid_vacations = vacations
     for agent_name, shifts in initial_shifts.items():
+        if not isinstance(shifts, list):
+            return jsonify({"error": f"initial_shifts for {agent_name} must be a list"}), 400
         if agent_name not in valid_agents:
             return jsonify({"error": f"Invalid agent: {agent_name}"}), 400
-        for _, vacation in shifts:
+        for shift in shifts:
+            if (
+                not isinstance(shift, (list, tuple))
+                or len(shift) != 2
+                or not isinstance(shift[0], str)
+                or not isinstance(shift[1], str)
+            ):
+                return (
+                    jsonify(
+                        {
+                            "error": (
+                                "Each initial shift must be [day, vacation] with string values"
+                            )
+                        }
+                    ),
+                    400,
+                )
+            _, vacation = shift
             if vacation not in valid_vacations:
                 return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
 
@@ -156,7 +183,7 @@ def generate_planning_route():
 
     # Once all segments have been calculated, return everything
     original_week_schedule = get_week_schedule(
-        request.json["start_date"], request.json["end_date"]
+        payload["start_date"], payload["end_date"]
     )
     return jsonify(
         {
