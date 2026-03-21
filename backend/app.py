@@ -199,6 +199,15 @@ def is_valid_date(date_str):
         return False
 
 
+def parse_json_object_payload():
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return None, (jsonify({"error": "Missing or invalid JSON payload"}), 400)
+    if not isinstance(payload, dict):
+        return None, (jsonify({"error": "JSON payload must be an object"}), 400)
+    return payload, None
+
+
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
     try:
