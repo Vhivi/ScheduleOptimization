@@ -178,6 +178,61 @@ def test_generate_planning_route_missing_data(client):
     assert response.status_code == 400  # Checks that missing data is managed
 
 
+def test_generate_planning_route_missing_json_payload(client):
+    response = client.post("/generate-planning")
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Missing or invalid JSON payload"}
+
+
+def test_generate_planning_route_non_object_json_payload(client):
+    response = client.post(
+        "/generate-planning",
+        data=json.dumps(["2026-01-05", "2026-01-06"]),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON payload must be an object"}
+
+
+def test_generate_planning_route_end_date_before_start_date(client):
+    data = {"start_date": "2026-01-07", "end_date": "2026-01-06"}
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "end_date must be greater than or equal to start_date"
+    }
+
+
+def test_generate_planning_route_initial_shifts_must_be_object(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "initial_shifts": [],
+    }
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "initial_shifts must be an object"}
+
+
+def test_generate_planning_route_initial_shift_shape_validation(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "initial_shifts": {"Agent1": [["Lun. 29-12"]]},
+    }
+    response = client.post(
+        "/generate-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "Each initial shift must be [day, vacation] with string values"
+    }
+
+
 def test_generate_planning_route_invalid_agent(client):
     """
     Test the /generate-planning route with an invalid agent.
@@ -231,3 +286,35 @@ def test_generate_planning_route_invalid_vacation(client):
     )
     assert response.status_code == 400
     assert response.json == {"error": "Invalid vacation: InvalidVacation"}
+
+
+def test_previous_week_schedule_missing_json_payload(client):
+    response = client.post("/previous-week-schedule")
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Missing or invalid JSON payload"}
+
+
+def test_previous_week_schedule_non_object_json_payload(client):
+    response = client.post(
+        "/previous-week-schedule", data=json.dumps([]), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON payload must be an object"}
+
+
+def test_previous_week_schedule_missing_start_date(client):
+    response = client.post(
+        "/previous-week-schedule", data=json.dumps({}), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Missing start_date"}
+
+
+def test_previous_week_schedule_invalid_start_date_format(client):
+    response = client.post(
+        "/previous-week-schedule",
+        data=json.dumps({"start_date": "31-01-2026"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid date format. Use YYYY-MM-DD."}
