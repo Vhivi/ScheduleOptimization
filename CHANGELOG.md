@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-03-22
+
 ### Added
 
 - Added frontend API client utility with centralized base URL support through `VUE_APP_API_BASE_URL`.
@@ -17,7 +19,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Hardened backend route payload validation (`/generate-planning`, `/previous-week-schedule`) with defensive JSON/object checks.
 - Reworked backend day label formatting to be locale-independent across platforms.
-- Cleaned solver objective setup to use a single optimization objective and added structured solver diagnostics logs.
 - Improved frontend generation UX with explicit loading state and safer error handling for transport/API failures.
 
 ### Removed
