@@ -91,6 +91,14 @@ Ensure the following tools are installed:
    npm run serve
    ```
 
+   Optional API base URL override (default: `http://127.0.0.1:5000`):
+
+   ```bash
+   # Windows PowerShell
+   $env:VUE_APP_API_BASE_URL="http://127.0.0.1:5000"
+   npm run serve
+   ```
+
 5. 🔍 Access the application at `http://localhost:8080` and start scheduling!
 
 ---

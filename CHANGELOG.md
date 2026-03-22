@@ -7,6 +7,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added frontend API client utility with centralized base URL support through `VUE_APP_API_BASE_URL`.
+- Added frontend tests for API error normalization and year-boundary leave rendering in `PlanningTable`.
+- Added backend route tests for invalid/missing JSON payloads and invalid date ranges.
+
+### Changed
+
+- Hardened backend route payload validation (`/generate-planning`, `/previous-week-schedule`) with defensive JSON/object checks.
+- Reworked backend day label formatting to be locale-independent across platforms.
+- Cleaned solver objective setup to use a single optimization objective and added structured solver diagnostics logs.
+- Improved frontend generation UX with explicit loading state and safer error handling for transport/API failures.
+
+### Removed
+
+- Removed `frontend/src/components/ConfigComponent.vue` debug component from the main application flow.
+
 ## [0.7.8] - 2026-03-15
 
 ### Changed
