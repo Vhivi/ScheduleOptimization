@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytest
 from app import (
+    format_day_label,
     get_previous_week_schedule,
     get_week_schedule,
     is_vacation_day,
@@ -124,6 +125,12 @@ def test_get_week_schedule():
     result = get_week_schedule(start_date, end_date)
     assert len(result) == 7
     assert result == expected_schedule
+
+
+def test_format_day_label_is_locale_independent():
+    assert format_day_label(datetime(2026, 1, 5)) == "Lun. 05-01"
+    assert format_day_label(datetime(2026, 1, 6)) == "Mar. 06-01"
+    assert format_day_label(datetime(2026, 1, 11)) == "Dim. 11-01"
 
 
 def test_get_week_schedule_single_day():

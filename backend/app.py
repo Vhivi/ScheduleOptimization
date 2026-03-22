@@ -1,5 +1,4 @@
 import json
-import locale
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -30,6 +29,7 @@ weekend_days = ["Sam", "Dim"]  # Shortened weekend days
 holidays = config[
     "holidays"
 ]  # Public holidays to be updated each year, in particular for Easter Monday
+FRENCH_WEEKDAY_ABBREVIATIONS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 
 
 @app.route("/")
@@ -256,9 +256,6 @@ def compute_previous_week_schedule():
 
 
 def get_previous_week_schedule(start_date_str):
-    # Configure the locale to use the days of the week in French
-    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
-
     try:
         # Convert the string into a datetime object
         start_date = datetime.strptime(
@@ -271,14 +268,12 @@ def get_previous_week_schedule(start_date_str):
 
     # Calculate the days of the previous week
     return [
-        (previous_week_start + timedelta(days=i)).strftime("%a %d-%m").capitalize()
+        format_day_label(previous_week_start + timedelta(days=i))
         for i in range(7)
     ]  # Format: Shortened day + Date (e.g. Lun 25-12)
 
 
 def get_week_schedule(start_date_str, end_date_str):
-    # Configure the locale to use the days of the week in French
-    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
     # Convert strings into datetime objects
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")  # Format date / ISO 8601
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d")  # Format date / ISO 8601
@@ -286,9 +281,14 @@ def get_week_schedule(start_date_str, end_date_str):
     # Calculate the days between the start date and the end date
     delta = end_date - start_date
     return [
-        (start_date + timedelta(days=i)).strftime("%a %d-%m").capitalize()
+        format_day_label(start_date + timedelta(days=i))
         for i in range(delta.days + 1)
     ]  # Format : Shortened day + Date (e.g. Lun 25-12)
+
+
+def format_day_label(day_date):
+    day_name = FRENCH_WEEKDAY_ABBREVIATIONS[day_date.weekday()]
+    return f"{day_name}. {day_date.strftime('%d-%m')}"
 
 
 def split_into_weeks(week_schedule):
