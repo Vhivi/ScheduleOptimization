@@ -150,6 +150,7 @@ def generate_planning_route():
             dayOff,
             previous_week_schedule,
             initial_shifts,
+            planning_start_date=start_date_str,
         )
 
         # If the result is a dict with an info key, return a 400 error.
@@ -332,7 +333,24 @@ def split_by_month_or_period(week_schedule):
     return periods
 
 
-def is_vacation_day(agent_name, day, dayOff):
+def _resolve_day_date_from_reference(day_part, reference_date):
+    day_value = int(day_part.split("-")[0])
+    month_value = int(day_part.split("-")[1])
+
+    candidates = []
+    for year in [reference_date.year - 1, reference_date.year, reference_date.year + 1]:
+        try:
+            candidates.append(datetime(year, month_value, day_value))
+        except ValueError:
+            continue
+
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda candidate: abs((candidate - reference_date).days))
+
+
+def is_vacation_day(agent_name, day, dayOff, planning_start_date=None):
     """Checks whether the day corresponds to leave for the agent,
     by checking all the periods defined in dayOff."""
     if agent_name in dayOff:
@@ -343,15 +361,22 @@ def is_vacation_day(agent_name, day, dayOff):
             vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
             vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
             try:
-                day_date = datetime.strptime(
-                    f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
-                )
+                if planning_start_date is not None:
+                    if isinstance(planning_start_date, str):
+                        reference_date = datetime.strptime(planning_start_date, "%Y-%m-%d")
+                    else:
+                        reference_date = planning_start_date
+                    day_date = _resolve_day_date_from_reference(day_part, reference_date)
+                    if day_date is None:
+                        continue
+                else:
+                    day_date = datetime.strptime(
+                        f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
+                    )
             except ValueError:
                 continue
             # Check if the day is between the holiday start and end dates
-            if vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
-                day
-            ):
+            if vacation_start_date <= day_date <= vacation_end_date:
                 return True
     return False
 
@@ -401,7 +426,13 @@ def split_date_range_by_month(start: datetime, end: datetime) -> list:
 
 
 def generate_planning(
-    agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts
+    agents,
+    vacations,
+    week_schedule,
+    dayOff,
+    previous_week_schedule,
+    initial_shifts,
+    planning_start_date=None,
 ):
     # Public facade kept stable for existing route and tests.
     return generate_planning_engine(
@@ -412,6 +443,7 @@ def generate_planning(
         previous_week_schedule=previous_week_schedule,
         initial_shifts=initial_shifts,
         runtime_config=config,
+        planning_start_date=planning_start_date,
     )
 
 if __name__ == "__main__":

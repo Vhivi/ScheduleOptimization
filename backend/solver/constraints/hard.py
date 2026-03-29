@@ -265,13 +265,15 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
             vacation_end = datetime.strptime(vac["end"], date_format_full)
 
             for day_str in ctx.week_schedule:
-                day_part = day_str.split(" ")[1]
-                try:
-                    day_date = datetime.strptime(
-                        f"{day_part}-{vacation_start.year}", date_format_full
-                    )
-                except ValueError:
-                    continue
+                day_date = ctx.day_dates.get(day_str)
+                if day_date is None:
+                    day_part = day_str.split(" ")[1]
+                    try:
+                        day_date = datetime.strptime(
+                            f"{day_part}-{vacation_start.year}", date_format_full
+                        )
+                    except ValueError:
+                        continue
 
                 if vacation_start <= day_date <= vacation_end:
                     for vacation in ctx.vacations:

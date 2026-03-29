@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, List, Tuple
 
 from ortools.sat.python import cp_model
@@ -55,10 +56,12 @@ class SolverContext:
     previous_week_schedule: List[str]
     initial_shifts: dict
     holidays: List[str]
+    planning_start_date: datetime | None = None
 
     weeks_split: List[List[str]] = field(default_factory=list)
     planning: Dict[Tuple[str, str, str], cp_model.IntVar] = field(default_factory=dict)
     leave_paid_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
+    day_dates: Dict[str, datetime] = field(default_factory=dict)
 
     jour_duration: int = 0
     nuit_duration: int = 0
