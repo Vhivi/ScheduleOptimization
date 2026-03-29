@@ -66,6 +66,11 @@ export default {
     training: {
       type: Object,
       required: true
+    },
+    planningStartDate: {
+      type: String,
+      required: false,
+      default: null
     }
   },
   computed: {
@@ -84,6 +89,22 @@ export default {
             lookup[agent][day] = vacation;
           });
         }
+      });
+      return lookup;
+    },
+    dayLabelDateLookup() {
+      const lookup = {};
+      if (!Array.isArray(this.weekSchedule) || this.weekSchedule.length === 0) {
+        return lookup;
+      }
+      const startDate = this.parseIsoDate(this.planningStartDate);
+      if (!startDate) {
+        return lookup;
+      }
+      this.weekSchedule.forEach((dayLabel, index) => {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + index);
+        lookup[dayLabel] = date;
       });
       return lookup;
     }
@@ -145,10 +166,45 @@ export default {
       }
       return date;
     },
+    parseIsoDate(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string') {
+        return null;
+      }
+      const [yearRaw, monthRaw, dayRaw] = dateStr.split('-');
+      const year = Number(yearRaw);
+      const month = Number(monthRaw);
+      const day = Number(dayRaw);
+      const date = new Date(year, month - 1, day);
+      if (
+        Number.isNaN(date.getTime()) ||
+        date.getFullYear() !== year ||
+        date.getMonth() !== month - 1 ||
+        date.getDate() !== day
+      ) {
+        return null;
+      }
+      return date;
+    },
     formatDayMonth(date) {
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       return `${day}-${month}`;
+    },
+    formatConfigDate(date) {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}-${month}-${year}`;
+    },
+    resolveDayDate(dayLabel) {
+      return this.dayLabelDateLookup?.[dayLabel] || null;
+    },
+    dateNumber(date) {
+      return (
+        date.getFullYear() * 10000
+        + (date.getMonth() + 1) * 100
+        + date.getDate()
+      );
     },
     getVacationForAgent(agent, day) {
       if (this.isTrainingDay(agent, day)) {
@@ -164,10 +220,11 @@ export default {
     },
     isVacationDay(agent, day) {
       const vacations = this.dayOff?.[agent] || [];
-      const dayPart = this.getDayPart(day);
-      if (!dayPart || this.isWeekendLabel(day)) {
+      const dayDate = this.resolveDayDate(day);
+      if (!dayDate) {
         return false;
       }
+      const dayValue = this.dateNumber(dayDate);
 
       for (let i = 0; i < vacations.length; i += 1) {
         const period = vacations[i];
@@ -179,25 +236,22 @@ export default {
         if (!vacationStartDate || !vacationEndDate || vacationStartDate > vacationEndDate) {
           continue;
         }
-
-        const cursor = new Date(vacationStartDate);
-        while (cursor <= vacationEndDate) {
-          if (this.formatDayMonth(cursor) === dayPart) {
-            return true;
-          }
-          cursor.setDate(cursor.getDate() + 1);
+        const vacationStartValue = this.dateNumber(vacationStartDate);
+        const vacationEndValue = this.dateNumber(vacationEndDate);
+        if (vacationStartValue <= dayValue && dayValue <= vacationEndValue) {
+          return true;
         }
       }
       return false;
     },
     isUnavailable(agent, day) {
       const unavailableDays = this.unavailable?.[agent] || [];
-      const dayPart = this.getDayPart(day);
-      if (!dayPart) {
+      const dayDate = this.resolveDayDate(day);
+      if (!dayDate) {
         return false;
       }
-      const formattedUnavailableDays = unavailableDays.map((date) => date.slice(0, 5));
-      return formattedUnavailableDays.includes(dayPart);
+      const dayFull = this.formatConfigDate(dayDate);
+      return unavailableDays.includes(dayFull);
     },
     getVacationColor(agent, day) {
       const vacation = this.getVacationForAgent(agent, day);
@@ -212,12 +266,12 @@ export default {
     },
     isTrainingDay(agent, day) {
       const trainingDays = this.training?.[agent] || [];
-      const datePart = this.getDayPart(day);
-      if (!datePart) {
+      const dayDate = this.resolveDayDate(day);
+      if (!dayDate) {
         return false;
       }
-      const formattedTrainingDays = trainingDays.map((date) => date.slice(0, 5));
-      return formattedTrainingDays.includes(datePart);
+      const dayFull = this.formatConfigDate(dayDate);
+      return trainingDays.includes(dayFull);
     },
     getColumnColor(agent, day) {
       if (this.isVacationDay(agent, day)) {
