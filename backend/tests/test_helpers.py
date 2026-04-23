@@ -510,7 +510,7 @@ def test_is_vacation_day_false(day_off):
     """
 
     assert not is_vacation_day("Agent1", "Dim. 10-01", day_off)
-    assert not is_vacation_day("Agent2", "Dim. 22-01", day_off)
+    assert is_vacation_day("Agent2", "Dim. 22-01", day_off)
 
 
 def test_is_vacation_day_weekend(day_off):
@@ -524,8 +524,18 @@ def test_is_vacation_day_weekend(day_off):
         The function asserts that "Sam. 07-01" and "Dim. 15-01" are not vacation days for "Agent1" and "Agent2" respectively.
     """
 
-    assert not is_vacation_day("Agent1", "Sam. 07-01", day_off)
-    assert not is_vacation_day("Agent2", "Dim. 15-01", day_off)
+    assert is_vacation_day("Agent1", "Sam. 07-01", day_off)
+    assert is_vacation_day("Agent2", "Dim. 15-01", day_off)
+
+
+def test_is_vacation_day_uses_reference_year_when_provided():
+    day_off = {
+        "Agent1": [["01-04-2025", "03-04-2025"]],
+    }
+
+    assert not is_vacation_day(
+        "Agent1", "Mer. 02-04", day_off, planning_start_date="2026-04-01"
+    )
 
 
 def test_is_vacation_day_not_in_dayOff(day_off):

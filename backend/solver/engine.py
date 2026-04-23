@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from ortools.sat.python import cp_model
 
 from .constraints import hard, mixed, soft
@@ -88,6 +90,30 @@ def _build_registry() -> ConstraintRegistry:
     return registry
 
 
+def _parse_iso_date(date_value):
+    if date_value is None:
+        return None
+    if isinstance(date_value, datetime):
+        return date_value
+    if isinstance(date_value, str):
+        return datetime.strptime(date_value, "%Y-%m-%d")
+    raise ValueError("planning_start_date must be YYYY-MM-DD or datetime")
+
+
+def _build_day_dates(ctx: SolverContext) -> None:
+    start_date = _parse_iso_date(ctx.planning_start_date)
+    if start_date is None:
+        return
+
+    for idx, day in enumerate(ctx.week_schedule):
+        ctx.day_dates[day] = start_date + timedelta(days=idx)
+
+    previous_start = start_date - timedelta(days=7)
+    for idx, day in enumerate(ctx.previous_week_schedule):
+        # Keep deterministic mapping for continuity constraints when previous week is provided.
+        ctx.day_dates.setdefault(day, previous_start + timedelta(days=idx))
+
+
 def _extract_solution(ctx: SolverContext, solver: cp_model.CpSolver):
     """
     Extracts the solution from the solver and returns it as a dictionary.
@@ -122,6 +148,7 @@ def generate_planning(
     previous_week_schedule,
     initial_shifts,
     runtime_config,
+    planning_start_date=None,
 ):
     """
     Generates a planning based on the given parameters.
@@ -154,11 +181,13 @@ def generate_planning(
         previous_week_schedule=previous_week_schedule,
         initial_shifts=initial_shifts,
         holidays=runtime_config["holidays"],
+        planning_start_date=planning_start_date,
     )
 
     _load_solver_settings(ctx)
     _load_shift_durations(ctx)
     ctx.weeks_split = split_into_weeks(ctx.week_schedule)
+    _build_day_dates(ctx)
     _build_planning_variables(ctx)
 
     registry = _build_registry()

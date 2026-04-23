@@ -30,6 +30,20 @@ Execution flow:
 6. Apply objective.
 7. Solve and extract result.
 
+## Date Handling Rules
+
+To avoid cross-year regressions in leave display and constraints, date comparisons must use full dates:
+
+- Backend solver:
+  - Build a day-label to full-date map from the planning start date.
+  - Compare leave periods against resolved full dates, not only `dd-mm`.
+- Frontend table:
+  - Resolve each displayed day label to a full date from `planningStartDate`.
+  - Match leave/unavailable/training entries using full config dates (`dd-mm-YYYY`).
+- Weekend policy:
+  - Leave periods include Saturday/Sunday for display (`Con.`) when those dates are in range.
+  - Paid-hours policy remains unchanged unless explicitly modified in solver rules.
+
 ## How To Add A Constraint
 
 1. Choose the right group (`hard`, `soft`, `mixed`).
