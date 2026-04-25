@@ -71,6 +71,18 @@ The project is divided into two main components: **Frontend** and **Backend**.
 - **Purpose:** Performs constraint-based scheduling.
 - **Key Features:** Efficient optimization algorithms.
 
+##### Solver Modularity (since v0.8.x)
+
+- `backend/app.py` now keeps the HTTP/API layer and delegates optimization to the solver package.
+- `backend/solver/engine.py` orchestrates solve flow (context creation, constraint registry execution, objective, solve, extraction).
+- `backend/solver/context.py` centralizes runtime model data shared by constraint modules.
+- `backend/solver/registry.py` registers and applies constraint groups in deterministic order.
+- Constraint groups are split into:
+  - `backend/solver/constraints/hard.py`
+  - `backend/solver/constraints/soft.py`
+  - `backend/solver/constraints/mixed.py`
+- Objective assembly is isolated in `backend/solver/objective.py`.
+
 ### CODE MAP
 
 #### Directory Structure

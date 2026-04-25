@@ -555,6 +555,60 @@ def test_generate_planning_paid_leave_hours_balancing_regression():
 
     assert isinstance(result, dict)
     assert "info" not in result
+
+
+def test_generate_planning_ignores_leave_periods_from_other_years():
+    """
+    Regression test: leave periods from another year must not block a target planning year.
+
+    With exactly three agents and three shifts per day, blocking one agent on a day
+    makes the model infeasible. A 2025 leave must not affect a 2026 planning.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [{"start": "01-04-2025", "end": "03-04-2025"}],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent3",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    vacations = ["Jour", "Nuit", "CDP"]
+    week_schedule = ["Mar. 01-04", "Mer. 02-04", "Jeu. 03-04"]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-04-01",
+    )
+
+    assert isinstance(result, dict)
+    assert "info" not in result
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)

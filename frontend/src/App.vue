@@ -70,6 +70,7 @@
         :unavailable="unavailableFromConfig"
         :dayOff="dayOffFromConfig"
         :training="trainingFromConfig"
+        :planningStartDate="startDate"
       />
     </div>
 

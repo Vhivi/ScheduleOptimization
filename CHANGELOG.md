@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added a modular backend solver package under `backend/solver/` with dedicated context, registry, grouped constraints, and objective builder.
+- Added a solver modularization guide at `docs/solver-modularization.md`.
+- Added backend tests in `backend/tests/test_solver_modularization.py` to validate registry wiring and key hard-constraint behavior.
+
+### Changed
+
+- Refactored `backend/app.py` so API routes keep a stable `generate_planning(...)` facade while solver logic is delegated to `backend/solver/engine.py`.
+- Preserved API and configuration compatibility while splitting hard/soft/mixed constraints into dedicated modules.
+
+### Fixed
+
+- Fixed leave-year handling in the solver so leave periods are matched against full planning dates, preventing `dd-mm` collisions across years (for example 2025 leave affecting 2026 planning).
+- Fixed backend leave helper behavior to support year-safe date resolution with a planning start-date reference.
+- Fixed frontend leave rendering in `PlanningTable` to use full-date matching and correctly display `Con.` on weekend days included in leave periods.
+- Fixed frontend unavailable/training day matching in `PlanningTable` to use full dates consistently with backend config (`dd-mm-YYYY`).
+
 ## [0.7.9] - 2026-03-22
 
 ### Added

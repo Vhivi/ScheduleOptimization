@@ -170,9 +170,10 @@ Core sections in `config.json`:
 
 ### 🕵 Adding Constraints
 
-1. ✏️ Modify the `generate_planning` function in `app.py`.
-2. 🔧 Check that your constraint is well integrated and produces the desired effects.
-3. ✉️ Update documentation and configuration as needed.
+1. ✏️ Add the rule in `backend/solver/constraints/hard.py`, `soft.py`, or `mixed.py`.
+2. 🔧 Register the rule in the corresponding `register(...)` function.
+3. ✅ Run backend tests (`cd backend`, activate `.venv`, `python -m pytest -q`).
+4. ✉️ Update documentation (see `docs/solver-modularization.md`) when behavior changes.
 
 ---
 

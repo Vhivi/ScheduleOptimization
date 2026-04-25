@@ -1,11 +1,10 @@
 import json
 import os
-from collections import defaultdict
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from ortools.sat.python import cp_model
+from solver.engine import generate_planning as generate_planning_engine
 
 app = Flask(__name__)
 CORS(app)
@@ -151,6 +150,7 @@ def generate_planning_route():
             dayOff,
             previous_week_schedule,
             initial_shifts,
+            planning_start_date=start_date_str,
         )
 
         # If the result is a dict with an info key, return a 400 error.
@@ -333,7 +333,24 @@ def split_by_month_or_period(week_schedule):
     return periods
 
 
-def is_vacation_day(agent_name, day, dayOff):
+def _resolve_day_date_from_reference(day_part, reference_date):
+    day_value = int(day_part.split("-")[0])
+    month_value = int(day_part.split("-")[1])
+
+    candidates = []
+    for year in [reference_date.year - 1, reference_date.year, reference_date.year + 1]:
+        try:
+            candidates.append(datetime(year, month_value, day_value))
+        except ValueError:
+            continue
+
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda candidate: abs((candidate - reference_date).days))
+
+
+def is_vacation_day(agent_name, day, dayOff, planning_start_date=None):
     """Checks whether the day corresponds to leave for the agent,
     by checking all the periods defined in dayOff."""
     if agent_name in dayOff:
@@ -344,15 +361,22 @@ def is_vacation_day(agent_name, day, dayOff):
             vacation_start_date = datetime.strptime(vacation_start, "%d-%m-%Y")
             vacation_end_date = datetime.strptime(vacation_end, "%d-%m-%Y")
             try:
-                day_date = datetime.strptime(
-                    f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
-                )
+                if planning_start_date is not None:
+                    if isinstance(planning_start_date, str):
+                        reference_date = datetime.strptime(planning_start_date, "%Y-%m-%d")
+                    else:
+                        reference_date = planning_start_date
+                    day_date = _resolve_day_date_from_reference(day_part, reference_date)
+                    if day_date is None:
+                        continue
+                else:
+                    day_date = datetime.strptime(
+                        f"{day_part}-{vacation_start_date.year}", "%d-%m-%Y"
+                    )
             except ValueError:
                 continue
             # Check if the day is between the holiday start and end dates
-            if vacation_start_date <= day_date <= vacation_end_date and not is_weekend(
-                day
-            ):
+            if vacation_start_date <= day_date <= vacation_end_date:
                 return True
     return False
 
@@ -402,822 +426,25 @@ def split_date_range_by_month(start: datetime, end: datetime) -> list:
 
 
 def generate_planning(
-    agents, vacations, week_schedule, dayOff, previous_week_schedule, initial_shifts
+    agents,
+    vacations,
+    week_schedule,
+    dayOff,
+    previous_week_schedule,
+    initial_shifts,
+    planning_start_date=None,
 ):
-    model = cp_model.CpModel()
-    solver_config = config.get("solver", {})
-    max_time_seconds = int(solver_config.get("max_time_seconds", 600))
-    global_max_gap = int(solver_config.get("global_max_gap", 240))
-    period_max_gap = int(solver_config.get("period_max_gap", 240))
-    relative_gap_limit = float(solver_config.get("relative_gap_limit", 0.10))
-    num_search_workers = int(solver_config.get("num_search_workers", 0))
-    optimize_period_balance = bool(
-        solver_config.get("optimize_period_balance", False)
+    # Public facade kept stable for existing route and tests.
+    return generate_planning_engine(
+        agents=agents,
+        vacations=vacations,
+        week_schedule=week_schedule,
+        dayOff=dayOff,
+        previous_week_schedule=previous_week_schedule,
+        initial_shifts=initial_shifts,
+        runtime_config=config,
+        planning_start_date=planning_start_date,
     )
-    period_balance_weight = int(solver_config.get("period_balance_weight", 2))
-
-    weeks_split = split_into_weeks(week_schedule)  # Divide week_schedule into weeks
-
-    # Adjust shift durations by multiplying by 10 to eliminate decimals
-    jour_duration = int(config["vacation_durations"]["Jour"] * 10)
-    nuit_duration = int(config["vacation_durations"]["Nuit"] * 10)
-    cdp_duration = int(config["vacation_durations"]["CDP"] * 10)
-    conge_duration = int(config["vacation_durations"]["Conge"] * 10)
-
-    ########################################################
-    # Variables
-    ########################################################
-
-    # One variable per agent/shift/day
-    planning = {}
-    for agent in agents:
-        agent_name = agent["name"]  # Use agent name as key
-        for day in set(
-            week_schedule + previous_week_schedule
-        ):  # Include both week_schedule and previous_week_schedule
-            for vacation in vacations:
-                planning[(agent_name, day, vacation)] = model.NewBoolVar(
-                    f"planning_{agent_name}_{day}_{vacation}"
-                )
-
-    ########################################################
-    # Hard Constraints
-    ########################################################
-    # (Put all the unavoidable constraints here)
-
-    # Only apply initial shifts from the previous week
-    for agent_name, shifts in initial_shifts.items():
-        for day, vacation in shifts:
-            if (
-                agent_name in [agent["name"] for agent in agents]
-                and vacation in vacations
-                and day in previous_week_schedule
-            ):
-                model.Add(planning[(agent_name, day, vacation)] == 1)
-
-    # Each agent may work a maximum of one shift per day
-    for agent in agents:
-        agent_name = agent["name"]
-        for day in week_schedule:
-            model.Add(
-                sum(planning[(agent_name, day, vacation)] for vacation in vacations)
-                <= 1
-            )
-
-    # At least one shift per agent per week
-    for agent in agents:
-        agent_name = agent["name"]
-        model.Add(
-            sum(
-                planning[(agent_name, day, vacation)]
-                for day in week_schedule
-                for vacation in vacations
-            )
-            >= 1
-        )
-
-    # Each shift must be assigned to an agent each day, except for the CDP shift at weekends and on public holidays.
-    for day in week_schedule:
-        day_date = day.split(" ")[1]  # Extract date
-        day_is_weekend = day.startswith(("Sam", "Dim"))  # Check if it's a weekend
-        for vacation in vacations:
-            # Exclusion from the CDP shift at weekends and public holidays
-            if vacation == "CDP" and (day_is_weekend or day_date in holidays):
-                # Do not assign the CDP shift at weekends or on public holidays
-                model.Add(
-                    sum(planning[(agent["name"], day, "CDP")] for agent in agents) == 0
-                )
-            else:
-                # Sum of agents assigned to a specific shift on a given day must be equal to 1
-                model.Add(
-                    sum(planning[(agent["name"], day, vacation)] for agent in agents)
-                    == 1
-                )
-
-    # After a night shift, prohibit the day shift or CDP the following day
-    # to avoid the agent working 24 hours in a row
-    for agent in agents:
-        agent_name = agent["name"]
-        for day_idx, day in enumerate(
-            week_schedule[:-1]
-        ):  # The last day is not taken into account
-            next_day = week_schedule[day_idx + 1]
-
-            # Boolean variables for shifts
-            nuit_var = planning[(agent_name, day, "Nuit")]
-            jour_var = planning[(agent_name, next_day, "Jour")]
-            cdp_var = planning[(agent_name, next_day, "CDP")]
-
-            # If the agent works at night, he/she cannot work a day shift or CDP the following day.
-            model.Add(jour_var == 0).OnlyEnforceIf(nuit_var)
-            model.Add(cdp_var == 0).OnlyEnforceIf(nuit_var)
-
-    ########################################################
-    # Limit the number of CDPs to 2 per week
-    # Personal choice to try and find a balance between shifts
-    for agent in agents:
-        agent_name = agent["name"]
-
-        for week in weeks_split:
-            # Limit the number of CDP shifts to 2 per week (Monday to Sunday)
-            model.Add(sum(planning[(agent_name, day, "CDP")] for day in week) <= 2)
-    ########################################################
-
-    ########################################################
-    # An agent does not work when he is unavailable
-    # Unavailability is a day on which the agent is unable to work any kind of shift.
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "unavailable" in agent:
-            # Retrieve the agent's days of unavailability
-            unavailable_days = agent["unavailable"]
-
-            # Browse each day of unavailability
-            for unavailable_date in unavailable_days:
-                # Extract today's date
-                unavailable_day = datetime.strptime(
-                    unavailable_date, "%d-%m-%Y"
-                ).strftime("%d-%m")
-
-                # Prohibit the agent from working any shifts on this day
-                for day in week_schedule:
-                    if (
-                        unavailable_day in day
-                    ):  # Checks whether the day corresponds to unavailability
-                        for vacation in vacations:
-                            model.Add(planning[(agent_name, day, vacation)] == 0)
-    ########################################################
-
-    ########################################################
-    # An agent does not work while on training
-    # A training session is a day on which the agent is not allowed to do any work.
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "training" in agent:
-            # Retrieve the agent's training days
-            training_days = agent["training"]
-
-            # Browse each training day
-            for training_date in training_days:
-                # Extract today's date
-                training_day = datetime.strptime(training_date, "%d-%m-%Y").strftime(
-                    "%d-%m"
-                )
-
-                # Forbid the agent from working any shifts on this day
-                for day in week_schedule:
-                    if (
-                        training_day in day
-                    ):  # Checks whether the day corresponds to training
-                        for vacation in vacations:
-                            model.Add(planning[(agent_name, day, vacation)] == 0)
-    ########################################################
-
-    ########################################################
-    # Staff leave
-    date_format_full = "%d-%m-%Y"
-    leave_paid_hours_by_day = defaultdict(int)
-
-    for agent in agents:
-        agent_name = agent["name"]
-        # Retrieve leave information if available
-        if "vacations" in agent and isinstance(agent["vacations"], list):
-            for vac in agent["vacations"]:
-                # Check if the leave period is a dictionary and contains the start and end keys
-                if isinstance(vac, dict) and "start" in vac and "end" in vac:
-                    vacation_start = datetime.strptime(vac["start"], date_format_full)
-                    vacation_end = datetime.strptime(vac["end"], date_format_full)
-
-                    # For each day of the schedule
-                    for day_str in week_schedule:
-                        # Extract the day and month and complete with the year of vacation_start
-                        day_part = day_str.split(" ")[
-                            1
-                        ]  # Extract the date in %d-%m format
-                        # Identify the format and convert the day into a datetime object
-                        try:
-                            day_date = datetime.strptime(
-                                f"{day_part}-{vacation_start.year}", date_format_full
-                            )
-                        except ValueError:
-                            continue  # Ignore malformed dates
-
-                        # If the day is a leave, prohibit all shifts
-                        if vacation_start <= day_date <= vacation_end:
-                            for vacation in vacations:
-                                model.Add(
-                                    planning[(agent_name, day_str, vacation)] == 0
-                                )
-
-                            # Paid leave hours (Monday to Saturday): 7h * 10
-                            if day_date.weekday() < 6:  # Monday (0) to Saturday (5)
-                                leave_paid_hours_by_day[(agent_name, day_str)] = (
-                                    conge_duration
-                                )
-
-                    # If the leave starts on a Monday, add the unavailability from the previous weekend
-                    if vacation_start.weekday() == 0:  # Monday (0)
-                        previous_saturday = vacation_start - timedelta(days=2)
-                        previous_sunday = vacation_start - timedelta(days=1)
-
-                        for weekend_day in [previous_saturday, previous_sunday]:
-                            weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
-
-                            # Checks if the day is in the planning week or previous week schedule
-                            if (
-                                weekend_str in week_schedule
-                                or weekend_str in previous_week_schedule
-                            ):
-                                for vacation in vacations:
-                                    model.Add(
-                                        planning[(agent_name, weekend_str, vacation)]
-                                        == 0
-                                    )
-    ########################################################
-
-    ########################################################
-    # Limited to 3 day shifts per week
-    # Convert week_schedule into a datetime object to facilitate grouping by week
-    week_days = [
-        (day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in week_schedule
-    ]
-    weeks_dict = defaultdict(list)
-
-    # Group days by week
-    for day_str, day_date in week_days:
-        # isocalendar() returns a tuple (year, week, day) which can be grouped by week
-        # Use a string-readable key for grouping (year-week)
-        week_number = day_date.isocalendar()[:2]
-        weeks_dict[week_number].append(day_str)
-
-    # Limit to 3 day shifts per week
-    for agent in agents:
-        agent_name = agent["name"]
-        for week, days in weeks_dict.items():
-            # Limit "Day" shifts to 3 per week for this agent
-            model.Add(sum(planning[(agent_name, day, "Jour")] for day in days) <= 3)
-    ########################################################
-
-    ########################################################
-    # Prohibiting a night shift before a period of unavailability
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "unavailable" in agent:
-            # Retrieve the days the agent is unavailable
-            unavailable_days = [
-                datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
-                for date in agent["unavailable"]
-            ]
-
-            # Prohibit night shifts the day before the unavailability period
-            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignoring the last day
-                next_day = week_schedule[day_idx + 1]
-
-                # Checks if the next day is unavailable
-                if any(
-                    unavailable_day in next_day for unavailable_day in unavailable_days
-                ):
-                    model.Add(planning[(agent_name, day, "Nuit")] == 0)
-    ########################################################
-
-    ########################################################
-    # Prohibit a night shift before a training course
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "training" in agent:
-            # Retrieve the agent's training days
-            training_days = [
-                datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
-                for date in agent["training"]
-            ]
-
-            # Prohibit night shifts the day before training sessions
-            for day_idx, day in enumerate(week_schedule[:-1]):  # Ignore the last day
-                next_day = week_schedule[day_idx + 1]
-
-                # Checks if the next day is a training day
-                if any(training_day in next_day for training_day in training_days):
-                    model.Add(planning[(agent_name, day, "Nuit")] == 0)
-    ########################################################
-
-    ########################################################
-    # Limiting pre- and post-training shifts
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "training" in agent:
-            # Retrieve the agent's training days
-            training_days = [
-                datetime.strptime(date, "%d-%m-%Y").strftime("%d-%m")
-                for date in agent["training"]
-            ]
-
-            for day_idx, day in enumerate(week_schedule):
-                if any(training_day in day for training_day in training_days):
-                    # Check the day before the course
-                    if day_idx > 0:
-                        previous_day = week_schedule[day_idx - 1]
-
-                        # If a shift is allocated the day before, it must be CDP or nothing
-                        for vacation in vacations:
-                            if vacation != "CDP":
-                                model.Add(
-                                    planning[(agent_name, previous_day, vacation)] == 0
-                                )
-
-                    # Check the following day (the day after the course)
-                    if day_idx < len(week_schedule) - 1:
-                        next_day = week_schedule[day_idx + 1]
-
-                        # If a shift is allocated the following day, it must be CDP, Night or nothing.
-                        allowed_vacations = ["CDP", "Nuit"]
-                        for vacation in vacations:
-                            if vacation not in allowed_vacations:
-                                model.Add(
-                                    planning[(agent_name, next_day, vacation)] == 0
-                                )
-    ########################################################
-
-    ########################################################
-    # Prohibit a shift for a shift exclusion
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "exclusion" in agent:
-            # Retrieve shifts to be excluded
-            exclusion_dates = agent["exclusion"]
-
-            # Browse each exclusion date
-            for exclusion_date in exclusion_dates:
-                # Extract the date portion of the exclusion
-                exclusion_day = datetime.strptime(exclusion_date, "%d-%m-%Y").strftime(
-                    "%d-%m"
-                )
-
-                # Prohibit the agent from working any shifts on this day
-                for day_str in week_schedule:
-                    day_date = day_str.split(" ")[1]  # Extract date (dd-mm)
-
-                    if (
-                        exclusion_day == day_date
-                    ):  # Checks whether the day corresponds to an exclusion
-                        for vacation in vacations:
-                            model.Add(planning[(agent_name, day_str, vacation)] == 0)
-    ########################################################
-
-    ########################################################
-    # Prohibit the Monday night shift if the agent has to work at the weekend
-    for agent in agents:
-        agent_name = agent["name"]
-
-        for day_idx, day in enumerate(
-            week_schedule[:-2]
-        ):  # We browse until the penultimate day
-            # Check if the day is a Saturday
-            if "Sam" in day:
-                sunday_idx = day_idx + 1
-                monday_idx = day_idx + 2
-
-                if sunday_idx < len(week_schedule) and monday_idx < len(week_schedule):
-                    sunday = week_schedule[sunday_idx]
-                    monday = week_schedule[monday_idx]
-
-                    # Retrieve night shift variables for Saturday and Sunday and no shifts on Monday
-                    saturday_night = planning[(agent_name, day, "Nuit")]
-                    sunday_night = planning[(agent_name, sunday, "Nuit")]
-
-                    # Create a Boolean variable to force the agent not to work on Mondays
-                    model.Add(
-                        planning[(agent_name, monday, "Nuit")] == 0
-                    ).OnlyEnforceIf([saturday_night, sunday_night])
-    ########################################################
-
-    ########################################################
-    # Applying restrictions
-    for agent in agents:
-        agent_name = agent["name"]
-
-        if "restriction" in agent:
-            restricted_vacations = agent["restriction"]
-
-            # Prohibit these shifts for the agent every day of the schedule
-            for day in week_schedule:
-                for restricted_vacation in restricted_vacations:
-                    model.Add(planning[(agent_name, day, restricted_vacation)] == 0)
-    ########################################################
-
-    ########################################################
-    # Soft Constraints
-    ########################################################
-    # (Put here all the [soft] constraints that influence the overall objective)
-
-    ########################################################
-    # Balance constraint: all agents must have a similar volume of paid hours
-    # (worked shifts + paid leave)
-    paid_hours = {}
-    for agent in agents:
-        agent_name = agent["name"]
-        paid_hours[agent_name] = cp_model.LinearExpr.Sum(
-            list(
-            planning[(agent_name, day, "Jour")] * jour_duration
-            + planning[(agent_name, day, "Nuit")] * nuit_duration
-            + planning[(agent_name, day, "CDP")] * cdp_duration
-            + leave_paid_hours_by_day[(agent_name, day)]
-            for day in week_schedule
-            )
-        )
-
-    # Impose a limit on the difference between the minimum and maximum hours worked by employees
-    min_hours = model.NewIntVar(
-        0, 10000, "min_hours"
-    )  # Lower limit - Adjust terminals (*10) if necessary
-    max_hours = model.NewIntVar(
-        0, 10000, "max_hours"
-    )  # Upper limit - Adjust terminals (*10) if necessary
-
-    # Constraint on balancing paid hours between agents
-    for agent_name in paid_hours:
-        model.Add(min_hours <= paid_hours[agent_name])
-        model.Add(paid_hours[agent_name] <= max_hours)
-
-    # Constraining the difference between max_hours and min_hours for global equilibrium
-    model.Add(max_hours - min_hours <= global_max_gap)
-    ########################################################
-
-    ########################################################
-    # Balancing constraint per period
-
-    # Split week_schedule into monthly or single periods
-    periods = split_by_month_or_period(week_schedule)
-
-    period_balancing_terms = []
-    for period_idx, period in enumerate(periods):
-        period_total_hours = {}
-        for agent in agents:
-            agent_name = agent["name"]
-            # Calculation of total paid hours per agent over the period
-            period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
-                list(
-                    planning[(agent_name, day, "Jour")] * jour_duration
-                    + planning[(agent_name, day, "Nuit")] * nuit_duration
-                    + planning[(agent_name, day, "CDP")] * cdp_duration
-                    + leave_paid_hours_by_day[(agent_name, day)]
-                    for day in period
-                )
-            )
-
-        min_period_hours = model.NewIntVar(
-            0, 100000, f"min_hours_period_{period_idx}"
-        )
-        max_period_hours = model.NewIntVar(
-            0, 100000, f"max_hours_period_{period_idx}"
-        )
-        for agent in agents:
-            agent_name = agent["name"]
-            model.Add(min_period_hours <= period_total_hours[agent_name])
-            model.Add(period_total_hours[agent_name] <= max_period_hours)
-        period_gap = model.NewIntVar(0, 100000, f"period_gap_{period_idx}")
-        model.Add(period_gap == max_period_hours - min_period_hours)
-        model.Add(period_gap <= period_max_gap)
-        period_balancing_terms.append(period_gap)
-
-    period_balancing_objective = cp_model.LinearExpr.Sum(period_balancing_terms)
-    ########################################################
-
-    ########################################################
-    # Add balancing for full weekends
-
-    total_weekends = sum(
-        1 for day in week_schedule if "Sam" in day
-    )  # Total number of weekends in the period
-    # Double the target to take account of two shifts (Day and Night) per weekend
-    target_weekends_per_agent = (total_weekends * 2) // len(
-        agents
-    )  # Ideal number of weekends per agent
-
-    # Initialise the number of weekends worked for each agent
-    weekends_worked = {}
-    for agent in agents:
-        agent_name = agent["name"]
-        weekends_worked[agent_name] = model.NewIntVar(
-            0, total_weekends, f"weekends_worked_{agent_name}"
-        )
-
-        # Calculate the number of full weekends worked for each agent
-        weekend_count = []
-        for day_idx, day in enumerate(week_schedule):
-            if (
-                "Sam" in day
-                and day_idx + 1 < len(week_schedule)
-                and "Dim" in week_schedule[day_idx + 1]
-            ):
-                saturday = day
-                sunday = week_schedule[day_idx + 1]
-
-                # Boolean variables for working on Saturdays and Sundays
-                saturday_work = model.NewBoolVar(
-                    f"{agent_name}_works_saturday_{saturday}"
-                )
-                sunday_work = model.NewBoolVar(f"{agent_name}_works_sunday_{sunday}")
-
-                # Add constraints to assign these variables
-                model.Add(
-                    planning[(agent_name, saturday, "Jour")]
-                    + planning[(agent_name, saturday, "Nuit")]
-                    > 0
-                ).OnlyEnforceIf(saturday_work)
-                model.Add(
-                    planning[(agent_name, saturday, "Jour")]
-                    + planning[(agent_name, saturday, "Nuit")]
-                    == 0
-                ).OnlyEnforceIf(saturday_work.Not())
-
-                model.Add(
-                    planning[(agent_name, sunday, "Jour")]
-                    + planning[(agent_name, sunday, "Nuit")]
-                    > 0
-                ).OnlyEnforceIf(sunday_work)
-                model.Add(
-                    planning[(agent_name, sunday, "Jour")]
-                    + planning[(agent_name, sunday, "Nuit")]
-                    == 0
-                ).OnlyEnforceIf(sunday_work.Not())
-
-                # The employee works a full weekend if both days are worked
-                works_weekend = model.NewBoolVar(
-                    f"{agent_name}_works_weekend_{saturday}_{sunday}"
-                )
-                model.AddBoolAnd([saturday_work, sunday_work]).OnlyEnforceIf(
-                    works_weekend
-                )
-                model.AddBoolOr([saturday_work.Not(), sunday_work.Not()]).OnlyEnforceIf(
-                    works_weekend.Not()
-                )
-
-                # Add works_weekend to the list of weekends worked
-                weekend_count.append(works_weekend)
-
-        # Assignment of the sum of weekends worked
-        model.Add(weekends_worked[agent_name] == sum(weekend_count))
-
-    # Add the objective of balancing weekends worked
-    min_weekends = model.NewIntVar(0, total_weekends, "min_weekends")
-    max_weekends = model.NewIntVar(0, total_weekends, "max_weekends")
-    for agent_name in weekends_worked:
-        model.Add(min_weekends <= weekends_worked[agent_name])
-        model.Add(weekends_worked[agent_name] <= max_weekends)
-
-    # Minimise the difference between the minimum and maximum number of weekends worked by agents
-    model.Minimize(max_weekends - min_weekends)
-
-    # Calculating the balance of weekends worked
-    weekend_balancing_terms = []
-
-    for agent in agents:
-        agent_name = agent["name"]
-        difference = model.NewIntVar(
-            -2 * total_weekends, 2 * total_weekends, f"difference_weekends_{agent_name}"
-        )
-        squared_difference = model.NewIntVar(
-            0, (total_weekends * 2) ** 2, f"squared_difference_weekends_{agent_name}"
-        )
-
-        # Calculate the difference between weekends worked and the target number of weekends
-        model.Add(difference == weekends_worked[agent_name] - target_weekends_per_agent)
-
-        # Define the square of the difference
-        model.AddMultiplicationEquality(squared_difference, [difference, difference])
-
-        # Add this square to the weekend balancing objective
-        weekend_balancing_terms.append(squared_difference)
-
-    # Balancing of worked weekends
-    weekend_balancing_objective = cp_model.LinearExpr.Sum(weekend_balancing_terms)
-    ########################################################
-
-    ########################################################
-    # Mixed Constraints
-    ########################################################
-    # (Put here all the constraints that combine hard and soft constraints)
-    # (Think about reworking them to separate hard and soft constraints)
-
-    ########################################################
-    # Limit the number of Nights to 3 per week and manage Day and CDP shifts
-    for agent in agents:
-        agent_name = agent["name"]
-
-        for week in weeks_split:
-            # Limit the number of Nights to 3 per week (from Monday to Sunday)
-            model.Add(sum(planning[(agent_name, day, "Nuit")] for day in week) <= 3)
-
-            # Calculate the total hours for Day and CDP per week
-            total_heures = sum(
-                planning[(agent_name, day, "Jour")] * jour_duration
-                + planning[(agent_name, day, "CDP")] * cdp_duration
-                for day in week
-            )
-
-            # Limit to 36 hours per week
-            model.Add(total_heures <= 360)  # 36 hours * 10
-    ########################################################
-
-    ########################################################
-    # Fournir des week-ends complets
-    # for agent in agents:
-    #     agent_name = agent['name']
-
-    #     for day_idx, day in enumerate(week_schedule):
-    #         # Vérifier si le jour est un samedi
-    #         if "Sam" in day:
-    #             sunday_idx = day_idx + 1
-
-    #             if sunday_idx < len(week_schedule) and "Dim" in week_schedule[sunday_idx]:
-    #                 saturday = day
-    #                 sunday = week_schedule[sunday_idx]
-
-    #                 # Créer des variables booléennes pour savoir si l'agent travaille le samedi et le dimanche
-    #                 saturday_jour = model.NewBoolVar(f'{agent_name}_work_saturday_jour_{saturday}')
-    #                 saturday_nuit = model.NewBoolVar(f'{agent_name}_work_saturday_nuit_{saturday}')
-    #                 sunday_jour = model.NewBoolVar(f'{agent_name}_work_sunday_jour_{sunday}')
-    #                 sunday_nuit = model.NewBoolVar(f'{agent_name}_work_sunday_nuit_{sunday}')
-
-    #                 # Assigner les variables en fonction de la planification
-    #                 model.Add(planning[(agent_name, saturday, 'Jour')] == 1).OnlyEnforceIf(saturday_jour)
-    #                 model.Add(planning[(agent_name, saturday, 'Jour')] == 0).OnlyEnforceIf(saturday_jour)
-    #                 model.Add(planning[(agent_name, saturday, 'Nuit')] == 1).OnlyEnforceIf(saturday_nuit)
-    #                 model.Add(planning[(agent_name, saturday, 'Nuit')] == 0).OnlyEnforceIf(saturday_nuit)
-
-    #                 model.Add(planning[(agent_name, sunday, 'Jour')] == 1).OnlyEnforceIf(sunday_jour)
-    #                 model.Add(planning[(agent_name, sunday, 'Jour')] == 0).OnlyEnforceIf(sunday_jour)
-    #                 model.Add(planning[(agent_name, sunday, 'Nuit')] == 1).OnlyEnforceIf(sunday_nuit)
-    #                 model.Add(planning[(agent_name, sunday, 'Nuit')] == 0).OnlyEnforceIf(sunday_nuit)
-
-    #                 # Créer des variables de travail pour le samdi et le dimanche
-    #                 saturday_work = model.NewBoolVar(f'{agent_name}_work_saturday_{saturday}')
-    #                 sunday_work = model.NewBoolVar(f'{agent_name}_work_sunday_{sunday}')
-
-    #                 # Si l'agent travaille soit en "Jour" soit en "Nuit" le samedi, alors saturday_work = 1
-    #                 model.AddBoolOr([saturday_jour, saturday_nuit]).OnlyEnforceIf(saturday_work)
-    #                 model.AddBoolOr([sunday_jour, sunday_nuit]).OnlyEnforceIf(sunday_work)
-
-    #                 # Contraindre à un week-end complet ou rien
-    #                 model.Add(saturday_work == sunday_work)
-
-    #                 # Pénalité pour un week-end partiel
-    #                 partial_weekend_penalty = model.NewBoolVar(f'{agent_name}_partial_weekend_penalty_{saturday}')
-    #                 model.Add(saturday_work != sunday_work).OnlyEnforceIf(partial_weekend_penalty)
-
-    #                 # Ajouter une légère pénalité pour encourager les week-ends complets
-    #                 penalty_weight_weekends = 100    # Ajustable pour les pénalités
-    #                 reward_weight_weekends = -100     # Ajustable pour les récompenses
-
-    #                 # Pénaliser les week-ends partiels
-    #                 model.Minimize(penalty_weight_weekends * partial_weekend_penalty)
-
-    #                 # Récompenser les week-ends complets
-    #                 model.Minimize(reward_weight_weekends * (saturday_work + sunday_work))
-    ########################################################
-
-    ########################################################
-    # ! Mise en suspens de la contrainte de volume horaire similaire pour le moment
-    # Tous les agents doivent avoir un volume horaire similaire
-    # total_hours = {}
-    # for agent in agents:
-    #     agent_name = agent['name']
-    #     total_hours[agent_name] = cp_model.LinearExpr.Sum(list(
-    #         planning[(agent_name, day, 'Jour')] * jour_duration +
-    #         planning[(agent_name, day, 'Nuit')] * nuit_duration +
-    #         planning[(agent_name, day, 'CDP')] * cdp_duration
-    #         for day in week_schedule
-    #     ))
-
-    # # Calculer le volume cible d'heures par agent
-    # total_available_hours = sum(
-    #     jour_duration + nuit_duration + cdp_duration for day in week_schedule
-    # )
-    # target_hours_per_agent = total_available_hours // len(agents)
-    # print("Target hours per agent:", target_hours_per_agent)
-
-    # acceptable_deviation = 240  # Ajuste cette valeur selon tes besoins (*10)
-    # for agent_name in total_hours:
-    #     model.Add(total_hours[agent_name] <= target_hours_per_agent + acceptable_deviation)
-    #     model.Add(total_hours[agent_name] >= target_hours_per_agent - acceptable_deviation)
-
-    # # Crée des variables pour la variance
-    # variance = {}
-    # for agent in agents:
-    #     agent_name = agent['name']
-
-    #     # Variable pour la différence entre les heures travaillées et l'objectif cible
-    #     diff = model.NewIntVar(-10000, 10000, f'diff_{agent_name}')
-    #     model.Add(diff == total_hours[agent_name] - target_hours_per_agent)
-
-    #     # Variable pour le carré de la différence
-    #     squared_diff = model.NewIntVar(0, 100000000, f'squared_diff_{agent_name}')
-    #     model.AddMultiplicationEquality(squared_diff, [diff, diff])
-
-    #     # Stocker la variance pour chaque agent
-    #     variance[agent_name] = squared_diff
-
-    # # Calculer la variance totale
-    # total_variance = cp_model.LinearExpr.Sum(variance.values())
-    # ! Fin de la mise en suspens de la contrainte de volume horaire similaire pour le moment
-    ########################################################
-
-    ########################################################
-    # Objectives
-    ########################################################
-
-    # Weights for each component of the objective function
-    weight_preferred = 100
-    weight_other = 1
-    weight_avoid = -250
-    # variance_weight = 100
-
-    # Maximize preferred vacations with an additional weight
-    objective_preferred_vacations = cp_model.LinearExpr.Sum(
-        list(
-            planning[(agent["name"], day, vacation)] * weight_preferred
-            for agent in agents
-            for day in week_schedule
-            for vacation in vacations
-            if vacation in agent["preferences"]["preferred"]
-        )
-    )
-
-    # Add a normal weight for the other shifts
-    objective_other_vacations = cp_model.LinearExpr.Sum(
-        list(
-            planning[(agent["name"], day, vacation)] * weight_other
-            for agent in agents
-            for day in week_schedule
-            for vacation in vacations
-            if vacation not in agent["preferences"]["preferred"]
-        )
-    )
-
-    # Penalising unwanted (avoided) shifts
-    penalized_vacations = cp_model.LinearExpr.Sum(
-        list(
-            planning[(agent["name"], day, vacation)] * weight_avoid
-            for agent in agents
-            for day in week_schedule
-            for vacation in vacations
-            if vacation in agent["preferences"]["avoid"]
-        )
-    )
-
-    # Maximize the overall objective, with a strong preference for preferred shifts.
-    objective = (
-        objective_preferred_vacations
-        + objective_other_vacations
-        + penalized_vacations
-        - weekend_balancing_objective
-    )
-    if optimize_period_balance:
-        objective -= period_balance_weight * period_balancing_objective
-    # (variance_weight * total_variance)  # ! Temporarily suspended similar hours constraint
-    model.Maximize(objective)
-
-    # Solver
-    solver = cp_model.CpSolver()
-    if num_search_workers > 0:
-        solver.parameters.num_search_workers = num_search_workers
-    if relative_gap_limit > 0:
-        solver.parameters.relative_gap_limit = relative_gap_limit
-    solver.parameters.max_time_in_seconds = max_time_seconds
-    status = solver.Solve(model)
-    # Log the solution
-    print(
-        "OR-Tools Status:",
-        solver.StatusName(status),
-        "     conflicts :",
-        solver.NumConflicts(),
-        "     branches :",
-        solver.NumBranches(),
-        "     execution time :",
-        f"{solver.WallTime():.4f} seconds",
-    )
-
-    # Results
-    # We accept optimal and feasible solutions
-    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        result = {}
-        for agent in agents:
-            agent_name = agent["name"]
-            result[agent_name] = []
-            for day in week_schedule:
-                for vacation in vacations:
-                    if solver.Value(planning[(agent_name, day, vacation)]):
-                        result[agent_name].append((day, vacation))
-        return result
-    else:
-        return {"info": "No solution found."}
-
 
 if __name__ == "__main__":
     app.run(debug=True)
