@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added runtime configuration API endpoints in the backend: `GET /config`, `GET /config/default`, and `PUT /config`.
+- Added schema-backed config persistence flow with atomic writes and immediate in-memory reload.
+- Added frontend interactive configuration mode in `App.vue` with load/save/default actions and inline editing for agents, vacations, durations, and staffing quotas.
+- Added backend dynamic solver tests in `backend/tests/test_dynamic_solver_config.py` for custom vacations and multi-agent-per-shift scenarios.
+
+### Changed
+
+- Updated solver internals to support dynamic vacation names instead of hard-coded `Jour/Nuit/CDP` assumptions.
+- Added `staffing_requirements` support to drive simultaneous staffing counts per vacation and per day.
+- Updated config schema to allow dynamic vacation names and dynamic vacation duration keys while keeping `Conge` mandatory.
+- Updated generation flow so frontend auto-saves dirty config before planning generation.
+
+### Fixed
+
+- Fixed frontend generation flow regression where auto-save could stop generation before calling `/generate-planning`.
+
 ## [0.8.0] - 2026-04-25
 
 ### Added
