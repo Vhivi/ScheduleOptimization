@@ -58,19 +58,37 @@ def _load_shift_durations(ctx: SolverContext) -> None:
     """
     Loads the shift durations from the config into the solver context.
 
-    This function sets the following solver context attributes from the config:
-    - jour_duration: the duration of a "Jour" shift in minutes.
-    - nuit_duration: the duration of a "Nuit" shift in minutes.
-    - cd_duration: the duration of a "CDP" shift in minutes.
-    - conge_duration: the duration of a "Conge" shift in minutes.
+    This function sets vacation durations for all configured vacations and leave.
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
-    ctx.jour_duration = int(ctx.config["vacation_durations"]["Jour"] * 10)
-    ctx.nuit_duration = int(ctx.config["vacation_durations"]["Nuit"] * 10)
-    ctx.cdp_duration = int(ctx.config["vacation_durations"]["CDP"] * 10)
+    configured_durations = ctx.config["vacation_durations"]
+    missing_vacation_durations = [
+        vacation for vacation in ctx.vacations if vacation not in configured_durations
+    ]
+    if missing_vacation_durations:
+        missing_joined = ", ".join(sorted(missing_vacation_durations))
+        raise ValueError(
+            "Missing vacation_durations entries for configured vacations: "
+            f"{missing_joined}"
+        )
+
+    ctx.shift_durations = {
+        vacation: int(configured_durations[vacation] * 10) for vacation in ctx.vacations
+    }
     ctx.conge_duration = int(ctx.config["vacation_durations"]["Conge"] * 10)
+
+    staffing_config = ctx.config.get("staffing_requirements", {})
+    ctx.staffing_requirements = {}
+    for vacation in ctx.vacations:
+        configured_value = staffing_config.get(vacation, 1)
+        required_count = int(configured_value)
+        if required_count < 0:
+            raise ValueError(
+                f"staffing_requirements[{vacation}] must be greater than or equal to 0"
+            )
+        ctx.staffing_requirements[vacation] = required_count
 
 
 def _build_registry() -> ConstraintRegistry:

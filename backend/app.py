@@ -46,6 +46,21 @@ def validate_runtime_config(candidate_config):
     for error in validator.iter_errors(candidate_config):
         path = "/".join(str(part) for part in error.path) or "(root)"
         errors.append({"path": path, "message": error.message})
+
+    vacations = candidate_config.get("vacations", [])
+    vacation_durations = candidate_config.get("vacation_durations", {})
+    if isinstance(vacations, list) and isinstance(vacation_durations, dict):
+        for vacation in vacations:
+            if vacation not in vacation_durations:
+                errors.append(
+                    {
+                        "path": f"vacation_durations/{vacation}",
+                        "message": (
+                            f"Missing duration for configured vacation '{vacation}'."
+                        ),
+                    }
+                )
+
     return errors
 
 
@@ -224,16 +239,19 @@ def generate_planning_route():
         previous_week_schedule = get_previous_week_schedule(start_date_str)
 
         # Calling up the schedule generation function
-        result = generate_planning(
-            agents,
-            vacations,
-            week_schedule,
-            dayOff,
-            previous_week_schedule,
-            initial_shifts,
-            planning_start_date=start_date_str,
-            runtime_config=runtime_config,
-        )
+        try:
+            result = generate_planning(
+                agents,
+                vacations,
+                week_schedule,
+                dayOff,
+                previous_week_schedule,
+                initial_shifts,
+                planning_start_date=start_date_str,
+                runtime_config=runtime_config,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         # If the result is a dict with an info key, return a 400 error.
         if "info" in result:

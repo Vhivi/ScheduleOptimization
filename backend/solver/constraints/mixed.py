@@ -1,6 +1,10 @@
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 
+DAY_SHIFT = "Jour"
+NIGHT_SHIFT = "Nuit"
+CDP_SHIFT = "CDP"
+
 
 def register(registry: ConstraintRegistry) -> None:
     """
@@ -31,11 +35,17 @@ def limit_weekly_nights_and_hours(ctx: SolverContext) -> None:
         agent_name = agent["name"]
 
         for week in ctx.weeks_split:
-            ctx.model.Add(sum(ctx.planning[(agent_name, day, "Nuit")] for day in week) <= 3)
+            if NIGHT_SHIFT in ctx.vacations:
+                ctx.model.Add(
+                    sum(ctx.planning[(agent_name, day, NIGHT_SHIFT)] for day in week) <= 3
+                )
 
             total_heures = sum(
-                ctx.planning[(agent_name, day, "Jour")] * ctx.jour_duration
-                + ctx.planning[(agent_name, day, "CDP")] * ctx.cdp_duration
+                sum(
+                    ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
+                    for vacation in (DAY_SHIFT, CDP_SHIFT)
+                    if vacation in ctx.vacations
+                )
                 for day in week
             )
             ctx.model.Add(total_heures <= 360)

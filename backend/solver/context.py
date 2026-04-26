@@ -31,9 +31,8 @@ class SolverContext:
         planning (Dict[Tuple[str, str, str], cp_model.IntVar]): Mapping of (agent, day, shift) to CP integer variables.
         leave_paid_hours_by_day (Dict[Tuple[str, str], int]): Paid leave hours indexed by (agent, day).
         
-        jour_duration (int): Duration in minutes for day shifts. Default: 0.
-        nuit_duration (int): Duration in minutes for night shifts. Default: 0.
-        cdp_duration (int): Duration in minutes for CDP shifts. Default: 0.
+        shift_durations (Dict[str, int]): Duration in tenths of hours for each configured vacation.
+        staffing_requirements (Dict[str, int]): Required number of assigned agents per vacation and day.
         conge_duration (int): Duration in minutes for leave/vacation shifts. Default: 0.
         
         max_time_seconds (int): Maximum solver runtime in seconds. Default: 600.
@@ -63,9 +62,8 @@ class SolverContext:
     leave_paid_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
     day_dates: Dict[str, datetime] = field(default_factory=dict)
 
-    jour_duration: int = 0
-    nuit_duration: int = 0
-    cdp_duration: int = 0
+    shift_durations: Dict[str, int] = field(default_factory=dict)
+    staffing_requirements: Dict[str, int] = field(default_factory=dict)
     conge_duration: int = 0
 
     max_time_seconds: int = 600
