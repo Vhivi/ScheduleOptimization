@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-01
+
 ### Added
 
 - Added runtime configuration API endpoints in the backend: `GET /config`, `GET /config/default`, and `PUT /config`.
