@@ -4,6 +4,44 @@ from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import split_by_month_or_period
 
+CDP_SHIFT = "CDP"
+
+
+def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: list[str]) -> int:
+    """
+    Computes the sum of assignments for a given agent, day, and list of vacations.
+
+    :param ctx: The solver context containing the problem data and the model.
+    :type ctx: SolverContext
+    :param agent_name: The name of the agent.
+    :type agent_name: str
+    :param day: The day of the week.
+    :type day: str
+    :param vacations: A list of vacations.
+    :type vacations: list[str]
+    :return: The sum of assignments for the given agent, day, and list of vacations.
+    :rtype: int
+    """
+    relevant = [vacation for vacation in vacations if vacation in ctx.vacations]
+    if not relevant:
+        return 0
+    return sum(ctx.planning[(agent_name, day, vacation)] for vacation in relevant)
+
+
+def _working_vacations(ctx: SolverContext) -> list[str]:
+    """
+    Returns a list of working vacations, excluding the CDP shift if it is present in the context.
+
+    :param ctx: The solver context containing the problem data and the model.
+    :type ctx: SolverContext
+    :return: A list of working vacations.
+    :rtype: list[str]
+    """
+    vacations = [vacation for vacation in ctx.vacations if vacation != CDP_SHIFT]
+    if vacations:
+        return vacations
+    return list(ctx.vacations)
+
 
 def register(registry: ConstraintRegistry) -> None:
     """
@@ -37,9 +75,10 @@ def balance_paid_hours(ctx: SolverContext) -> None:
         agent_name = agent["name"]
         paid_hours[agent_name] = cp_model.LinearExpr.Sum(
             list(
-                ctx.planning[(agent_name, day, "Jour")] * ctx.jour_duration
-                + ctx.planning[(agent_name, day, "Nuit")] * ctx.nuit_duration
-                + ctx.planning[(agent_name, day, "CDP")] * ctx.cdp_duration
+                sum(
+                    ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
+                    for vacation in ctx.vacations
+                )
                 + ctx.leave_paid_hours_by_day[(agent_name, day)]
                 for day in ctx.week_schedule
             )
@@ -75,9 +114,10 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
             agent_name = agent["name"]
             period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
-                    ctx.planning[(agent_name, day, "Jour")] * ctx.jour_duration
-                    + ctx.planning[(agent_name, day, "Nuit")] * ctx.nuit_duration
-                    + ctx.planning[(agent_name, day, "CDP")] * ctx.cdp_duration
+                    sum(
+                        ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
+                        for vacation in ctx.vacations
+                    )
                     + ctx.leave_paid_hours_by_day[(agent_name, day)]
                     for day in period
                 )
@@ -120,6 +160,7 @@ def balance_full_weekends(ctx: SolverContext) -> None:
     """
     total_weekends = sum(1 for day in ctx.week_schedule if "Sam" in day)
     target_weekends_per_agent = (total_weekends * 2) // len(ctx.agents)
+    working_vacations = _working_vacations(ctx)
 
     weekends_worked = {}
     for agent in ctx.agents:
@@ -142,25 +183,17 @@ def balance_full_weekends(ctx: SolverContext) -> None:
                 sunday_work = ctx.model.NewBoolVar(f"{agent_name}_works_sunday_{sunday}")
 
                 ctx.model.Add(
-                    ctx.planning[(agent_name, saturday, "Jour")]
-                    + ctx.planning[(agent_name, saturday, "Nuit")]
-                    > 0
+                    _assignment_sum(ctx, agent_name, saturday, working_vacations) > 0
                 ).OnlyEnforceIf(saturday_work)
                 ctx.model.Add(
-                    ctx.planning[(agent_name, saturday, "Jour")]
-                    + ctx.planning[(agent_name, saturday, "Nuit")]
-                    == 0
+                    _assignment_sum(ctx, agent_name, saturday, working_vacations) == 0
                 ).OnlyEnforceIf(saturday_work.Not())
 
                 ctx.model.Add(
-                    ctx.planning[(agent_name, sunday, "Jour")]
-                    + ctx.planning[(agent_name, sunday, "Nuit")]
-                    > 0
+                    _assignment_sum(ctx, agent_name, sunday, working_vacations) > 0
                 ).OnlyEnforceIf(sunday_work)
                 ctx.model.Add(
-                    ctx.planning[(agent_name, sunday, "Jour")]
-                    + ctx.planning[(agent_name, sunday, "Nuit")]
-                    == 0
+                    _assignment_sum(ctx, agent_name, sunday, working_vacations) == 0
                 ).OnlyEnforceIf(sunday_work.Not())
 
                 works_weekend = ctx.model.NewBoolVar(

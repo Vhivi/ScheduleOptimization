@@ -28,30 +28,25 @@
     },
     "vacation_durations": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
       "required": [
-        "Jour",
-        "Nuit",
-        "CDP",
         "Conge"
       ],
       "properties": {
-        "Jour": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "Nuit": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "CDP": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
         "Conge": {
           "type": "number",
           "exclusiveMinimum": 0
         }
+      }
+    },
+    "staffing_requirements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
       }
     },
     "holidays": {
@@ -100,11 +95,7 @@
   "$defs": {
     "shift": {
       "type": "string",
-      "enum": [
-        "Jour",
-        "Nuit",
-        "CDP"
-      ]
+      "minLength": 1
     },
     "date_full": {
       "type": "string",

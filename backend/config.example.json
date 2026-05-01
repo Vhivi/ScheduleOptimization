@@ -42,6 +42,11 @@
     }
   ],
   "vacations": ["Jour", "Nuit", "CDP"],
+  "staffing_requirements": {
+    "Jour": 1,
+    "Nuit": 1,
+    "CDP": 1
+  },
   "vacation_durations": {
     "Jour": 12,
     "Nuit": 12,

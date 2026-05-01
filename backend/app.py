@@ -4,30 +4,91 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from jsonschema import Draft202012Validator
 from solver.engine import generate_planning as generate_planning_engine
 
 app = Flask(__name__)
 CORS(app)
 
+BASE_DIR = os.path.dirname(__file__)
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+DEFAULT_CONFIG_PATH = os.path.join(BASE_DIR, "config.example.json")
+CONFIG_SCHEMA_PATH = os.path.join(BASE_DIR, "config.schema.json")
+_active_config = None
+config = None
 
-@app.route("/config")
-# Loading the configuration file
+
+def _load_json_file(path):
+    with open(path, "r", encoding="utf-8") as json_file:
+        return json.load(json_file)
+
+
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if not os.path.exists(config_path):
+    if not os.path.exists(CONFIG_PATH):
         raise FileNotFoundError(
             "Missing backend/config.json. Copy backend/config.example.json to "
             "backend/config.json and adjust it for your local environment."
         )
-    with open(config_path, "r", encoding="utf-8") as config_file:
-        return json.load(config_file)
+    return _load_json_file(CONFIG_PATH)
 
 
-config = load_config()
-weekend_days = ["Sam", "Dim"]  # Shortened weekend days
-holidays = config[
-    "holidays"
-]  # Public holidays to be updated each year, in particular for Easter Monday
+def load_default_config():
+    return _load_json_file(DEFAULT_CONFIG_PATH)
+
+
+def load_config_schema():
+    return _load_json_file(CONFIG_SCHEMA_PATH)
+
+
+def validate_runtime_config(candidate_config):
+    validator = Draft202012Validator(load_config_schema())
+    errors = []
+    for error in validator.iter_errors(candidate_config):
+        path = "/".join(str(part) for part in error.path) or "(root)"
+        errors.append({"path": path, "message": error.message})
+
+    vacations = candidate_config.get("vacations", [])
+    vacation_durations = candidate_config.get("vacation_durations", {})
+    if isinstance(vacations, list) and isinstance(vacation_durations, dict):
+        for vacation in vacations:
+            if vacation not in vacation_durations:
+                errors.append(
+                    {
+                        "path": f"vacation_durations/{vacation}",
+                        "message": (
+                            f"Missing duration for configured vacation '{vacation}'."
+                        ),
+                    }
+                )
+
+    return errors
+
+
+def save_config(config_data):
+    temp_path = f"{CONFIG_PATH}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as config_file:
+        json.dump(config_data, config_file, ensure_ascii=False, indent=2)
+        config_file.write("\n")
+    os.replace(temp_path, CONFIG_PATH)
+
+
+def set_active_config(config_data):
+    global _active_config, config
+    _active_config = config_data
+    config = config_data
+
+
+def get_active_config():
+    global _active_config, config
+    if _active_config is None:
+        try:
+            _active_config = load_config()
+        except FileNotFoundError:
+            _active_config = load_default_config()
+        config = _active_config
+    return _active_config
+
+
 FRENCH_WEEKDAY_ABBREVIATIONS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 
 
@@ -36,17 +97,52 @@ def home():
     return "Hello, Flask is up and running!"
 
 
+@app.route("/config", methods=["GET"])
+def get_config_route():
+    return jsonify(get_active_config())
+
+
+@app.route("/config/default", methods=["GET"])
+def get_default_config_route():
+    return jsonify(load_default_config())
+
+
+@app.route("/config", methods=["PUT"])
+def update_config_route():
+    payload, payload_error = parse_json_object_payload()
+    if payload_error is not None:
+        return payload_error
+
+    validation_errors = validate_runtime_config(payload)
+    if validation_errors:
+        return (
+            jsonify(
+                {
+                    "error": "Invalid configuration payload",
+                    "details": validation_errors,
+                }
+            ),
+            400,
+        )
+
+    save_config(payload)
+    set_active_config(payload)
+    return jsonify(payload)
+
+
 @app.route("/generate-planning", methods=["POST"])
 def generate_planning_route():
     payload, payload_error = parse_json_object_payload()
     if payload_error is not None:
         return payload_error
 
+    runtime_config = get_active_config()
+
     # Retrieving data from the JSON file
-    agents = config["agents"]
-    vacations = config["vacations"]
-    vacation_durations = config["vacation_durations"]
-    holidays = config["holidays"]
+    agents = runtime_config["agents"]
+    vacations = runtime_config["vacations"]
+    vacation_durations = runtime_config["vacation_durations"]
+    holidays = runtime_config["holidays"]
     unavailable = {}
     dayOff = {}
     training = {}
@@ -143,15 +239,19 @@ def generate_planning_route():
         previous_week_schedule = get_previous_week_schedule(start_date_str)
 
         # Calling up the schedule generation function
-        result = generate_planning(
-            agents,
-            vacations,
-            week_schedule,
-            dayOff,
-            previous_week_schedule,
-            initial_shifts,
-            planning_start_date=start_date_str,
-        )
+        try:
+            result = generate_planning(
+                agents,
+                vacations,
+                week_schedule,
+                dayOff,
+                previous_week_schedule,
+                initial_shifts,
+                planning_start_date=start_date_str,
+                runtime_config=runtime_config,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         # If the result is a dict with an info key, return a 400 error.
         if "info" in result:
@@ -251,7 +351,7 @@ def compute_previous_week_schedule():
     start_date = payload["start_date"]
     previous_week_schedule = get_previous_week_schedule(start_date)
 
-    agents = config["agents"]
+    agents = get_active_config()["agents"]
     return jsonify({"previous_week_schedule": previous_week_schedule, "agents": agents})
 
 
@@ -433,8 +533,10 @@ def generate_planning(
     previous_week_schedule,
     initial_shifts,
     planning_start_date=None,
+    runtime_config=None,
 ):
     # Public facade kept stable for existing route and tests.
+    effective_runtime_config = runtime_config or get_active_config()
     return generate_planning_engine(
         agents=agents,
         vacations=vacations,
@@ -442,9 +544,11 @@ def generate_planning(
         dayOff=dayOff,
         previous_week_schedule=previous_week_schedule,
         initial_shifts=initial_shifts,
-        runtime_config=config,
+        runtime_config=effective_runtime_config,
         planning_start_date=planning_start_date,
     )
+
+set_active_config(get_active_config())
 
 if __name__ == "__main__":
     app.run(debug=True)

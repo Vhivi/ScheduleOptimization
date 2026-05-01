@@ -50,11 +50,24 @@ def test_schema_rejects_invalid_date_format():
     )
 
 
-def test_schema_rejects_unknown_shift():
+def test_schema_accepts_custom_shift_name():
     schema = _load_json(SCHEMA_PATH)
     example = _load_json(EXAMPLE_PATH)
 
     example["vacations"] = ["Jour", "Late"]
+    example["vacation_durations"]["Late"] = 8
+    example["staffing_requirements"]["Late"] = 2
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors == []
+
+
+def test_schema_rejects_negative_staffing_requirement():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["staffing_requirements"]["Jour"] = -1
     validator = Draft202012Validator(schema)
     errors = list(validator.iter_errors(example))
 

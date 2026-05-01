@@ -11,6 +11,14 @@ export function apiPost(path, payload) {
   return client.post(path, payload);
 }
 
+export function apiGet(path) {
+  return client.get(path);
+}
+
+export function apiPut(path, payload) {
+  return client.put(path, payload);
+}
+
 export function normalizeApiError(error, fallbackMessage) {
   const responseError = error?.response?.data?.error;
   const networkMessage = error?.message;

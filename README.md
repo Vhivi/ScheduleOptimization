@@ -30,10 +30,12 @@
 
 - 🔨 Flexible parameters defined through the `config.json` file.
 - ✉️ Support for agent preferences, exclusions, training days, and **multiple leave periods**.
+- 🧩 Dynamic shift types and simultaneous staffing quotas per shift (`staffing_requirements`).
 
 ### 🔧 Visual Interactivity
 
 - 🔍 Vue.js-powered frontend for seamless schedule visualization and interaction.
+- ⚙️ Built-in interactive configuration mode (load active/default config, edit, save, and generate without backend restart).
 
 ---
 
@@ -149,8 +151,9 @@ Important date formats:
 Core sections in `config.json`:
 
 - `agents`: people and individual constraints (preferences, unavailable dates, training, exclusions, leave periods)
-- `vacations`: generated shift types (`Jour`, `Nuit`, `CDP`)
-- `vacation_durations`: paid-hour durations for each shift plus `Conge`
+- `vacations`: generated shift types (dynamic names supported)
+- `staffing_requirements`: simultaneous required agents per shift (`>= 0`, fallback `1`)
+- `vacation_durations`: paid-hour durations for each configured shift plus `Conge`
 - `holidays`: recurring public holidays
 - `solver`: optional runtime and fairness tuning
 
