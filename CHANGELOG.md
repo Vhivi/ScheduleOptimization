@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+
+- frontend: enforced `node-forge` patched resolution (`>=1.4.0`) in dedicated maintenance lot for the transitive chain from `@vue/cli-service`.
+- frontend: updated direct runtime dependencies:
+  - `axios` to `^1.16.0`
+  - `core-js` to `^3.49.0`
+  - `vue` to `^3.5.34`
+- frontend runtime audit status: `npm audit --omit=dev` now reports `found 0 vulnerabilities`.
+- validation executed: `npm test -- --runInBand` and `npm run build` passed.
+
 ## [0.9.0] - 2026-05-01
 
 ### Added
