@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-05-09
+
+### Security
+
+- frontend: applied non-breaking `npm audit fix` for devDependencies (Lot A), lockfile-only update.
+- reduced frontend audit findings from 27 to 19.
+- validation passed: `npm test -- --runInBand` and `npm run build`.
+- remaining findings are tied to legacy Vue CLI/Jest-jsdom upgrade paths and will be handled in a dedicated migration/security branch.
+
 ## [0.9.1] - 2026-05-09
 
 ### Security
