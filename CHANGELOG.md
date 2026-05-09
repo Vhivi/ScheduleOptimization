@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-09
+
 ### Security
 
 - frontend: enforced `node-forge` patched resolution (`>=1.4.0`) in dedicated maintenance lot for the transitive chain from `@vue/cli-service`.
