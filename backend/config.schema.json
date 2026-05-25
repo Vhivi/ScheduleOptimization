@@ -88,6 +88,10 @@
         "period_balance_weight": {
           "type": "integer",
           "minimum": 0
+        },
+        "min_free_weekends_per_horizon": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }
