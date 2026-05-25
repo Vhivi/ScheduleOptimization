@@ -42,10 +42,9 @@ def reset_active_config():
     Yields:
         None
     """
-    try:
-        set_active_config(load_config())
-    except FileNotFoundError:
-        set_active_config(load_default_config())
+    config = load_default_config()
+    config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    set_active_config(config)
     yield
 
 

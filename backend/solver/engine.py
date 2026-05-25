@@ -40,6 +40,7 @@ def _load_solver_settings(ctx: SolverContext) -> None:
     - num_search_workers: the number of search workers to use.
     - optimize_period_balance: whether to optimize the period balance.
     - period_balance_weight: the weight of the period balance objective.
+    - min_free_weekends_per_horizon: minimum number of fully free weekends required per agent.
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
@@ -52,6 +53,7 @@ def _load_solver_settings(ctx: SolverContext) -> None:
     ctx.num_search_workers = int(solver_config.get("num_search_workers", 0))
     ctx.optimize_period_balance = bool(solver_config.get("optimize_period_balance", False))
     ctx.period_balance_weight = int(solver_config.get("period_balance_weight", 2))
+    ctx.min_free_weekends_per_horizon = int(solver_config.get("min_free_weekends_per_horizon", 0))
 
 
 def _load_shift_durations(ctx: SolverContext) -> None:

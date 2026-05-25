@@ -73,6 +73,7 @@ class SolverContext:
     num_search_workers: int = 0
     optimize_period_balance: bool = False
     period_balance_weight: int = 2
+    min_free_weekends_per_horizon: int = 0
 
     period_balancing_objective: cp_model.LinearExpr | int = 0
     weekend_balancing_objective: cp_model.LinearExpr | int = 0

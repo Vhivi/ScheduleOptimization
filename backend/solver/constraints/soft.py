@@ -159,7 +159,7 @@ def balance_full_weekends(ctx: SolverContext) -> None:
     :type ctx: SolverContext
     """
     total_weekends = sum(1 for day in ctx.week_schedule if "Sam" in day)
-    target_weekends_per_agent = (total_weekends * 2) // len(ctx.agents)
+    target_weekends_per_agent = total_weekends // len(ctx.agents)
     working_vacations = _working_vacations(ctx)
 
     weekends_worked = {}
@@ -206,14 +206,6 @@ def balance_full_weekends(ctx: SolverContext) -> None:
                 weekend_count.append(works_weekend)
 
         ctx.model.Add(weekends_worked[agent_name] == sum(weekend_count))
-
-    min_weekends = ctx.model.NewIntVar(0, total_weekends, "min_weekends")
-    max_weekends = ctx.model.NewIntVar(0, total_weekends, "max_weekends")
-    for agent_name in weekends_worked:
-        ctx.model.Add(min_weekends <= weekends_worked[agent_name])
-        ctx.model.Add(weekends_worked[agent_name] <= max_weekends)
-
-    ctx.model.Minimize(max_weekends - min_weekends)
 
     weekend_balancing_terms = []
     for agent in ctx.agents:

@@ -71,6 +71,7 @@
     "global_max_gap": 240,
     "period_max_gap": 240,
     "optimize_period_balance": false,
-    "period_balance_weight": 2
+    "period_balance_weight": 2,
+    "min_free_weekends_per_horizon": 3
   }
 }
