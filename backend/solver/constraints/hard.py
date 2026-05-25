@@ -50,6 +50,7 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(limit_one_shift_per_day)
     registry.register_hard(require_at_least_one_shift_per_agent)
     registry.register_hard(cover_daily_shifts)
+    registry.register_hard(enforce_full_weekend_composition)
     registry.register_hard(avoid_day_after_night)
     registry.register_hard(limit_cdp_per_week)
     registry.register_hard(block_unavailable_days)
@@ -165,6 +166,30 @@ def cover_daily_shifts(ctx: SolverContext) -> None:
                     == required_agents
                 )
 
+def enforce_full_weekend_composition(ctx: SolverContext) -> None:
+    """
+    Ensures weekend assignments are made as full weekends (Saturday + Sunday) per agent.
+
+    For each Saturday/Sunday pair in the planning horizon and for each agent, this
+    constraint enforces that the agent either works both days or none of them.
+    
+    :param ctx: The solver context containing the problem data and the model.
+    :type ctx: SolverContext
+    """
+    for day_idx, day in enumerate(ctx.week_schedule[:-1]):
+        next_day = ctx.week_schedule[day_idx + 1]
+        if not (day.startswith("Sam") and next_day.startswith("Dim")):
+            continue
+
+        for agent in ctx.agents:
+            agent_name = agent["name"]
+            saturday_work = sum(
+                ctx.planning[(agent_name, day, vacation)] for vacation in ctx.vacations
+            )
+            sunday_work = sum(
+                ctx.planning[(agent_name, next_day, vacation)] for vacation in ctx.vacations
+            )
+            ctx.model.Add(saturday_work == sunday_work)
 
 def avoid_day_after_night(ctx: SolverContext) -> None:
     """
