@@ -159,7 +159,7 @@ def balance_full_weekends(ctx: SolverContext) -> None:
     :type ctx: SolverContext
     """
     total_weekends = sum(1 for day in ctx.week_schedule if "Sam" in day)
-    target_weekends_per_agent = (total_weekends * 2) // len(ctx.agents)
+    target_weekends_per_agent = total_weekends // len(ctx.agents)
     working_vacations = _working_vacations(ctx)
 
     weekends_worked = {}
