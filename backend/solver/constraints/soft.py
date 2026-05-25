@@ -207,14 +207,6 @@ def balance_full_weekends(ctx: SolverContext) -> None:
 
         ctx.model.Add(weekends_worked[agent_name] == sum(weekend_count))
 
-    min_weekends = ctx.model.NewIntVar(0, total_weekends, "min_weekends")
-    max_weekends = ctx.model.NewIntVar(0, total_weekends, "max_weekends")
-    for agent_name in weekends_worked:
-        ctx.model.Add(min_weekends <= weekends_worked[agent_name])
-        ctx.model.Add(weekends_worked[agent_name] <= max_weekends)
-
-    ctx.model.Minimize(max_weekends - min_weekends)
-
     weekend_balancing_terms = []
     for agent in ctx.agents:
         agent_name = agent["name"]
