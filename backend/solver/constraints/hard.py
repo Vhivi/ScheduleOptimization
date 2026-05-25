@@ -51,6 +51,7 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(require_at_least_one_shift_per_agent)
     registry.register_hard(cover_daily_shifts)
     registry.register_hard(enforce_full_weekend_composition)
+    registry.register_hard(enforce_min_free_weekends_per_horizon)
     registry.register_hard(avoid_day_after_night)
     registry.register_hard(limit_cdp_per_week)
     registry.register_hard(block_unavailable_days)
@@ -190,6 +191,60 @@ def enforce_full_weekend_composition(ctx: SolverContext) -> None:
                 ctx.planning[(agent_name, next_day, vacation)] for vacation in ctx.vacations
             )
             ctx.model.Add(saturday_work == sunday_work)
+
+
+def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
+    """
+    Enforces a minimum number of fully free weekends per agent on the planning horizon.
+
+    A weekend is considered free for an agent if the agent works neither Saturday nor Sunday
+    on the corresponding Saturday/Sunday pair.
+
+    :param ctx: The solver context containing the problem data and the model.
+    :type ctx: SolverContext
+    """
+    min_free_weekends = max(0, int(ctx.min_free_weekends_per_horizon))
+    if min_free_weekends == 0:
+        return
+
+    weekend_pairs = []
+    for day_idx, day in enumerate(ctx.week_schedule[:-1]):
+        next_day = ctx.week_schedule[day_idx + 1]
+        if day.startswith("Sam") and next_day.startswith("Dim"):
+            weekend_pairs.append((day, next_day))
+
+    total_weekends = len(weekend_pairs)
+    if total_weekends == 0:
+        return
+
+    max_worked_weekends = total_weekends - min_free_weekends
+    if max_worked_weekends < 0:
+        raise ValueError(
+            "solver.min_free_weekends_per_horizon is infeasible for this planning horizon: "
+            f"requested={min_free_weekends}, available_weekends={total_weekends}"
+        )
+
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        worked_weekend_vars = []
+
+        for saturday, sunday in weekend_pairs:
+            works_weekend = ctx.model.NewBoolVar(
+                f"{agent_name}_works_weekend_hard_{saturday}_{sunday}"
+            )
+            saturday_work = sum(
+                ctx.planning[(agent_name, saturday, vacation)] for vacation in ctx.vacations
+            )
+            sunday_work = sum(
+                ctx.planning[(agent_name, sunday, vacation)] for vacation in ctx.vacations
+            )
+            ctx.model.Add(saturday_work == 1).OnlyEnforceIf(works_weekend)
+            ctx.model.Add(sunday_work == 1).OnlyEnforceIf(works_weekend)
+            ctx.model.Add(saturday_work == 0).OnlyEnforceIf(works_weekend.Not())
+            ctx.model.Add(sunday_work == 0).OnlyEnforceIf(works_weekend.Not())
+            worked_weekend_vars.append(works_weekend)
+
+        ctx.model.Add(sum(worked_weekend_vars) <= max_worked_weekends)
 
 def avoid_day_after_night(ctx: SolverContext) -> None:
     """
