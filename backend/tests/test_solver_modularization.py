@@ -1,5 +1,4 @@
 from solver.engine import _build_registry, generate_planning
-from app import config as runtime_config
 
 
 def _sample_dataset():
@@ -96,6 +95,24 @@ def _sample_dataset():
     return agents, vacations, week_schedule
 
 
+def _runtime_config_for_tests():
+    return {
+        "vacation_durations": {"Jour": 12, "Nuit": 12, "CDP": 5.5, "Conge": 7},
+        "staffing_requirements": {"Jour": 1, "Nuit": 1, "CDP": 1},
+        "holidays": [],
+        "solver": {
+            "max_time_seconds": 30,
+            "relative_gap_limit": 0.1,
+            "num_search_workers": 0,
+            "global_max_gap": 240,
+            "period_max_gap": 240,
+            "optimize_period_balance": False,
+            "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
+        },
+    }
+
+
 def test_registry_contains_constraint_groups():
     """
     Tests that the constraint registry contains hard, soft, and mixed constraints groups.
@@ -120,7 +137,7 @@ def test_night_shift_blocks_next_day_jour_or_cdp():
         dayOff={},
         previous_week_schedule=[],
         initial_shifts={},
-        runtime_config=runtime_config,
+        runtime_config=_runtime_config_for_tests(),
     )
 
     assert "info" not in result
@@ -146,7 +163,7 @@ def test_cdp_is_limited_to_two_per_week_per_agent():
         dayOff={},
         previous_week_schedule=[],
         initial_shifts={},
-        runtime_config=runtime_config,
+        runtime_config=_runtime_config_for_tests(),
     )
 
     assert "info" not in result

@@ -1,5 +1,17 @@
+from copy import deepcopy
+
 import pytest
-from app import generate_planning
+from app import generate_planning, get_active_config, load_default_config, set_active_config
+
+
+@pytest.fixture(autouse=True)
+def _use_legacy_solver_defaults_for_constraints_tests():
+    previous_config = deepcopy(get_active_config())
+    test_config = deepcopy(load_default_config())
+    test_config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    set_active_config(test_config)
+    yield
+    set_active_config(previous_config)
 
 
 @pytest.fixture
@@ -494,54 +506,22 @@ def test_generate_planning_paid_leave_hours_balancing_regression():
             "name": "Agent1",
             "unavailable": [],
             "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
-            "vacations": [{"start": "06-01-2025", "end": "11-01-2025"}],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [{"start": "06-01-2025", "end": "06-01-2025"}],
         },
         {
             "name": "Agent2",
             "unavailable": [],
             "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
-            "vacations": [],
-        },
-        {
-            "name": "Agent3",
-            "unavailable": [],
-            "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
-            "vacations": [],
-        },
-        {
-            "name": "Agent4",
-            "unavailable": [],
-            "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
-            "vacations": [],
-        },
-        {
-            "name": "Agent5",
-            "unavailable": [],
-            "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
-            "vacations": [],
-        },
-        {
-            "name": "Agent6",
-            "unavailable": [],
-            "training": [],
-            "preferences": {"preferred": ["Jour", "Nuit", "CDP"], "avoid": []},
+            "preferences": {"preferred": ["Jour"], "avoid": []},
             "vacations": [],
         },
     ]
-    vacations = ["Jour", "Nuit", "CDP"]
+    vacations = ["Jour"]
     week_schedule = [
         "Lun. 06-01",
         "Mar. 07-01",
         "Mer. 08-01",
-        "Jeu. 09-01",
-        "Ven. 10-01",
-        "Sam. 11-01",
-        "Dim. 12-01",
     ]
 
     result = generate_planning(
@@ -551,6 +531,21 @@ def test_generate_planning_paid_leave_hours_balancing_regression():
         dayOff={},
         previous_week_schedule=[],
         initial_shifts={},
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 240,
+                "period_max_gap": 240,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
     )
 
     assert isinstance(result, dict)

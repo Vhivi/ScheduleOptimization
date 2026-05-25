@@ -1,4 +1,5 @@
 from app import get_week_schedule
+import pytest
 from solver.engine import generate_planning
 
 
@@ -45,6 +46,7 @@ def _build_runtime_config(vacations, vacation_durations, staffing_requirements=N
             "period_max_gap": 240,
             "optimize_period_balance": False,
             "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
         },
     }
 
@@ -103,3 +105,69 @@ def test_solver_accepts_custom_vacations_without_nuit_or_cdp():
     assigned_vacations = {vacation for shifts in result.values() for _, vacation in shifts}
     assert assigned_vacations.issubset(set(vacations))
     assert assigned_vacations == set(vacations)
+
+
+def test_solver_enforces_min_free_weekends_per_horizon_when_feasible():
+    vacations = ["Jour"]
+    runtime_config = _build_runtime_config(
+        vacations=vacations,
+        vacation_durations={"Jour": 12, "Conge": 7},
+        staffing_requirements={"Jour": 1},
+    )
+    runtime_config["solver"]["min_free_weekends_per_horizon"] = 1
+    agents = runtime_config["agents"]
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-18")
+
+    result = generate_planning(
+        agents=agents,
+        vacations=vacations,
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in agents},
+        previous_week_schedule=get_week_schedule("2025-12-29", "2026-01-04"),
+        initial_shifts={},
+        runtime_config=runtime_config,
+        planning_start_date="2026-01-05",
+    )
+
+    assert "info" not in result
+
+    weekend_pairs = []
+    for idx, day in enumerate(week_schedule[:-1]):
+        next_day = week_schedule[idx + 1]
+        if day.startswith("Sam") and next_day.startswith("Dim"):
+            weekend_pairs.append((day, next_day))
+
+    for agent in agents:
+        assignments_by_day = {day for day, _ in result[agent["name"]]}
+        free_weekends = sum(
+            1
+            for saturday, sunday in weekend_pairs
+            if saturday not in assignments_by_day and sunday not in assignments_by_day
+        )
+        assert free_weekends >= 1
+
+
+def test_solver_rejects_infeasible_min_free_weekends_per_horizon():
+    vacations = ["Jour"]
+    runtime_config = _build_runtime_config(
+        vacations=vacations,
+        vacation_durations={"Jour": 12, "Conge": 7},
+        staffing_requirements={"Jour": 2},
+    )
+    runtime_config["solver"]["min_free_weekends_per_horizon"] = 2
+    agents = runtime_config["agents"]
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-11")
+
+    with pytest.raises(
+        ValueError, match="min_free_weekends_per_horizon is infeasible"
+    ):
+        generate_planning(
+            agents=agents,
+            vacations=vacations,
+            week_schedule=week_schedule,
+            dayOff={agent["name"]: [] for agent in agents},
+            previous_week_schedule=get_week_schedule("2025-12-29", "2026-01-04"),
+            initial_shifts={},
+            runtime_config=runtime_config,
+            planning_start_date="2026-01-05",
+        )
