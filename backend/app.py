@@ -135,9 +135,15 @@ def generate_planning_route():
     payload, payload_error = parse_json_object_payload()
     if payload_error is not None:
         return payload_error
+    planning_or_error, status_code = _build_planning_payload(
+        payload=payload, runtime_config=get_active_config()
+    )
+    if status_code != 200:
+        return jsonify(planning_or_error), status_code
+    return jsonify(planning_or_error)
 
-    runtime_config = get_active_config()
 
+def _build_planning_payload(payload, runtime_config):
     # Retrieving data from the JSON file
     agents = runtime_config["agents"]
     vacations = runtime_config["vacations"]
@@ -151,14 +157,9 @@ def generate_planning_route():
     for agent in agents:
         if "training" in agent:
             training[agent["name"]] = agent["training"]
-
     # Retrieve agent unavailability days and store them in a dictionary {agent: [days]}.
-    for agent in agents:
         if "unavailable" in agent:
             unavailable[agent["name"]] = agent["unavailable"]
-
-    # Recovering employees' leave days
-    for agent in agents:
         # Check if the agent has leave days
         if "vacations" in agent:
             dayOff[agent["name"]] = []
@@ -169,45 +170,24 @@ def generate_planning_route():
                     # Store leave days in a dictionary {agent: [start, end]}
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
 
-    # Retrieve start and end dates
-    # Check whether the dates are present in the payload
-    if "start_date" not in payload or "end_date" not in payload:
-        return jsonify({"error": "Missing start_date or end_date"}), 400
-    
-    # Check that the dates are valid
-    if not is_valid_date(payload["start_date"]) or not is_valid_date(payload["end_date"]):
-        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
-
-    # Retrieve the complete schedule in several periods
-    start_date = datetime.strptime(
-        payload["start_date"], "%Y-%m-%d"
-    )  # Format date / ISO 8601
-    end_date = datetime.strptime(
-        payload["end_date"], "%Y-%m-%d"
-    )  # Format date / ISO 8601
-    if end_date < start_date:
-        return jsonify({"error": "end_date must be greater than or equal to start_date"}), 400
+    start_date, end_date, date_error = _validate_date_range_payload(payload)
+    if date_error is not None:
+        return date_error[0].get_json(), date_error[1]
 
     periods = split_date_range_by_month(start_date, end_date)
-
-    full_planning = {}
-    for agent in agents:
-        agent_name = agent["name"]
-        full_planning[agent_name] = []
-
-    # Retrieve initial shifts, if supplied otherwise default to an empty dictionary
+    full_planning = {agent["name"]: [] for agent in agents}
     initial_shifts = payload.get("initial_shifts", {})
     if not isinstance(initial_shifts, dict):
-        return jsonify({"error": "initial_shifts must be an object"}), 400
+        return {"error": "initial_shifts must be an object"}, 400
 
     # Validate initial shifts
     valid_agents = [agent["name"] for agent in agents]
     valid_vacations = vacations
     for agent_name, shifts in initial_shifts.items():
         if not isinstance(shifts, list):
-            return jsonify({"error": f"initial_shifts for {agent_name} must be a list"}), 400
+            return {"error": f"initial_shifts for {agent_name} must be a list"}, 400
         if agent_name not in valid_agents:
-            return jsonify({"error": f"Invalid agent: {agent_name}"}), 400
+            return {"error": f"Invalid agent: {agent_name}"}, 400
         for shift in shifts:
             if (
                 not isinstance(shift, (list, tuple))
@@ -215,19 +195,12 @@ def generate_planning_route():
                 or not isinstance(shift[0], str)
                 or not isinstance(shift[1], str)
             ):
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "Each initial shift must be [day, vacation] with string values"
-                            )
-                        }
-                    ),
-                    400,
-                )
+                return {
+                    "error": "Each initial shift must be [day, vacation] with string values"
+                }, 400
             _, vacation = shift
             if vacation not in valid_vacations:
-                return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
+                return {"error": f"Invalid vacation: {vacation}"}, 400
 
     for chunk_start, chunk_end in periods:
         # Convert the start and end dates into strings
@@ -251,11 +224,11 @@ def generate_planning_route():
                 runtime_config=runtime_config,
             )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return {"error": str(exc)}, 400
 
         # If the result is a dict with an info key, return a 400 error.
         if "info" in result:
-            return jsonify(result), 400
+            return result, 400
 
         # Accumulate the results of each period in the full planning
         for name, shifts in result.items():
@@ -285,17 +258,15 @@ def generate_planning_route():
     original_week_schedule = get_week_schedule(
         payload["start_date"], payload["end_date"]
     )
-    return jsonify(
-        {
-            "planning": full_planning,
-            "vacation_durations": vacation_durations,
-            "week_schedule": original_week_schedule,
-            "holidays": holidays,
-            "unavailable": unavailable,
-            "dayOff": dayOff,
-            "training": training,
-        }
-    )
+    return {
+        "planning": full_planning,
+        "vacation_durations": vacation_durations,
+        "week_schedule": original_week_schedule,
+        "holidays": holidays,
+        "unavailable": unavailable,
+        "dayOff": dayOff,
+        "training": training,
+    }, 200
 
 
 def is_valid_date(date_str):
@@ -437,18 +408,16 @@ def optimize_existing_planning_route():
     if entries_error is not None:
         return entries_error
 
-    generated_response = app.test_client().post(
-        "/generate-planning",
-        json={
+    result, status_code = _build_planning_payload(
+        payload={
             "start_date": payload["start_date"],
             "end_date": payload["end_date"],
             "initial_shifts": initial_shifts,
         },
+        runtime_config=runtime_config,
     )
-    if generated_response.status_code != 200:
-        return generated_response.data, generated_response.status_code, generated_response.headers.items()
-
-    result = generated_response.get_json()
+    if status_code != 200:
+        return jsonify(result), status_code
     status = "warning" if warnings else "ok"
     result["status"] = status
     result["warnings"] = warnings
