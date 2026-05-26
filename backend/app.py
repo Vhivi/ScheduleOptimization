@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta
+from copy import deepcopy
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -323,52 +324,84 @@ def _validate_date_range_payload(payload):
 
 def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
     if not isinstance(manual_entries, list):
-        return None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
+        return None, None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
 
     valid_agents = {agent["name"] for agent in runtime_config["agents"]}
     valid_vacations = set(runtime_config["vacations"])
     initial_shifts = {}
+    status_entries = []
     warnings = []
     for entry in manual_entries:
         if not isinstance(entry, dict):
-            return None, None, (jsonify({"error": "Each manual entry must be an object"}), 400)
+            return None, None, None, (jsonify({"error": "Each manual entry must be an object"}), 400)
         for field in ["agent", "date", "slot", "type", "value"]:
             if field not in entry:
-                return None, None, (jsonify({"error": f"manual entry missing field '{field}'"}), 400)
+                return None, None, None, (jsonify({"error": f"manual entry missing field '{field}'"}), 400)
         agent = entry["agent"]
         date = entry["date"]
         slot = entry["slot"]
         entry_type = entry["type"]
         value = entry["value"]
         if agent not in valid_agents:
-            return None, None, (jsonify({"error": f"Invalid agent: {agent}"}), 400)
+            return None, None, None, (jsonify({"error": f"Invalid agent: {agent}"}), 400)
         if not is_valid_date(date):
-            return None, None, (jsonify({"error": f"Invalid manual entry date: {date}"}), 400)
+            return None, None, None, (jsonify({"error": f"Invalid manual entry date: {date}"}), 400)
         entry_date = datetime.strptime(date, "%Y-%m-%d")
         if entry_date < start_date or entry_date > end_date:
-            return None, None, (jsonify({"error": f"Manual entry date out of range: {date}"}), 400)
+            return None, None, None, (jsonify({"error": f"Manual entry date out of range: {date}"}), 400)
         if slot not in {"day", "night", "cdp"}:
-            return None, None, (jsonify({"error": f"Invalid slot: {slot}"}), 400)
+            return None, None, None, (jsonify({"error": f"Invalid slot: {slot}"}), 400)
         if entry_type == "shift":
             if value not in valid_vacations:
-                return None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
+                return None, None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
             day_label = format_day_label(entry_date)
             initial_shifts.setdefault(agent, []).append((day_label, value))
         elif entry_type == "status":
-            warnings.append(
+            if value not in {"restriction", "unavailable", "training", "vacations"}:
+                return None, None, None, (jsonify({"error": f"Invalid status value: {value}"}), 400)
+            status_entries.append(
                 {
-                    "code": "STATUS_MANUAL_ENTRY_NOT_IMPLEMENTED",
                     "agent": agent,
                     "date": date,
                     "slot": slot,
-                    "message": "Status-based manual entries are reserved for next implementation slice.",
-                    "source": "api_validation",
+                    "value": value,
                 }
             )
         else:
-            return None, None, (jsonify({"error": f"Invalid entry type: {entry_type}"}), 400)
+            return None, None, None, (jsonify({"error": f"Invalid entry type: {entry_type}"}), 400)
 
-    return initial_shifts, warnings, None
+    return initial_shifts, status_entries, warnings, None
+
+
+def _inject_manual_status_entries(runtime_config, status_entries):
+    injected_config = deepcopy(runtime_config)
+    agent_by_name = {agent["name"]: agent for agent in injected_config["agents"]}
+    warnings = []
+    for entry in status_entries:
+        agent_name = entry["agent"]
+        date = entry["date"]
+        status_value = entry["value"]
+        day_str = datetime.strptime(date, "%Y-%m-%d").strftime("%d-%m-%Y")
+        target = agent_by_name[agent_name]
+        if status_value in {"unavailable", "training"}:
+            target.setdefault(status_value, [])
+            if day_str not in target[status_value]:
+                target[status_value].append(day_str)
+        elif status_value == "vacations":
+            target.setdefault("vacations", [])
+            target["vacations"].append({"start": day_str, "end": day_str})
+        elif status_value == "restriction":
+            warnings.append(
+                {
+                    "code": "STATUS_RESTRICTION_REQUIRES_SHIFT",
+                    "agent": agent_name,
+                    "date": date,
+                    "slot": entry["slot"],
+                    "message": "Restriction requires a shift name and was ignored.",
+                    "source": "api_validation",
+                }
+            )
+    return injected_config, warnings
 
 
 @app.route("/previous-week-schedule", methods=["POST"])
@@ -402,11 +435,15 @@ def optimize_existing_planning_route():
     if date_error is not None:
         return date_error
 
-    initial_shifts, warnings, entries_error = _parse_manual_entries(
+    initial_shifts, status_entries, warnings, entries_error = _parse_manual_entries(
         payload.get("manual_entries", []), runtime_config, start_date, end_date
     )
     if entries_error is not None:
         return entries_error
+    effective_runtime_config, status_warnings = _inject_manual_status_entries(
+        runtime_config, status_entries
+    )
+    warnings.extend(status_warnings)
 
     result, status_code = _build_planning_payload(
         payload={
@@ -414,7 +451,7 @@ def optimize_existing_planning_route():
             "end_date": payload["end_date"],
             "initial_shifts": initial_shifts,
         },
-        runtime_config=runtime_config,
+        runtime_config=effective_runtime_config,
     )
     if status_code != 200:
         return jsonify(result), status_code
