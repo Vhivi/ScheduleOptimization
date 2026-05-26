@@ -183,27 +183,38 @@
 
       <div v-if="isExistingOptimizationMode && manualWeekSchedule.length && agents.length">
         <h3>Saisie manuelle (cellule unitaire)</h3>
-        <table class="transition-table">
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th v-for="day in manualWeekSchedule" :key="day">{{ day }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="agent in agents" :key="agent.name">
-              <td>{{ agent.name }}</td>
-              <td v-for="day in manualWeekSchedule" :key="day">
-                <select v-model="manualSelectedShifts[agent.name][day]">
-                  <option value="">-</option>
-                  <option v-for="vacation in vacations" :key="vacation" :value="vacation">
-                    {{ vacation }}
-                  </option>
-                </select>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-for="(monthDays, monthKey) in manualScheduleByMonth" :key="monthKey">
+          <h4>{{ formatMonthTitle(monthKey) }}</h4>
+          <table class="transition-table">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th v-for="day in monthDays" :key="day">{{ day }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="agent in agents" :key="agent.name">
+                <td>{{ agent.name }}</td>
+                <td
+                  v-for="day in monthDays"
+                  :key="day"
+                  :class="[getWeekendClass(day), getManualCellClass(agent.name, day)]"
+                >
+                  <select v-model="manualSelectedShifts[agent.name][day]">
+                    <option value="">-</option>
+                    <option v-for="vacation in vacations" :key="vacation" :value="vacation">
+                      {{ vacation }}
+                    </option>
+                    <option value="status:unavailable">Indisponible</option>
+                    <option value="status:training">Formation</option>
+                    <option value="status:vacations">Congé</option>
+                    <option value="status:restriction">Restriction</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div>
@@ -377,6 +388,16 @@ export default {
     actionButtonLabel() {
       if (this.isExistingOptimizationMode) return "Optimiser le reste";
       return "Générer le planning";
+    },
+    manualScheduleByMonth() {
+      return this.manualWeekSchedule.reduce((months, day) => {
+        const monthKey = day.split(' ')[1]?.split('-')[1] || '??';
+        if (!months[monthKey]) {
+          months[monthKey] = [];
+        }
+        months[monthKey].push(day);
+        return months;
+      }, {});
     }
   },
   methods: {
@@ -697,12 +718,13 @@ export default {
           Object.entries(days || {}).forEach(([dayLabel, value]) => {
             if (!value) return;
             const [dayPart, monthPart] = dayLabel.split(' ')[1].split('-');
+            const isStatus = value.startsWith('status:');
             payload.manual_entries.push({
               agent,
               date: `${this.startDate.slice(0, 4)}-${monthPart}-${dayPart}`,
               slot: 'day',
-              type: 'shift',
-              value
+              type: isStatus ? 'status' : 'shift',
+              value: isStatus ? value.replace('status:', '') : value
             });
           });
         });
@@ -736,6 +758,31 @@ export default {
     getVacationClass(agentName, day) {
       const vacation = this.selectedShifts?.[agentName]?.[day];
       return vacation ? vacation.toLowerCase() : '';
+    },
+    getManualCellClass(agentName, day) {
+      const value = this.manualSelectedShifts?.[agentName]?.[day];
+      if (!value) return '';
+      if (value.startsWith('status:')) {
+        return value.replace('status:', '');
+      }
+      return value.toLowerCase();
+    },
+    formatMonthTitle(month) {
+      const monthMap = {
+        '01': 'Janvier',
+        '02': 'Février',
+        '03': 'Mars',
+        '04': 'Avril',
+        '05': 'Mai',
+        '06': 'Juin',
+        '07': 'Juillet',
+        '08': 'Août',
+        '09': 'Septembre',
+        '10': 'Octobre',
+        '11': 'Novembre',
+        '12': 'Décembre'
+      };
+      return monthMap[month] || month;
     }
   }
 };
@@ -945,6 +992,18 @@ button:disabled {
 
 .transition-table td.cdp {
   background-color: #a59384;
+}
+.transition-table td.unavailable {
+  background-color: #ffc9c9;
+}
+.transition-table td.training {
+  background-color: #ffe8a3;
+}
+.transition-table td.vacations {
+  background-color: #b2f2bb;
+}
+.transition-table td.restriction {
+  background-color: #ffd8a8;
 }
 
 .transition-table select {
