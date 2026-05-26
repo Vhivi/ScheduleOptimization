@@ -335,6 +335,71 @@ def parse_json_object_payload():
     return payload, None
 
 
+def _validate_date_range_payload(payload):
+    if "start_date" not in payload or "end_date" not in payload:
+        return None, None, (jsonify({"error": "Missing start_date or end_date"}), 400)
+    if not is_valid_date(payload["start_date"]) or not is_valid_date(payload["end_date"]):
+        return None, None, (jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400)
+    start_date = datetime.strptime(payload["start_date"], "%Y-%m-%d")
+    end_date = datetime.strptime(payload["end_date"], "%Y-%m-%d")
+    if end_date < start_date:
+        return None, None, (
+            jsonify({"error": "end_date must be greater than or equal to start_date"}),
+            400,
+        )
+    return start_date, end_date, None
+
+
+def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
+    if not isinstance(manual_entries, list):
+        return None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
+
+    valid_agents = {agent["name"] for agent in runtime_config["agents"]}
+    valid_vacations = set(runtime_config["vacations"])
+    initial_shifts = {}
+    warnings = []
+    for entry in manual_entries:
+        if not isinstance(entry, dict):
+            return None, None, (jsonify({"error": "Each manual entry must be an object"}), 400)
+        for field in ["agent", "date", "slot", "type", "value"]:
+            if field not in entry:
+                return None, None, (jsonify({"error": f"manual entry missing field '{field}'"}), 400)
+        agent = entry["agent"]
+        date = entry["date"]
+        slot = entry["slot"]
+        entry_type = entry["type"]
+        value = entry["value"]
+        if agent not in valid_agents:
+            return None, None, (jsonify({"error": f"Invalid agent: {agent}"}), 400)
+        if not is_valid_date(date):
+            return None, None, (jsonify({"error": f"Invalid manual entry date: {date}"}), 400)
+        entry_date = datetime.strptime(date, "%Y-%m-%d")
+        if entry_date < start_date or entry_date > end_date:
+            return None, None, (jsonify({"error": f"Manual entry date out of range: {date}"}), 400)
+        if slot not in {"day", "night", "cdp"}:
+            return None, None, (jsonify({"error": f"Invalid slot: {slot}"}), 400)
+        if entry_type == "shift":
+            if value not in valid_vacations:
+                return None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
+            day_label = format_day_label(entry_date)
+            initial_shifts.setdefault(agent, []).append((day_label, value))
+        elif entry_type == "status":
+            warnings.append(
+                {
+                    "code": "STATUS_MANUAL_ENTRY_NOT_IMPLEMENTED",
+                    "agent": agent,
+                    "date": date,
+                    "slot": slot,
+                    "message": "Status-based manual entries are reserved for next implementation slice.",
+                    "source": "api_validation",
+                }
+            )
+        else:
+            return None, None, (jsonify({"error": f"Invalid entry type: {entry_type}"}), 400)
+
+    return initial_shifts, warnings, None
+
+
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
     payload, payload_error = parse_json_object_payload()
@@ -353,6 +418,45 @@ def compute_previous_week_schedule():
 
     agents = get_active_config()["agents"]
     return jsonify({"previous_week_schedule": previous_week_schedule, "agents": agents})
+
+
+@app.route("/optimize-existing-planning", methods=["POST"])
+def optimize_existing_planning_route():
+    payload, payload_error = parse_json_object_payload()
+    if payload_error is not None:
+        return payload_error
+
+    runtime_config = get_active_config()
+    start_date, end_date, date_error = _validate_date_range_payload(payload)
+    if date_error is not None:
+        return date_error
+
+    initial_shifts, warnings, entries_error = _parse_manual_entries(
+        payload.get("manual_entries", []), runtime_config, start_date, end_date
+    )
+    if entries_error is not None:
+        return entries_error
+
+    generated_response = app.test_client().post(
+        "/generate-planning",
+        json={
+            "start_date": payload["start_date"],
+            "end_date": payload["end_date"],
+            "initial_shifts": initial_shifts,
+        },
+    )
+    if generated_response.status_code != 200:
+        return generated_response.data, generated_response.status_code, generated_response.headers.items()
+
+    result = generated_response.get_json()
+    status = "warning" if warnings else "ok"
+    result["status"] = status
+    result["warnings"] = warnings
+    result["meta"] = {
+        "manual_cell_count": len(payload.get("manual_entries", [])),
+        "conflict_count": len(warnings),
+    }
+    return jsonify(result)
 
 
 def get_previous_week_schedule(start_date_str):
