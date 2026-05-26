@@ -4,6 +4,7 @@ from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
+    _inject_manual_status_entries,
     app,
     get_active_config,
     load_config,
@@ -350,6 +351,60 @@ def test_optimize_existing_planning_rejects_unknown_status_value(client):
     )
     assert response.status_code == 400
     assert response.get_json()["error"] == "Invalid status value: other_status"
+
+
+def test_optimize_existing_planning_keeps_multiple_manual_shifts(client):
+    config = load_default_config()
+    agent_a = config["agents"][0]["name"]
+    agent_b = config["agents"][1]["name"]
+    vacations = config["vacations"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_a,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": vacations[0],
+            },
+            {
+                "agent": agent_b,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": vacations[1],
+            },
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert ["Lun. 05-01", vacations[0]] in payload["planning"][agent_a]
+    assert ["Lun. 05-01", vacations[1]] in payload["planning"][agent_b]
+    assert payload["meta"]["manual_cell_count"] == 2
+
+
+def test_inject_manual_status_entries_adds_unavailable_day():
+    runtime_config = load_default_config()
+    agent_name = runtime_config["agents"][0]["name"]
+    updated_config, warnings = _inject_manual_status_entries(
+        runtime_config,
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-06",
+                "slot": "day",
+                "value": "unavailable",
+            }
+        ],
+    )
+    assert warnings == []
+    target_agent = next(agent for agent in updated_config["agents"] if agent["name"] == agent_name)
+    assert "06-01-2026" in target_agent["unavailable"]
 
 
 def test_generate_planning_route_invalid_date(client):
