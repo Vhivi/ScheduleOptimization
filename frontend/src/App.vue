@@ -139,12 +139,16 @@
 
       <div class="generation-mode">
         <label>
-          <input type="radio" v-model="isContinuityMode" :value="false" />
+          <input type="radio" v-model="generationMode" value="new" />
           Nouvelle génération
         </label>
         <label>
-          <input type="radio" v-model="isContinuityMode" :value="true" />
+          <input type="radio" v-model="generationMode" value="continuity" />
           Génération avec continuité
+        </label>
+        <label>
+          <input type="radio" v-model="generationMode" value="existing" />
+          Optimisation de l'existant
         </label>
       </div>
 
@@ -177,9 +181,34 @@
         </table>
       </div>
 
+      <div v-if="isExistingOptimizationMode && manualWeekSchedule.length && agents.length">
+        <h3>Saisie manuelle (cellule unitaire)</h3>
+        <table class="transition-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th v-for="day in manualWeekSchedule" :key="day">{{ day }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="agent in agents" :key="agent.name">
+              <td>{{ agent.name }}</td>
+              <td v-for="day in manualWeekSchedule" :key="day">
+                <select v-model="manualSelectedShifts[agent.name][day]">
+                  <option value="">-</option>
+                  <option v-for="vacation in vacations" :key="vacation" :value="vacation">
+                    {{ vacation }}
+                  </option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
-          {{ isLoading ? "Génération en cours..." : "Générer le planning" }}
+          {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
         </button>
       </div>
 
@@ -279,10 +308,13 @@ export default {
       errorMessage: null,
       infoMessage: null,
       isContinuityMode: false,
+      generationMode: 'new',
       previousWeekSchedule: [],
       agents: [],
       vacations: ['Jour', 'Nuit', 'CDP'],
       selectedShifts: {},
+      manualWeekSchedule: [],
+      manualSelectedShifts: {},
       isLoading: false,
       isConfigLoading: false,
       isConfigSaving: false,
@@ -310,10 +342,19 @@ export default {
     };
   },
   watch: {
-    isContinuityMode(newValue) {
-      if (newValue) {
+    generationMode(newValue) {
+      if (newValue === 'continuity') {
         this.fetchPreviousWeekSchedule();
       }
+      if (newValue === 'existing') {
+        this.initializeManualGrid();
+      }
+    },
+    startDate() {
+      if (this.isExistingOptimizationMode) this.initializeManualGrid();
+    },
+    endDate() {
+      if (this.isExistingOptimizationMode) this.initializeManualGrid();
     },
     configData: {
       deep: true,
@@ -326,6 +367,18 @@ export default {
   },
   async mounted() {
     await this.loadActiveConfig();
+  },
+  computed: {
+    isContinuityMode() {
+      return this.generationMode === 'continuity';
+    },
+    isExistingOptimizationMode() {
+      return this.generationMode === 'existing';
+    },
+    actionButtonLabel() {
+      if (this.isExistingOptimizationMode) return "Optimiser le reste";
+      return "Générer le planning";
+    }
   },
   methods: {
     resetMessages() {
@@ -579,6 +632,36 @@ export default {
         this.errorMessage = normalizeApiError(error, 'Erreur lors de la récupération de la semaine précédente');
       }
     },
+    buildWeekScheduleBetweenDates(startDate, endDate) {
+      const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+      const result = [];
+      const current = new Date(startDate);
+      const end = new Date(endDate);
+      while (current <= end) {
+        const dayName = dayNames[current.getDay()];
+        const day = String(current.getDate()).padStart(2, '0');
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        result.push(`${dayName}. ${day}-${month}`);
+        current.setDate(current.getDate() + 1);
+      }
+      return result;
+    },
+    initializeManualGrid() {
+      if (!this.startDate || !this.endDate || this.endDate < this.startDate) {
+        this.manualWeekSchedule = [];
+        this.manualSelectedShifts = {};
+        return;
+      }
+      this.manualWeekSchedule = this.buildWeekScheduleBetweenDates(this.startDate, this.endDate);
+      this.manualSelectedShifts = {};
+      this.agents.forEach((agent) => {
+        if (!agent?.name) return;
+        this.manualSelectedShifts[agent.name] = {};
+        this.manualWeekSchedule.forEach((day) => {
+          this.manualSelectedShifts[agent.name][day] = '';
+        });
+      });
+    },
     async generatePlanning() {
       this.resetMessages();
       this.resetPlanningData();
@@ -609,10 +692,27 @@ export default {
           }
         }
       }
+      if (this.isExistingOptimizationMode) {
+        payload.manual_entries = [];
+        Object.entries(this.manualSelectedShifts).forEach(([agent, days]) => {
+          Object.entries(days || {}).forEach(([dayLabel, value]) => {
+            if (!value) return;
+            const [dayPart, monthPart] = dayLabel.split(' ')[1].split('-');
+            payload.manual_entries.push({
+              agent,
+              date: `${this.startDate.slice(0, 4)}-${monthPart}-${dayPart}`,
+              slot: 'day',
+              type: 'shift',
+              value
+            });
+          });
+        });
+      }
 
       this.isLoading = true;
       try {
-        const response = await apiPost('/generate-planning', payload);
+        const endpoint = this.isExistingOptimizationMode ? '/optimize-existing-planning' : '/generate-planning';
+        const response = await apiPost(endpoint, payload);
         this.planningResult = response.data.planning;
         this.vacationDurations = response.data.vacation_durations;
         this.weekSchedule = response.data.week_schedule;
