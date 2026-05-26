@@ -259,7 +259,68 @@ def test_generate_planning_route_valid_data(client):
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
-    assert len(result["week_schedule"]) == 2  # Checks that 2 days have been generated
+    assert len(result["week_schedule"]) == 2
+
+
+
+def test_optimize_existing_planning_requires_valid_manual_entries(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [{"agent": "Unknown", "date": "2026-01-05", "slot": "day", "type": "shift", "value": "M"}],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid agent: Unknown"
+
+
+def test_optimize_existing_planning_accepts_manual_shift_and_returns_ok_status(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": load_default_config()["agents"][0]["name"],
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": load_default_config()["vacations"][0],
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["meta"]["manual_cell_count"] == 1
+    assert payload["warnings"] == []
+
+
+def test_optimize_existing_planning_returns_warning_for_status_entries(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": load_default_config()["agents"][0]["name"],
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "status",
+                "value": "training",
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "warning"
+    assert payload["warnings"][0]["code"] == "STATUS_MANUAL_ENTRY_NOT_IMPLEMENTED"
 
 
 def test_generate_planning_route_invalid_date(client):
