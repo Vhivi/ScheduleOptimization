@@ -310,7 +310,7 @@ def test_optimize_existing_planning_returns_warning_for_status_entries(client):
                 "date": "2026-01-05",
                 "slot": "day",
                 "type": "status",
-                "value": "training",
+                "value": "restriction",
             }
         ],
     }
@@ -320,7 +320,29 @@ def test_optimize_existing_planning_returns_warning_for_status_entries(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["status"] == "warning"
-    assert payload["warnings"][0]["code"] == "STATUS_MANUAL_ENTRY_NOT_IMPLEMENTED"
+    assert payload["warnings"][0]["code"] == "STATUS_RESTRICTION_REQUIRES_SHIFT"
+
+
+def test_optimize_existing_planning_rejects_unknown_status_value(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "status",
+                "value": "other_status",
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid status value: other_status"
 
 
 def test_generate_planning_route_invalid_date(client):
