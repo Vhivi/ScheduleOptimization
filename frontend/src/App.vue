@@ -307,7 +307,6 @@ export default {
       trainingFromConfig: null,
       errorMessage: null,
       infoMessage: null,
-      isContinuityMode: false,
       generationMode: 'new',
       previousWeekSchedule: [],
       agents: [],
