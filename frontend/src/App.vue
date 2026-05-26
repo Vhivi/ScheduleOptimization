@@ -217,6 +217,24 @@
         </div>
       </div>
 
+      <div v-if="isExistingOptimizationMode && optimizationMeta" class="info-card">
+        <span class="info-icon">📊</span>
+        <span class="info-text">
+          {{ optimizationMeta.manual_cell_count || 0 }} cellule(s) manuelle(s),
+          {{ optimizationMeta.conflict_count || 0 }} warning(s),
+          statut: {{ optimizationStatus || 'ok' }}.
+        </span>
+      </div>
+
+      <div v-if="isExistingOptimizationMode && optimizationWarnings.length" class="warning-card">
+        <h4>Warnings d'optimisation</h4>
+        <ul>
+          <li v-for="(warning, index) in optimizationWarnings" :key="`warn_${index}`">
+            {{ warning.agent }} - {{ warning.date }} ({{ warning.slot }}) : {{ warning.message }}
+          </li>
+        </ul>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
           {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
@@ -325,6 +343,9 @@ export default {
       selectedShifts: {},
       manualWeekSchedule: [],
       manualSelectedShifts: {},
+      optimizationWarnings: [],
+      optimizationMeta: null,
+      optimizationStatus: null,
       isLoading: false,
       isConfigLoading: false,
       isConfigSaving: false,
@@ -413,6 +434,9 @@ export default {
       this.unavailableFromConfig = null;
       this.dayOffFromConfig = null;
       this.trainingFromConfig = null;
+      this.optimizationWarnings = [];
+      this.optimizationMeta = null;
+      this.optimizationStatus = null;
     },
     async applyConfigToState(config) {
       this.isHydratingConfig = true;
@@ -741,6 +765,9 @@ export default {
         this.unavailableFromConfig = response.data.unavailable;
         this.dayOffFromConfig = response.data.dayOff;
         this.trainingFromConfig = response.data.training;
+        this.optimizationWarnings = response.data.warnings || [];
+        this.optimizationMeta = response.data.meta || null;
+        this.optimizationStatus = response.data.status || null;
       } catch (error) {
         const responseData = error?.response?.data;
         if (responseData?.info) {
@@ -943,6 +970,15 @@ button:disabled {
   display: flex;
   align-items: center;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.warning-card {
+  background-color: #fff4e5;
+  color: #9a6400;
+  border: 1px solid #f0b35e;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0;
 }
 
 .info-icon {
