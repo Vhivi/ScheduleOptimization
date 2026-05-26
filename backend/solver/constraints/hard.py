@@ -73,7 +73,9 @@ def apply_initial_shifts(ctx: SolverContext) -> None:
     The initial shifts are represented as a dictionary of agent names
     to lists of tuples, where each tuple contains a day and a vacation type.
     The function will only apply the shifts if the agent name is valid,
-    the vacation type is valid, and the day is in the previous week's schedule.
+    the vacation type is valid, and the day is either in the previous week's
+    schedule (continuity seed) or in the current optimization horizon
+    (manual existing-schedule optimization).
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
@@ -84,7 +86,7 @@ def apply_initial_shifts(ctx: SolverContext) -> None:
             if (
                 agent_name in valid_agents
                 and vacation in ctx.vacations
-                and day in ctx.previous_week_schedule
+                and (day in ctx.previous_week_schedule or day in ctx.week_schedule)
             ):
                 ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 1)
 
