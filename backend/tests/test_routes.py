@@ -277,16 +277,19 @@ def test_optimize_existing_planning_requires_valid_manual_entries(client):
 
 
 def test_optimize_existing_planning_accepts_manual_shift_and_returns_ok_status(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    forced_day = "2026-01-05"
+    forced_vacation = load_default_config()["vacations"][0]
     data = {
-        "start_date": "2026-01-05",
+        "start_date": forced_day,
         "end_date": "2026-01-06",
         "manual_entries": [
             {
-                "agent": load_default_config()["agents"][0]["name"],
-                "date": "2026-01-05",
+                "agent": agent_name,
+                "date": forced_day,
                 "slot": "day",
                 "type": "shift",
-                "value": load_default_config()["vacations"][0],
+                "value": forced_vacation,
             }
         ],
     }
@@ -298,6 +301,8 @@ def test_optimize_existing_planning_accepts_manual_shift_and_returns_ok_status(c
     assert payload["status"] == "ok"
     assert payload["meta"]["manual_cell_count"] == 1
     assert payload["warnings"] == []
+    forced_day_label = "Lun. 05-01"
+    assert [forced_day_label, forced_vacation] in payload["planning"][agent_name]
 
 
 def test_optimize_existing_planning_returns_warning_for_status_entries(client):
@@ -321,6 +326,8 @@ def test_optimize_existing_planning_returns_warning_for_status_entries(client):
     payload = response.get_json()
     assert payload["status"] == "warning"
     assert payload["warnings"][0]["code"] == "STATUS_RESTRICTION_REQUIRES_SHIFT"
+    assert "planning" in payload
+    assert len(payload["week_schedule"]) == 2
 
 
 def test_optimize_existing_planning_rejects_unknown_status_value(client):
