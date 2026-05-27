@@ -750,10 +750,10 @@ export default {
               slot: 'day',
               type: isStatus ? 'status' : 'shift',
               value: isStatus ? value.replace('status:', '') : value
+              })
             });
           });
-        });
-      }
+        }
 
       this.isLoading = true;
       try {
@@ -788,15 +788,12 @@ export default {
       return vacation ? vacation.toLowerCase() : '';
     },
     getManualCellClass(agentName, day) {
-      const value = this.manualSelectedShifts?.[agentName]?.[day];
-      if (!value) return '';
-      if (value.startsWith('status:')) {
-        return value.replace('status:', '');
-      }
+      const value = this.manualSelectedShifts?.[agentName]?.[day] || '';
+      if (value.startsWith('status:')) return value.replace('status:', '');
       return '';
     },
     getManualCellStyle(agentName, day) {
-      const value = this.manualSelectedShifts?.[agentName]?.[day];
+      const value = this.manualSelectedShifts?.[agentName]?.[day] || '';
       if (!value || value.startsWith('status:')) return {};
       return { 
         backgroundColor: this.vacationColors[value] || '#ffffff'
