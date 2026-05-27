@@ -67,6 +67,16 @@ export default {
       type: Object,
       required: true
     },
+    restrictions: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    restrictionDurations: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
     planningStartDate: {
       type: String,
       required: false,
@@ -207,6 +217,9 @@ export default {
       );
     },
     getVacationForAgent(agent, day) {
+      if (this.isRestrictionDay(agent, day)) {
+        return 'Res.';
+      }
       if (this.isTrainingDay(agent, day)) {
         return 'For.';
       }
@@ -273,6 +286,15 @@ export default {
       const dayFull = this.formatConfigDate(dayDate);
       return trainingDays.includes(dayFull);
     },
+    isRestrictionDay(agent, day) {
+      const restrictions = this.restrictions?.[agent] || [];
+      const dayDate = this.resolveDayDate(day);
+      if (!dayDate) {
+        return false;
+      }
+      const dayFull = this.formatConfigDate(dayDate);
+      return restrictions.some((item) => item?.date === dayFull);
+    },
     getColumnColor(agent, day) {
       if (this.isVacationDay(agent, day)) {
         return '#f2cb05';
@@ -296,6 +318,13 @@ export default {
     },
     calculateTotalHours(agent, days) {
       return days.reduce((total, day) => {
+        const restrictions = this.restrictions?.[agent] || [];
+        const dayDate = this.resolveDayDate(day);
+        const dayFull = dayDate ? this.formatConfigDate(dayDate) : null;
+        const restriction = restrictions.find((item) => item?.date === dayFull);
+        if (restriction && this.restrictionDurations?.[restriction.type]) {
+          return total + this.restrictionDurations[restriction.type];
+        }
         const vacation = this.getVacationForAgent(agent, day);
         return total + (this.vacationDurations[vacation] || 0);
       }, 0);

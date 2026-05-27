@@ -210,6 +210,13 @@
                     <option value="status:training">Formation</option>
                     <option value="status:vacations">Congé</option>
                     <option value="status:restriction">Restriction</option>
+                    <option
+                      v-for="(duration, restrictionType) in restrictionTypesDurations"
+                      :key="`r_${restrictionType}`"
+                      :value="`status:restriction:${restrictionType}`"
+                    >
+                      Restriction - {{ restrictionType }}
+                    </option>
                   </select>
                 </td>
               </tr>
@@ -257,6 +264,8 @@
           :unavailable="unavailableFromConfig"
           :dayOff="dayOffFromConfig"
           :training="trainingFromConfig"
+          :restrictions="restrictionsFromConfig"
+          :restrictionsDurations="restrictionDurationsFromConfig"
           :planningStartDate="startDate"
         />
       </div>
@@ -335,6 +344,8 @@ export default {
       unavailableFromConfig: null,
       dayOffFromConfig: null,
       trainingFromConfig: null,
+      restrictionsFromConfig: null,
+      restrictionDurationsFromConfig: {},
       errorMessage: null,
       infoMessage: null,
       generationMode: 'new',
@@ -420,6 +431,9 @@ export default {
         months[monthKey].push(day);
         return months;
       }, {});
+    },
+    restrictionTypesDurations() {
+      return this.restrictionDurationsFromConfig || this.configData?.restriction_types_durations || {};
     }
   },
   methods: {
@@ -435,6 +449,8 @@ export default {
       this.unavailableFromConfig = null;
       this.dayOffFromConfig = null;
       this.trainingFromConfig = null;
+      this.restrictionsFromConfig = null;
+      this.restrictionDurationsFromConfig = {};
       this.optimizationWarnings = [];
       this.optimizationMeta = null;
       this.optimizationStatus = null;
@@ -448,6 +464,7 @@ export default {
       normalized.staffing_requirements = normalized.staffing_requirements || {};
       normalized.holidays = Array.isArray(normalized.holidays) ? normalized.holidays : [];
       normalized.solver = normalized.solver || {};
+      normalized.restriction_types_durations = normalized.restriction_types_durations || {};
 
       normalized.vacations = normalized.vacations.map((value) => String(value).trim()).filter(Boolean);
       normalized.vacations.forEach((vacation) => {
@@ -482,6 +499,7 @@ export default {
       this.holidaysInput = normalized.holidays.join(', ');
       this.vacations = [...normalized.vacations];
       this.agents = [...normalized.agents];
+      this.restrictionDurationsFromConfig = normalized.restriction_types_durations;
       await this.$nextTick();
       this.isHydratingConfig = false;
       this.configDirty = false;
@@ -766,6 +784,8 @@ export default {
         this.unavailableFromConfig = response.data.unavailable;
         this.dayOffFromConfig = response.data.dayOff;
         this.trainingFromConfig = response.data.training;
+        this.restrictionsFromConfig = response.data.restrictions;
+        this.restrictionDurationsFromConfig = response.data.restriction_types_durations || {};
         this.optimizationWarnings = response.data.warnings || [];
         this.optimizationMeta = response.data.meta || null;
         this.optimizationStatus = response.data.status || null;

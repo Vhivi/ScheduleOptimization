@@ -153,6 +153,8 @@ def _build_planning_payload(payload, runtime_config):
     unavailable = {}
     dayOff = {}
     training = {}
+    restrictions = {}
+    restriction_types_durations = runtime_config.get("restriction_types_durations", {})
 
     # Retrieve agent training days and store them in a dictionary {agent: [days]}.
     for agent in agents:
@@ -170,6 +172,9 @@ def _build_planning_payload(payload, runtime_config):
                 if isinstance(vac, dict) and "start" in vac and "end" in vac:
                     # Store leave days in a dictionary {agent: [start, end]}
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
+        # Retrieve agent restrictions and store them in a dictionary {agent: [days]}.
+        if "restrictions" in agent:
+            restrictions[agent["name"]] = agent["restrictions"]
 
     start_date, end_date, date_error = _validate_date_range_payload(payload)
     if date_error is not None:
@@ -267,6 +272,8 @@ def _build_planning_payload(payload, runtime_config):
         "unavailable": unavailable,
         "dayOff": dayOff,
         "training": training,
+        "restrictions": restrictions,
+        "restriction_types_durations": restriction_types_durations,
     }, 200
 
 
@@ -328,6 +335,10 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
 
     valid_agents = {agent["name"] for agent in runtime_config["agents"]}
     valid_vacations = set(runtime_config["vacations"])
+    valid_restriction_types = set(
+        (runtime_config.get("restriction_types_durations") or {}).keys()
+    )
+
     initial_shifts = {}
     status_entries = []
     warnings = []
@@ -357,7 +368,19 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
             day_label = format_day_label(entry_date)
             initial_shifts.setdefault(agent, []).append((day_label, value))
         elif entry_type == "status":
-            if value not in {"restriction", "unavailable", "training", "vacations"}:
+            if value in {"unavailable", "training", "vacations"}:
+                pass  # These are valid status types
+            elif value.startswith("restrictions:"):
+                restriction_type = value.split(":", 1)[1]
+                if restriction_type not in valid_restriction_types:
+                    return None, None, None, (
+                        jsonify({"error": f"Unkown restriction type: {restriction_type}"}),
+                        400,
+                    )
+            elif value == "restriction":
+                # kept for backward compatibility, warning emitted later
+                pass
+            else:
                 return None, None, None, (jsonify({"error": f"Invalid status value: {value}"}), 400)
             status_entries.append(
                 {
@@ -401,6 +424,10 @@ def _inject_manual_status_entries(runtime_config, status_entries):
                     "source": "api_validation",
                 }
             )
+        elif status_value.startswith("restrictions:"):
+            restriction_type = status_value.split(":", 1)[1]
+            target.setdefault("restrictions", [])
+            target["restrictions"].append({"date": day_str, "type": restriction_type})
     return injected_config, warnings
 
 

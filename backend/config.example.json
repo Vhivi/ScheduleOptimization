@@ -64,6 +64,10 @@
     "11-11",
     "25-12"
   ],
+  "restriction_types_durations": {
+    "HorsSite": 10.5,
+    "VM": 2
+  },
   "solver": {
     "max_time_seconds": 600,
     "relative_gap_limit": 0.1,
