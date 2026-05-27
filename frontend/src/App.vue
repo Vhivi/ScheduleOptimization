@@ -199,6 +199,7 @@
                   v-for="day in monthDays"
                   :key="day"
                   :class="[getWeekendClass(day), getManualCellClass(agent.name, day)]"
+                  :style="getManualCellStyle(agent.name, day)"
                 >
                   <select v-model="manualSelectedShifts[agent.name][day]">
                     <option value="">-</option>
@@ -792,7 +793,14 @@ export default {
       if (value.startsWith('status:')) {
         return value.replace('status:', '');
       }
-      return value.toLowerCase();
+      return '';
+    },
+    getManualCellStyle(agentName, day) {
+      const value = this.manualSelectedShifts?.[agentName]?.[day];
+      if (!value || value.startsWith('status:')) return {};
+      return { 
+        backgroundColor: this.vacationColors[value] || '#ffffff'
+      };
     },
     formatMonthTitle(month) {
       const monthMap = {
@@ -1030,13 +1038,13 @@ button:disabled {
   background-color: #a59384;
 }
 .transition-table td.unavailable {
-  background-color: #ffc9c9;
+  background-color: #f2cb05;
 }
 .transition-table td.training {
-  background-color: #ffe8a3;
+  background-color: #d93030;
 }
 .transition-table td.vacations {
-  background-color: #b2f2bb;
+  background-color: #f2cb05;
 }
 .transition-table td.restriction {
   background-color: #ffd8a8;
