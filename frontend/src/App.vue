@@ -198,7 +198,7 @@
                 <td
                   v-for="day in monthDays"
                   :key="day"
-                  :class="[getWeekendClass(day), getManualCellClass(agent.name, day)]"
+                  :class="[getWeekendClass(day), getManualCellClass(agent.name, day), getWarningCellClass(agent.name, day)]"
                   :style="getManualCellStyle(agent.name, day)"
                 >
                   <select v-model="manualSelectedShifts[agent.name][day]">
@@ -819,6 +819,26 @@ export default {
         backgroundColor: this.vacationColors[value] || '#ffffff'
       };
     },
+    buildDayLabelFromIsoDate(isoDate) {
+      if (!isoDate || typeof isoDate !== 'string') return null;
+      const [yearRaw, monthRaw, dayRaw] = isoDate.split('-');
+      const year = Number(yearRaw);
+      const month = Number(monthRaw);
+      const day = Number(dayRaw);
+      const date = new Date(year, month - 1, day);
+      if (Number.isNaN(date.getTime())) return null;
+      const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+      const dayName = dayNames[date.getDay()];
+      return `${dayName}. ${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}`;
+    },
+    getWarningCellClass(agentName, dayLabel) {
+      const hasWarning = (this.optimizationWarnings || []).some((warning) => {
+        if (!warning || warning.agent !== agentName) return false;
+        const warningDayLabel = this.buildDayLabelFromIsoDate(warning.date);
+        return warningDayLabel === dayLabel;
+      });
+      return hasWarning ? 'warning-outline' : '';
+    },
     formatMonthTitle(month) {
       const monthMap = {
         '01': 'Janvier',
@@ -1065,6 +1085,9 @@ button:disabled {
 }
 .transition-table td.restriction {
   background-color: #ffd8a8;
+}
+.transition-table td.warning-outline {
+  box-shadow: inset 0 0 0 2px #d93030;
 }
 
 .transition-table select {
