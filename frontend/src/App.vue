@@ -250,6 +250,11 @@
           <ul>
             <li v-for="(reason, index) in optimizationBlockingReasons" :key="`reason_${index}`">
               {{ reason.code }} — {{ reason.message }} ({{ reason.count }})
+              <ul v-if="reason.details?.length" class="blocking-details">
+                <li v-for="(detail, detailIndex) in reason.details" :key="`reason_${index}_detail_${detailIndex}`">
+                  {{ detail }}
+                </li>
+              </ul>
             </li>
           </ul>
           <p v-if="optimizationImpactedCells.length">
@@ -1062,6 +1067,12 @@ button:disabled {
 .error-text {
   font-size: 16px;
   font-weight: bold;
+}
+
+.blocking-details {
+  color: #8a0000;
+  font-size: 14px;
+  margin-top: 4px;
 }
 
 .info-card {
