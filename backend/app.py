@@ -484,6 +484,347 @@ def _build_blocking_reasons_from_context(manual_entries, warnings, unsat_reason)
     return reasons
 
 
+def _date_matches_vacation_period(iso_date, vacation_periods):
+    if not is_valid_date(iso_date):
+        return False
+
+    day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+    for period in vacation_periods or []:
+        if not isinstance(period, dict):
+            continue
+        start = period.get("start")
+        end = period.get("end")
+        if not start or not end:
+            continue
+        try:
+            start_dt = datetime.strptime(start, "%d-%m-%Y")
+            end_dt = datetime.strptime(end, "%d-%m-%Y")
+        except ValueError:
+            continue
+        if start_dt <= day_dt <= end_dt:
+            return True
+    return False
+
+
+def _agent_has_status_on_day(agent, iso_date):
+    if not is_valid_date(iso_date):
+        return False
+
+    day_str = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+    if day_str in (agent.get("unavailable") or []):
+        return True
+    if day_str in (agent.get("training") or []):
+        return True
+    if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
+        return True
+    for restriction in agent.get("restrictions") or []:
+        if isinstance(restriction, dict) and restriction.get("date") == day_str:
+            return True
+    return False
+
+
+def _build_manual_shift_indexes(manual_entries):
+    manual_shifts_by_agent_day = {}
+    manual_counts_by_day_shift = {}
+    dates_to_check = set()
+
+    for entry in manual_entries:
+        if entry.get("type") != "shift":
+            continue
+        iso_date = entry.get("date")
+        agent_name = entry.get("agent")
+        shift_value = entry.get("value")
+        if not agent_name or not shift_value or not is_valid_date(iso_date):
+            continue
+
+        dates_to_check.add(iso_date)
+        manual_shifts_by_agent_day.setdefault((agent_name, iso_date), []).append(shift_value)
+        manual_counts_by_day_shift[(iso_date, shift_value)] = (
+            manual_counts_by_day_shift.get((iso_date, shift_value), 0) + 1
+        )
+
+    return manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
+
+
+def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day):
+    agent_name = agent["name"]
+    locked_shifts = manual_shifts_by_agent_day.get((agent_name, iso_date), [])
+    if locked_shifts:
+        return vacation in locked_shifts
+
+    if _agent_has_status_on_day(agent, iso_date):
+        return False
+    if vacation in (agent.get("restriction") or []):
+        return False
+    return True
+
+
+def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config):
+    reasons = []
+    by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
+    details_by_code = {
+        "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED": [],
+        "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": [],
+        "MANUAL_SHIFT_AFTER_NIGHT": [],
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": [],
+        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": [],
+        "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": [],
+    }
+    counts_by_code = {code: 0 for code in details_by_code}
+
+    weekly_counts = {}
+    for (agent_name, iso_date), shifts in manual_shifts_by_agent_day.items():
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        week_key = (agent_name, datetime.strptime(iso_date, "%Y-%m-%d").isocalendar()[:2])
+        weekly_counts.setdefault(week_key, {"Jour": 0, "CDP": 0})
+        weekly_counts[week_key]["Jour"] += shifts.count("Jour")
+        weekly_counts[week_key]["CDP"] += shifts.count("CDP")
+
+    for (agent_name, week), counts in weekly_counts.items():
+        if counts["Jour"] > 3:
+            counts_by_code["MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"] += 1
+            details_by_code["MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"].append(
+                f"{agent_name} / semaine {week[1]}: {counts['Jour']} vacations Jour manuelles pour 3 maximum"
+            )
+        if counts["CDP"] > 2:
+            counts_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"] += 1
+            details_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"].append(
+                f"{agent_name} / semaine {week[1]}: {counts['CDP']} vacations CDP manuelles pour 2 maximum"
+            )
+
+    for (agent_name, iso_date), shifts in manual_shifts_by_agent_day.items():
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        agent = by_agent[agent_name]
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        previous_iso = (day_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_iso = (day_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        next_day_str = (day_dt + timedelta(days=1)).strftime("%d-%m-%Y")
+
+        if "Nuit" in shifts:
+            next_manual_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
+            if next_manual_shifts:
+                counts_by_code["MANUAL_SHIFT_AFTER_NIGHT"] += 1
+                details_by_code["MANUAL_SHIFT_AFTER_NIGHT"].append(
+                    f"{agent_name} / {iso_date}: Nuit suivie de {', '.join(next_manual_shifts)} le {next_iso}"
+                )
+            if next_day_str in (agent.get("unavailable") or []) or next_day_str in (agent.get("training") or []):
+                counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
+                details_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"].append(
+                    f"{agent_name} / {iso_date}: Nuit avant indisponibilité ou formation le {next_iso}"
+                )
+
+        if day_dt.weekday() == 5 and _agent_has_status_on_day(agent, next_iso):
+            counts_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"] += 1
+            details_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"].append(
+                f"{agent_name}: vacation manuelle le samedi {iso_date}, mais dimanche {next_iso} bloqué"
+            )
+        if day_dt.weekday() == 6 and _agent_has_status_on_day(agent, previous_iso):
+            counts_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"] += 1
+            details_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"].append(
+                f"{agent_name}: vacation manuelle le dimanche {iso_date}, mais samedi {previous_iso} bloqué"
+            )
+
+        if day_dt.strftime("%d-%m-%Y") in (agent.get("training") or []):
+            previous_shifts = manual_shifts_by_agent_day.get((agent_name, previous_iso), [])
+            next_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
+            forbidden_previous = [shift for shift in previous_shifts if shift != "CDP"]
+            forbidden_next = [shift for shift in next_shifts if shift not in {"CDP", "Nuit"}]
+            if forbidden_previous or forbidden_next:
+                counts_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"] += 1
+                details_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"].append(
+                    f"{agent_name} / formation {iso_date}: vacations incompatibles autour de la formation"
+                )
+
+    reason_messages = {
+        "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED": "La limite de 3 vacations Jour par semaine est dépassée par des saisies manuelles.",
+        "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
+        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle est posée le lendemain d'une Nuit manuelle.",
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une Nuit manuelle est posée avant une indisponibilité ou une formation.",
+        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": "Une vacation manuelle ne respecte pas les règles de veille/lendemain de formation.",
+        "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",
+    }
+    for code, count in counts_by_code.items():
+        if count:
+            reasons.append(
+                {
+                    "code": code,
+                    "message": reason_messages[code],
+                    "count": count,
+                    "details": details_by_code[code][:5],
+                }
+            )
+
+    return reasons
+
+
+def _diagnose_staffing_capacity_conflicts(
+    runtime_config, manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
+):
+    reasons = []
+    agents = runtime_config.get("agents", [])
+    vacations = runtime_config.get("vacations", [])
+    staffing_requirements = runtime_config.get("staffing_requirements", {})
+    holidays = set(runtime_config.get("holidays", []))
+
+    understaffed_shift_days = 0
+    overstaffed_manual_shift_days = 0
+    understaffed_details = []
+    overstaffed_details = []
+
+    for iso_date in sorted(dates_to_check):
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        day_token = day_dt.strftime("%d-%m")
+        is_weekend = day_dt.weekday() >= 5
+        for vacation in vacations:
+            required_agents = staffing_requirements.get(vacation, 1)
+            if vacation == "CDP" and (is_weekend or day_token in holidays):
+                required_agents = 0
+
+            manual_count = manual_counts_by_day_shift.get((iso_date, vacation), 0)
+            if manual_count > required_agents:
+                overstaffed_manual_shift_days += 1
+                overstaffed_details.append(
+                    f"{iso_date} / {vacation}: {manual_count} manuel(s) pour {required_agents} requis"
+                )
+                continue
+
+            eligible_count = sum(
+                1
+                for agent in agents
+                if _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day)
+            )
+            if eligible_count < required_agents:
+                understaffed_shift_days += 1
+                understaffed_details.append(
+                    f"{iso_date} / {vacation}: {eligible_count} agent(s) possible(s) pour {required_agents} requis"
+                )
+
+    if overstaffed_manual_shift_days:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT",
+                "message": (
+                    "Trop de vacations manuelles sont posées sur au moins un couple "
+                    "date/vacation par rapport au besoin configuré."
+                ),
+                "count": overstaffed_manual_shift_days,
+                "details": overstaffed_details[:5],
+            }
+        )
+    if understaffed_shift_days:
+        reasons.append(
+            {
+                "code": "STAFFING_REQUIREMENT_UNMET",
+                "message": (
+                    "Le besoin de couverture ne peut pas être atteint pour au moins une "
+                    "date/vacation avec les agents encore disponibles."
+                ),
+                "count": understaffed_shift_days,
+                "details": understaffed_details[:5],
+            }
+        )
+
+    return reasons
+
+
+def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
+    reasons = []
+    by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
+    (
+        manual_shifts_by_agent_day,
+        manual_counts_by_day_shift,
+        dates_to_check,
+    ) = _build_manual_shift_indexes(manual_entries)
+
+    seen_agent_day = set()
+    duplicate_count = 0
+    unavailable_conflicts = 0
+    training_conflicts = 0
+    restriction_conflicts = 0
+    vacation_conflicts = 0
+
+    for entry in manual_entries:
+        if entry.get("type") != "shift":
+            continue
+        agent_name = entry.get("agent")
+        iso_date = entry.get("date")
+        shift_value = entry.get("value")
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        agent = by_agent[agent_name]
+        day_str = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+
+        key = (agent_name, iso_date)
+        if key in seen_agent_day:
+            duplicate_count += 1
+        else:
+            seen_agent_day.add(key)
+
+        if day_str in (agent.get("unavailable") or []):
+            unavailable_conflicts += 1
+        if day_str in (agent.get("training") or []):
+            training_conflicts += 1
+        if shift_value in (agent.get("restriction") or []):
+            restriction_conflicts += 1
+        if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
+            vacation_conflicts += 1
+
+    if duplicate_count:
+        reasons.append(
+            {
+                "code": "MULTIPLE_MANUAL_SHIFTS_SAME_DAY",
+                "message": "Plusieurs vacations manuelles ont été saisies pour un même agent et un même jour.",
+                "count": duplicate_count,
+            }
+        )
+    if unavailable_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_ON_UNAVAILABLE_DAY",
+                "message": "Une vacation manuelle a été posée sur un jour d'indisponibilité.",
+                "count": unavailable_conflicts,
+            }
+        )
+    if training_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_ON_TRAINING_DAY",
+                "message": "Une vacation manuelle a été posée sur un jour de formation.",
+                "count": training_conflicts,
+            }
+        )
+    if vacation_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_DURING_VACATION",
+                "message": "Une vacation manuelle a été posée pendant une période de congé.",
+                "count": vacation_conflicts,
+            }
+        )
+    if restriction_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION",
+                "message": "Une vacation manuelle correspond à une restriction agent.",
+                "count": restriction_conflicts,
+            }
+        )
+
+    reasons.extend(_diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config))
+    reasons.extend(
+        _diagnose_staffing_capacity_conflicts(
+            runtime_config,
+            manual_shifts_by_agent_day,
+            manual_counts_by_day_shift,
+            dates_to_check,
+        )
+    )
+
+    return reasons
+
+
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
     payload, payload_error = parse_json_object_payload()
