@@ -4,6 +4,7 @@ from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
+    _diagnose_manual_entry_conflicts,
     _inject_manual_status_entries,
     app,
     get_active_config,
@@ -355,6 +356,58 @@ def test_optimize_existing_planning_unsat_returns_blocking_reasons_and_suggestio
     payload = response.get_json()
     assert payload["status"] == "unsat"
     assert payload["blocking_reasons"] != []
+    assert payload["suggestions"] != []
+
+
+def test_diagnose_manual_entry_conflicts_detects_unavailable_day():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    day_str = "15-01-2026"
+    agent["unavailable"] = [day_str]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_ON_UNAVAILABLE_DAY" in reason_codes
+
+
+def test_optimize_existing_planning_unsat_returns_generic_blocking_reasons(client):
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+    }
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+    assert response.status_code == 400
+    payload = response.get_json()
+    reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
+    assert "GLOBAL_UNSAT" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_CONFLICT_POSSIBLE" in reason_codes
     assert payload["suggestions"] != []
 
 
