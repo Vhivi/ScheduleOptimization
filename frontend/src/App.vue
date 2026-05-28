@@ -243,6 +243,22 @@
         </ul>
       </div>
 
+      <div v-if="isExistingOptimizationMode && optimizationSuggestions.length" class="warning-card">
+        <h4>Suggestions de correction</h4>
+        <ul>
+          <li v-for="(suggestion, index) in optimizationSuggestions" :key="`sugg_${index}`">
+            {{ suggestion.agent }} - {{ suggestion.date }} : {{ suggestion.message }}
+            <button
+              v-if="hasClearCellProposal(suggestion)"
+              class="secondary-btn"
+              @click="applyClearCellSuggestion(suggestion)"
+            >
+              Appliquer: vider la cellule
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
           {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
@@ -356,6 +372,7 @@ export default {
       manualWeekSchedule: [],
       manualSelectedShifts: {},
       optimizationWarnings: [],
+      optimizationSuggestions: [],
       optimizationMeta: null,
       optimizationStatus: null,
       isLoading: false,
@@ -452,6 +469,7 @@ export default {
       this.restrictionsFromConfig = null;
       this.restrictionDurationsFromConfig = {};
       this.optimizationWarnings = [];
+      this.optimizationSuggestions = [];
       this.optimizationMeta = null;
       this.optimizationStatus = null;
     },
@@ -787,6 +805,7 @@ export default {
         this.restrictionsFromConfig = response.data.restrictions;
         this.restrictionDurationsFromConfig = response.data.restriction_types_durations || {};
         this.optimizationWarnings = response.data.warnings || [];
+        this.optimizationSuggestions = response.data.suggestions || [];
         this.optimizationMeta = response.data.meta || null;
         this.optimizationStatus = response.data.status || null;
       } catch (error) {
@@ -838,6 +857,17 @@ export default {
         return warningDayLabel === dayLabel;
       });
       return hasWarning ? 'warning-outline' : '';
+    },
+    hasClearCellProposal(suggestion) {
+      return (suggestion?.proposals || []).some((proposal) => proposal?.action === 'clear_cell');
+    },
+    applyClearCellSuggestion(suggestion) {
+      const agentName = suggestion?.agent;
+      const dayLabel = this.buildDayLabelFromIsoDate(suggestion?.date);
+      if (!agentName || !dayLabel) return;
+      if (this.manualSelectedShifts?.[agentName] && dayLabel in this.manualSelectedShifts[agentName]) {
+        this.manualSelectedShifts[agentName][dayLabel] = '';
+      }
     },
     formatMonthTitle(month) {
       const monthMap = {
@@ -1024,6 +1054,12 @@ button:disabled {
   border-radius: 8px;
   padding: 12px 16px;
   margin: 12px 0;
+}
+
+.secondary-btn {
+  margin-left: 10px;
+  background: #6c757d;
+  padding: 4px 8px;
 }
 
 .info-icon {
