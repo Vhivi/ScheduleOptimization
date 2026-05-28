@@ -810,7 +810,13 @@ export default {
         this.optimizationStatus = response.data.status || null;
       } catch (error) {
         const responseData = error?.response?.data;
-        if (responseData?.info) {
+        if (this.isExistingOptimizationMode && responseData?.status === 'unsat') {
+          this.optimizationStatus = responseData.status;
+          this.optimizationWarnings = responseData.warnings || [];
+          this.optimizationSuggestions = responseData.suggestions || [];
+          this.optimizationMeta = responseData.meta || null;
+          this.infoMessage = responseData.error || "Aucune solution trouvée. Consultez les suggestions.";
+        } else if (responseData?.info) {
           this.infoMessage = responseData.info;
         } else {
           this.errorMessage = normalizeApiError(error, 'Erreur lors de la génération du planning');
