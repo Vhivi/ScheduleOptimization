@@ -243,6 +243,21 @@
         </ul>
       </div>
 
+      <div v-if="isExistingOptimizationMode && optimizationBlockingReasons.length" class="error-card">
+        <span class="error-icon">⛔</span>
+        <div>
+          <strong>Raisons de blocage</strong>
+          <ul>
+            <li v-for="(reason, index) in optimizationBlockingReasons" :key="`reason_${index}`">
+              {{ reason.code }} — {{ reason.message }} ({{ reason.count }})
+            </li>
+          </ul>
+          <p v-if="optimizationImpactedCells.length">
+            Cellules impactées : {{ optimizationImpactedCells.length }}
+          </p>
+        </div>
+      </div>
+
       <div v-if="isExistingOptimizationMode && optimizationSuggestions.length" class="warning-card">
         <h4>Suggestions de correction</h4>
         <ul>
@@ -373,6 +388,8 @@ export default {
       manualSelectedShifts: {},
       optimizationWarnings: [],
       optimizationSuggestions: [],
+      optimizationBlockingReasons: [],
+      optimizationImpactedCells: [],
       optimizationMeta: null,
       optimizationStatus: null,
       isLoading: false,
@@ -472,6 +489,8 @@ export default {
       this.optimizationSuggestions = [];
       this.optimizationMeta = null;
       this.optimizationStatus = null;
+      this.optimizationBlockingReasons = [];
+      this.optimizationImpactedCells = [];
     },
     async applyConfigToState(config) {
       this.isHydratingConfig = true;
@@ -806,6 +825,8 @@ export default {
         this.restrictionDurationsFromConfig = response.data.restriction_types_durations || {};
         this.optimizationWarnings = response.data.warnings || [];
         this.optimizationSuggestions = response.data.suggestions || [];
+        this.optimizationBlockingReasons = response.data.blocking_reasons || [];
+        this.optimizationImpactedCells = response.data.impacted_cells || [];
         this.optimizationMeta = response.data.meta || null;
         this.optimizationStatus = response.data.status || null;
       } catch (error) {
@@ -814,6 +835,8 @@ export default {
           this.optimizationStatus = responseData.status;
           this.optimizationWarnings = responseData.warnings || [];
           this.optimizationSuggestions = responseData.suggestions || [];
+          this.optimizationBlockingReasons = responseData.blocking_reasons || [];
+          this.optimizationImpactedCells = responseData.impacted_cells || [];
           this.optimizationMeta = responseData.meta || null;
           this.infoMessage = responseData.error || "Aucune solution trouvée. Consultez les suggestions.";
         } else if (responseData?.info) {

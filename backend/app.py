@@ -458,6 +458,32 @@ def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None)
     return suggestions
 
 
+def _build_blocking_reasons_from_context(manual_entries, warnings, unsat_reason):
+    reasons = [
+        {"code": "GLOBAL_UNSAT", "message": unsat_reason, "count": 1}
+    ]
+    if manual_entries:
+        reasons.append(
+            {
+                "code": "MANUAL_ASSIGNMENTS_CONFLICT_POSSIBLE",
+                "message": (
+                    "Certaines affectations manuelles peuvent entrer en conflit "
+                    "avec les contraintes globales."
+                ),
+                "count": len(manual_entries),
+            }
+        )
+    if warnings:
+        reasons.append(
+            {
+                "code": "PREVALIDATION_WARNINGS_PRESENT",
+                "message": "Des warnings de prévalidation ont été détectés.",
+                "count": len(warnings),
+            }
+        )
+    return reasons
+
+
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
     payload, payload_error = parse_json_object_payload()
@@ -515,9 +541,11 @@ def optimize_existing_planning_route():
             warnings=warnings,
             unsat_reason=unsat_reason,
         )
-        blocking_reasons = [
-            {"code": "GLOBAL_UNSAT", "message": unsat_reason, "count": 1}
-        ]
+        blocking_reasons = _build_blocking_reasons_from_context(
+            manual_entries=manual_entries,
+            warnings=warnings,
+            unsat_reason=unsat_reason,
+        )
         impacted_cells = [
             {
                 "agent": entry.get("agent"),
