@@ -213,7 +213,7 @@
                     <option
                       v-for="(duration, restrictionType) in restrictionTypesDurations"
                       :key="`r_${restrictionType}`"
-                      :value="`status:restriction:${restrictionType}`"
+                      :value="`status:restrictions:${restrictionType}`"
                     >
                       Restriction - {{ restrictionType }}
                     </option>
