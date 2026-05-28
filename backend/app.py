@@ -430,6 +430,33 @@ def _inject_manual_status_entries(runtime_config, status_entries):
             target["restrictions"].append({"date": day_str, "type": restriction_type})
     return injected_config, warnings
 
+def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None):
+    suggestions = []
+    for warning in warnings:
+        suggestion = {
+            "agent": warning.get("agent"),
+            "date": warning.get("date"),
+            "slot": warning.get("slot", "day"),
+            "reason_code": warning.get("code", "MANUAL_CONFLICT"),
+            "message": warning.get("message", "Manual entry conflict."),
+            "proposals": [{"action": "clear_cell"}],
+        }
+        suggestions.append(suggestion)
+
+    if unsat_reason is not None and not suggestions and manual_entries:
+        first = manual_entries[0]
+        suggestions.append(
+            {
+                "agent": first.get("agent"),
+                "date": first.get("date"),
+                "slot": first.get("slot", "day"),
+                "reason_code": "GLOBAL_UNSAT",
+                "message": unsat_reason,
+                "proposals": [{"action": "clear_cell"}],
+            }
+        )
+    return suggestions
+
 
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
@@ -480,13 +507,53 @@ def optimize_existing_planning_route():
         },
         runtime_config=effective_runtime_config,
     )
+    manual_entries = payload.get("manual_entries", [])
     if status_code != 200:
-        return jsonify(result), status_code
+        unsat_reason = result.get("info") or result.get("error") or "No solution found."
+        suggestions = _build_suggestions_from_context(
+            manual_entries=manual_entries,
+            warnings=warnings,
+            unsat_reason=unsat_reason,
+        )
+        blocking_reasons = [
+            {"code": "GLOBAL_UNSAT", "message": unsat_reason, "count": 1}
+        ]
+        impacted_cells = [
+            {
+                "agent": entry.get("agent"),
+                "date": entry.get("date"),
+                "slot": entry.get("slot", "day"),
+                "value": entry.get("value"),
+            }
+            for entry in manual_entries
+        ]
+        return (
+            jsonify(
+                {
+                    "status": "unsat",
+                    "error": unsat_reason,
+                    "warnings": warnings,
+                    "blocking_reasons": blocking_reasons,
+                    "impacted_cells": impacted_cells,
+                    "suggestions": suggestions,
+                    "meta": {
+                        "manual_cell_count": len(manual_entries),
+                        "conflict_count": len(warnings),
+                    },
+                }
+            ),
+            status_code,
+        )
     status = "warning" if warnings else "ok"
+    suggestions = _build_suggestions_from_context(
+        manual_entries=manual_entries,
+        warnings=warnings,
+    )
     result["status"] = status
     result["warnings"] = warnings
+    result["suggestions"] = suggestions
     result["meta"] = {
-        "manual_cell_count": len(payload.get("manual_entries", [])),
+        "manual_cell_count": len(manual_entries),
         "conflict_count": len(warnings),
     }
     return jsonify(result)
