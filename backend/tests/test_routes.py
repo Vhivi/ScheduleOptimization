@@ -327,8 +327,35 @@ def test_optimize_existing_planning_returns_warning_for_status_entries(client):
     payload = response.get_json()
     assert payload["status"] == "warning"
     assert payload["warnings"][0]["code"] == "STATUS_RESTRICTION_REQUIRES_SHIFT"
+    assert payload["suggestions"] != []
     assert "planning" in payload
     assert len(payload["week_schedule"]) == 2
+
+
+def test_optimize_existing_planning_unsat_returns_blocking_reasons_and_suggestions(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": load_default_config()["vacations"][0],
+            }
+        ],
+    }
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["status"] == "unsat"
+    assert payload["blocking_reasons"] != []
+    assert payload["suggestions"] != []
 
 
 def test_optimize_existing_planning_rejects_unknown_status_value(client):
