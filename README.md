@@ -156,6 +156,8 @@ Core sections in `config.json`:
 - `vacation_durations`: paid-hour durations for each configured shift plus `Conge`
 - `holidays`: recurring public holidays
 - `solver`: optional runtime and fairness tuning
+  - `max_weekly_hours`: strict weekly worked-hours cap per agent, default `36`
+  - `global_max_gap` / `period_max_gap`: paid-hour balance gaps between agents, expressed in tenths of hours
 
 ---
 

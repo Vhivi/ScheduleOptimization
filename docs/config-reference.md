@@ -84,8 +84,14 @@ Supported keys:
 - `max_time_seconds` (integer, default `600`)
 - `relative_gap_limit` (number in `(0, 1]`, default `0.1`)
 - `num_search_workers` (integer, default `0`)
+- `max_weekly_hours` (number, default `36`)
+  - Strict maximum worked hours per agent and per week.
+  - Counts all generated shift types in `vacations`.
+  - Does not include paid leave hours.
 - `global_max_gap` (integer, default `240`)
+  - Maximum paid-hour balance gap between agents over the generated period, in tenths of hours.
 - `period_max_gap` (integer, default `240`)
+  - Maximum paid-hour balance gap between agents inside each period, in tenths of hours.
 - `optimize_period_balance` (boolean, default `false`)
 - `period_balance_weight` (integer, default `2`)
 
