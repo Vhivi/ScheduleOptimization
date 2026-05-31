@@ -82,6 +82,10 @@
           "type": "integer",
           "minimum": 0
         },
+        "max_weekly_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "optimize_period_balance": {
           "type": "boolean"
         },

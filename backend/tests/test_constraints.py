@@ -1,7 +1,52 @@
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
+from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
+from solver.constraints.mixed import limit_weekly_nights_and_hours
+
+
+def _solve_forced_weekly_shifts(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    vacations = ["Jour", "Nuit"]
+    week = ["Lun. 01-06", "Mar. 02-06", "Mer. 03-06", "Jeu. 04-06"]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in week
+        for vacation in vacations
+    }
+
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        weeks_split=[week],
+        planning=planning,
+        shift_durations={"Jour": 120, "Nuit": 120},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+
+    forced_shifts = {
+        ("Lun. 01-06", "Jour"),
+        ("Mar. 02-06", "Jour"),
+        ("Mer. 03-06", "Nuit"),
+        ("Jeu. 04-06", "Nuit"),
+    }
+    for day in week:
+        for vacation in vacations:
+            model.Add(
+                planning[(agent_name, day, vacation)]
+                == int((day, vacation) in forced_shifts)
+            )
+
+    solver = cp_model.CpSolver()
+    return solver.Solve(model)
 
 
 @pytest.fixture(autouse=True)
@@ -604,6 +649,29 @@ def test_generate_planning_ignores_leave_periods_from_other_years():
 
     assert isinstance(result, dict)
     assert "info" not in result
+
+
+def test_weekly_hours_limit_counts_night_shifts_with_default_cap():
+    """
+    Regression test: weekly hour cap must count night shifts, not only day/CDP.
+
+    Two day shifts and two night shifts at 12h each exceed the default 36h cap,
+    even though day-only hours and night-only count are independently valid.
+    """
+
+    status = _solve_forced_weekly_shifts(max_weekly_hours=360)
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_weekly_hours_limit_uses_configured_cap():
+    """
+    The same 48h worked week becomes feasible when solver.max_weekly_hours is 48.
+    """
+
+    status = _solve_forced_weekly_shifts(max_weekly_hours=480)
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)
