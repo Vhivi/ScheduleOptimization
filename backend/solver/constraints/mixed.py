@@ -40,12 +40,11 @@ def limit_weekly_nights_and_hours(ctx: SolverContext) -> None:
                     sum(ctx.planning[(agent_name, day, NIGHT_SHIFT)] for day in week) <= 3
                 )
 
-            total_heures = sum(
+            total_hours = sum(
                 sum(
                     ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                    for vacation in (DAY_SHIFT, CDP_SHIFT)
-                    if vacation in ctx.vacations
+                    for vacation in ctx.vacations
                 )
                 for day in week
             )
-            ctx.model.Add(total_heures <= 360)
+            ctx.model.Add(total_hours <= ctx.max_weekly_hours)
