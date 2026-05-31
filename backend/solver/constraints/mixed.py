@@ -21,12 +21,12 @@ def register(registry: ConstraintRegistry) -> None:
 
 def limit_weekly_nights_and_hours(ctx: SolverContext) -> None:
     """
-    Limits the number of weekly night shifts to 3 and the total weekly hours to 360.
+    Limits weekly night shifts and total worked hours.
 
     This constraint is applied per agent and per week in the week's schedule.
-    For each agent, it ensures that the agent is not assigned more than 3 night shifts
-    per week, and that the total number of hours worked by the agent per week is
-    less than or equal to 360.
+    For each agent, it allows at most 3 night shifts per week and caps worked
+    hours using solver.max_weekly_hours. The worked-hours cap counts all
+    configured vacations assigned by the solver and does not include paid leave.
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
