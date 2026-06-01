@@ -211,6 +211,15 @@ def generate_planning(
     _build_planning_variables(ctx)
 
     registry = _build_registry()
+    disabled_hard_constraints = set(
+        runtime_config.get("_disabled_hard_constraints_for_diagnostics", [])
+    )
+    if disabled_hard_constraints:
+        registry.hard = [
+            constraint
+            for constraint in registry.hard
+            if constraint.__name__ not in disabled_hard_constraints
+        ]
     registry.apply_hard(ctx)
     registry.apply_soft(ctx)
     registry.apply_mixed(ctx)
