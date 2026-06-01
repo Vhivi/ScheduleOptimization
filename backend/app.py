@@ -430,7 +430,7 @@ def _inject_manual_status_entries(runtime_config, status_entries):
             target["restrictions"].append({"date": day_str, "type": restriction_type})
     return injected_config, warnings
 
-def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None):
+def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None, blocking_reasons=None):
     suggestions = []
     for warning in warnings:
         suggestion = {
@@ -443,15 +443,24 @@ def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None)
         }
         suggestions.append(suggestion)
 
-    if unsat_reason is not None and not suggestions and manual_entries:
+    if suggestions:
+        return suggestions
+
+    actionable_reasons = [
+        reason
+        for reason in (blocking_reasons or [])
+        if reason.get("code") not in {"GLOBAL_UNSAT", "PREVALIDATION_WARNINGS_PRESENT"}
+    ]
+    if unsat_reason is not None and manual_entries and actionable_reasons:
         first = manual_entries[0]
+        first_reason = actionable_reasons[0]
         suggestions.append(
             {
                 "agent": first.get("agent"),
                 "date": first.get("date"),
                 "slot": first.get("slot", "day"),
-                "reason_code": "GLOBAL_UNSAT",
-                "message": unsat_reason,
+                "reason_code": first_reason.get("code", "GLOBAL_UNSAT"),
+                "message": first_reason.get("message", unsat_reason),
                 "proposals": [{"action": "clear_cell"}],
             }
         )
@@ -462,17 +471,6 @@ def _build_blocking_reasons_from_context(manual_entries, warnings, unsat_reason)
     reasons = [
         {"code": "GLOBAL_UNSAT", "message": unsat_reason, "count": 1}
     ]
-    if manual_entries:
-        reasons.append(
-            {
-                "code": "MANUAL_ASSIGNMENTS_CONFLICT_POSSIBLE",
-                "message": (
-                    "Certaines affectations manuelles peuvent entrer en conflit "
-                    "avec les contraintes globales."
-                ),
-                "count": len(manual_entries),
-            }
-        )
     if warnings:
         reasons.append(
             {
@@ -729,6 +727,129 @@ def _diagnose_staffing_capacity_conflicts(
     return reasons
 
 
+RELAXED_CONSTRAINT_DIAGNOSTICS = [
+    {
+        "constraint": "limit_one_shift_per_day",
+        "label": "une seule vacation par agent et par jour",
+        "detail": "Un agent aurait probablement besoin de couvrir plusieurs vacations le même jour.",
+    },
+    {
+        "constraint": "require_at_least_one_shift_per_agent",
+        "label": "au moins une vacation par agent",
+        "detail": "Tous les agents ne peuvent peut-être pas recevoir au moins une vacation sur la période.",
+    },
+    {
+        "constraint": "cover_daily_shifts",
+        "label": "couverture quotidienne des besoins",
+        "detail": "Le nombre d'agents requis par date/vacation semble incompatible avec les disponibilités restantes.",
+    },
+    {
+        "constraint": "enforce_full_weekend_composition",
+        "label": "week-end complet",
+        "detail": "La règle samedi/dimanche travaillés ensemble semble bloquer une combinaison possible.",
+    },
+    {
+        "constraint": "enforce_min_free_weekends_per_horizon",
+        "label": "minimum de week-ends libres",
+        "detail": "Le minimum de week-ends libres demandé semble trop contraignant sur cette période.",
+    },
+    {
+        "constraint": "avoid_day_after_night",
+        "label": "repos après une Nuit",
+        "detail": "Une affectation le lendemain d'une Nuit semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "limit_cdp_per_week",
+        "label": "limite CDP hebdomadaire",
+        "detail": "La limite de vacations CDP par semaine semble bloquer la couverture.",
+    },
+    {
+        "constraint": "block_unavailable_days",
+        "label": "indisponibilités",
+        "detail": "Relâcher les indisponibilités rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "block_training_days",
+        "label": "formations",
+        "detail": "Relâcher les jours de formation rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "block_leave_and_compute_paid_hours",
+        "label": "congés",
+        "detail": "Relâcher les congés rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "limit_day_shifts_per_week",
+        "label": "limite de 3 vacations Jour par semaine",
+        "detail": "La limite hebdomadaire des vacations Jour semble trop contraignante pour couvrir la période.",
+    },
+    {
+        "constraint": "block_night_before_unavailable",
+        "label": "Nuit avant indisponibilité",
+        "detail": "Une Nuit avant une indisponibilité semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "block_night_before_training",
+        "label": "Nuit avant formation",
+        "detail": "Une Nuit avant une formation semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "limit_pre_post_training",
+        "label": "veille/lendemain de formation",
+        "detail": "Les règles autour des formations semblent empêcher une solution.",
+    },
+    {
+        "constraint": "block_exclusion_days",
+        "label": "jours d'exclusion",
+        "detail": "Relâcher les jours d'exclusion rendrait le planning faisable.",
+    },
+    {
+        "constraint": "block_monday_night_after_weekend_nights",
+        "label": "Nuit du lundi après nuits de week-end",
+        "detail": "La règle de Nuit du lundi après nuits de week-end semble bloquer une solution.",
+    },
+    {
+        "constraint": "apply_agent_restrictions",
+        "label": "restrictions agent",
+        "detail": "Relâcher les restrictions agent rendrait le planning faisable.",
+    },
+]
+
+
+def _probe_relaxed_hard_constraints(planning_payload, runtime_config):
+    reasons = []
+
+    for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS:
+        probe_config = deepcopy(runtime_config)
+        probe_config["_disabled_hard_constraints_for_diagnostics"] = [diagnostic["constraint"]]
+        solver_config = probe_config.setdefault("solver", {})
+        try:
+            current_timeout = int(solver_config.get("max_time_seconds", 3))
+        except (TypeError, ValueError):
+            current_timeout = 3
+        solver_config["max_time_seconds"] = max(1, min(current_timeout, 3))
+
+        _, probe_status = _build_planning_payload(
+            payload=planning_payload,
+            runtime_config=probe_config,
+        )
+        if probe_status == 200:
+            reasons.append(
+                {
+                    "code": "RELAXED_CONSTRAINT_MAKES_FEASIBLE",
+                    "message": (
+                        "Une solution devient possible si la contrainte "
+                        f"« {diagnostic['label']} » est relâchée. "
+                        "C'est donc une piste de blocage prioritaire."
+                    ),
+                    "count": 1,
+                    "details": [diagnostic["detail"]],
+                }
+            )
+
+    return reasons[:5]
+
+
 def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
     reasons = []
     by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
@@ -877,15 +998,44 @@ def optimize_existing_planning_route():
     manual_entries = payload.get("manual_entries", [])
     if status_code != 200:
         unsat_reason = result.get("info") or result.get("error") or "No solution found."
-        suggestions = _build_suggestions_from_context(
-            manual_entries=manual_entries,
-            warnings=warnings,
-            unsat_reason=unsat_reason,
-        )
         blocking_reasons = _build_blocking_reasons_from_context(
             manual_entries=manual_entries,
             warnings=warnings,
             unsat_reason=unsat_reason,
+        )
+        diagnostic_reasons = _diagnose_manual_entry_conflicts(
+            manual_entries=manual_entries,
+            runtime_config=effective_runtime_config,
+        )
+        if diagnostic_reasons:
+            blocking_reasons.extend(diagnostic_reasons)
+        else:
+            relaxed_constraint_reasons = _probe_relaxed_hard_constraints(
+                planning_payload={
+                    "start_date": payload["start_date"],
+                    "end_date": payload["end_date"],
+                    "initial_shifts": initial_shifts,
+                },
+                runtime_config=effective_runtime_config,
+            )
+            if relaxed_constraint_reasons:
+                blocking_reasons.extend(relaxed_constraint_reasons)
+            elif manual_entries:
+                blocking_reasons.append(
+                    {
+                        "code": "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN",
+                        "message": (
+                            "Aucune contradiction directe n'a été détectée sur les cellules manuelles. "
+                            "Le blocage vient probablement d'une combinaison de contraintes globales."
+                        ),
+                        "count": len(manual_entries),
+                    }
+                )
+        suggestions = _build_suggestions_from_context(
+            manual_entries=manual_entries,
+            warnings=warnings,
+            unsat_reason=unsat_reason,
+            blocking_reasons=blocking_reasons,
         )
         impacted_cells = [
             {
