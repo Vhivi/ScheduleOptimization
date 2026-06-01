@@ -28,6 +28,10 @@ def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: li
     return sum(ctx.planning[(agent_name, day, vacation)] for vacation in relevant)
 
 
+def _leave_paid_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
+    return ctx.leave_paid_hours_by_day.get((agent_name, day), 0)
+
+
 def _working_vacations(ctx: SolverContext) -> list[str]:
     """
     Returns a list of working vacations, excluding the CDP shift if it is present in the context.
@@ -79,7 +83,7 @@ def balance_paid_hours(ctx: SolverContext) -> None:
                     ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
                     for vacation in ctx.vacations
                 )
-                + ctx.leave_paid_hours_by_day[(agent_name, day)]
+                + _leave_paid_hours(ctx, agent_name, day)
                 for day in ctx.week_schedule
             )
         )
@@ -118,7 +122,7 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
                         ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
                         for vacation in ctx.vacations
                     )
-                    + ctx.leave_paid_hours_by_day[(agent_name, day)]
+                    + _leave_paid_hours(ctx, agent_name, day)
                     for day in period
                 )
             )
