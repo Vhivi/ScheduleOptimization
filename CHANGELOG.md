@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-01
+
+### Fixed
+
+- Fixed weekly worked-hours caps so they count all configured worked vacations, including `Nuit`.
+- Added `solver.max_weekly_hours` as a configurable weekly cap with default `36h`.
+
 ## [0.9.2] - 2026-05-09
 
 ### Security
