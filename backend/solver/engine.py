@@ -34,8 +34,9 @@ def _load_solver_settings(ctx: SolverContext) -> None:
 
     This function sets the following solver context attributes from the config:
     - max_time_seconds: the maximum time in seconds the solver is allowed to run.
-    - global_max_gap: the maximum allowed gap in hours * 10 between two consecutive shifts.
-    - period_max_gap: the maximum allowed gap in hours * 10 between two consecutive shifts in the same period.
+    - global_max_gap: the maximum allowed balance gap in hours * 10.
+    - period_max_gap: the maximum allowed balance gap in hours * 10 for a period.
+    - max_weekly_hours: the maximum worked hours per agent per week, configured in hours.
     - relative_gap_limit: the maximum allowed relative gap between two consecutive shifts.
     - num_search_workers: the number of search workers to use.
     - optimize_period_balance: whether to optimize the period balance.
@@ -49,6 +50,7 @@ def _load_solver_settings(ctx: SolverContext) -> None:
     ctx.max_time_seconds = int(solver_config.get("max_time_seconds", 600))
     ctx.global_max_gap = int(solver_config.get("global_max_gap", 240))
     ctx.period_max_gap = int(solver_config.get("period_max_gap", 240))
+    ctx.max_weekly_hours = int(float(solver_config.get("max_weekly_hours", 36)) * 10)
     ctx.relative_gap_limit = float(solver_config.get("relative_gap_limit", 0.10))
     ctx.num_search_workers = int(solver_config.get("num_search_workers", 0))
     ctx.optimize_period_balance = bool(solver_config.get("optimize_period_balance", False))

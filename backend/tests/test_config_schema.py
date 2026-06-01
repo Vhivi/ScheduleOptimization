@@ -74,3 +74,30 @@ def test_schema_rejects_negative_staffing_requirement():
     errors = list(validator.iter_errors(example))
 
     assert errors != []
+
+
+def test_schema_accepts_max_weekly_hours():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["solver"]["max_weekly_hours"] = 42
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors == []
+
+
+@pytest.mark.parametrize("max_weekly_hours", [0, -1])
+def test_schema_rejects_non_positive_max_weekly_hours(max_weekly_hours):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["solver"]["max_weekly_hours"] = max_weekly_hours
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors != []
+    assert any(
+        "max_weekly_hours" in "/".join(str(part) for part in error.path)
+        for error in errors
+    )

@@ -36,8 +36,9 @@ class SolverContext:
         conge_duration (int): Duration in minutes for leave/vacation shifts. Default: 0.
         
         max_time_seconds (int): Maximum solver runtime in seconds. Default: 600.
-        global_max_gap (int): Global maximum optimality gap in hours * 10. Default: 240.
-        period_max_gap (int): Period-specific maximum optimality gap in hours * 10. Default: 240.
+        global_max_gap (int): Global maximum balance gap in hours * 10. Default: 240.
+        period_max_gap (int): Period-specific balance gap in hours * 10. Default: 240.
+        max_weekly_hours (int): Maximum worked hours per agent per week in hours * 10. Default: 360.
         relative_gap_limit (float): Relative optimality gap limit as a fraction. Default: 0.10.
         num_search_workers (int): Number of parallel search workers for the solver. Default: 0.
         optimize_period_balance (bool): Flag to enable period balancing optimization. Default: False.
@@ -69,6 +70,7 @@ class SolverContext:
     max_time_seconds: int = 600
     global_max_gap: int = 240
     period_max_gap: int = 240
+    max_weekly_hours: int = 360
     relative_gap_limit: float = 0.10
     num_search_workers: int = 0
     optimize_period_balance: bool = False
