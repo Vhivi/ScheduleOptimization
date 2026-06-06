@@ -653,22 +653,52 @@ def _build_manual_shift_indexes(manual_entries):
     return manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
 
 
-def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config):
+def _agent_cover_blockers(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config, catalog):
+    blockers = []
     agent_name = agent["name"]
     locked_shifts = manual_shifts_by_agent_day.get((agent_name, iso_date), [])
-    if locked_shifts:
-        return vacation in locked_shifts
+    if locked_shifts and vacation not in locked_shifts:
+        blockers.append("existing_assignment")
 
     if _agent_has_status_on_day(agent, iso_date):
-        return False
+        blockers.append("status")
     restricted = set(agent.get("restriction") or [])
     if vacation in restricted:
-        return False
-    catalog = build_vacation_catalog(runtime_config)
+        blockers.append("restriction")
     metadata = catalog["assignment_metadata"].get(vacation)
     if metadata and metadata.parent in restricted:
-        return False
-    return True
+        blockers.append("parent_restriction")
+    if metadata and metadata.is_half and is_valid_date(iso_date):
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        day_token = day_dt.strftime("%d-%m")
+        if day_dt.weekday() >= 5:
+            blockers.append("half_weekend")
+        if day_token in set(runtime_config.get("holidays", [])):
+            blockers.append("half_holiday")
+    return blockers
+
+
+def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config):
+    catalog = build_vacation_catalog(runtime_config)
+    return not _agent_cover_blockers(
+        agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config, catalog
+    )
+
+
+def _format_blocker_summary(blocker_counts):
+    labels = {
+        "existing_assignment": "affectation existante différente",
+        "status": "statut bloquant",
+        "restriction": "restriction directe",
+        "parent_restriction": "restriction parent",
+        "half_weekend": "demi-vacation interdite week-end",
+        "half_holiday": "demi-vacation interdite jour férié",
+    }
+    return [
+        f"{labels.get(code, code)}: {count}"
+        for code, count in sorted(blocker_counts.items())
+        if count
+    ]
 
 def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config):
     reasons = []
@@ -752,8 +782,8 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
 
     reason_messages = {
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
-        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle est posée le lendemain d'une Nuit manuelle.",
-        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une Nuit manuelle est posée avant une indisponibilité ou une formation.",
+        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle est posée le lendemain d'une affectation nécessitant un repos.",
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation nécessitant un repos est posée avant une indisponibilité ou une formation.",
         "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": "Une vacation manuelle ne respecte pas les règles de veille/lendemain de formation.",
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",
     }
@@ -784,6 +814,8 @@ def _diagnose_staffing_capacity_conflicts(
     overstaffed_manual_shift_days = 0
     understaffed_details = []
     overstaffed_details = []
+    understaffed_segments = []
+    overstaffed_segments = []
 
     for iso_date in sorted(dates_to_check):
         day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
@@ -808,27 +840,77 @@ def _diagnose_staffing_capacity_conflicts(
                         f"{iso_date} / {vacation} / {segment}: "
                         f"{manual_count} manuel(s) pour {required_agents} requis"
                     )
+                    overstaffed_segments.append(
+                        {
+                            "date": iso_date,
+                            "vacation": vacation,
+                            "segment": segment,
+                            "required_agents": required_agents,
+                            "manual_count": manual_count,
+                            "actions": ["clear_cell", "reduce_existing_assignment_count"],
+                        }
+                    )
                     continue
 
-                eligible_count = sum(
-                    1
-                    for agent in agents
-                    if any(
-                        _agent_can_cover_shift(
+                eligible_count = 0
+                blocker_counts = {}
+                sample_blocked_agents = []
+                for agent in agents:
+                    assignment_blockers = [
+                        _agent_cover_blockers(
                             agent,
                             iso_date,
                             assignment,
                             manual_shifts_by_agent_day,
                             runtime_config,
+                            catalog,
                         )
                         for assignment in covering_assignments
+                    ]
+                    if any(not blockers for blockers in assignment_blockers):
+                        eligible_count += 1
+                        continue
+                    flattened_blockers = sorted(
+                        {blocker for blockers in assignment_blockers for blocker in blockers}
                     )
-                )
+                    for blocker in flattened_blockers:
+                        blocker_counts[blocker] = blocker_counts.get(blocker, 0) + 1
+                    if len(sample_blocked_agents) < 5:
+                        sample_blocked_agents.append(
+                            {
+                                "agent": agent.get("name"),
+                                "reasons": flattened_blockers,
+                            }
+                        )
                 if eligible_count < required_agents:
                     understaffed_shift_days += 1
+                    blocker_summary = _format_blocker_summary(blocker_counts)
+                    actions = [
+                        "free_agent",
+                        "increase_max_weekly_hours",
+                        "reduce_staffing_requirement",
+                    ]
+                    if is_weekend or day_token in holidays:
+                        actions.append("use_full_vacation")
+                    else:
+                        actions.append("allow_or_assign_half_vacations")
                     understaffed_details.append(
                         f"{iso_date} / {vacation} / {segment}: "
-                        f"{eligible_count} agent(s) possible(s) pour {required_agents} requis"
+                        f"{eligible_count} agent(s) possible(s) pour {required_agents} requis. "
+                        f"Blocages: {', '.join(blocker_summary) if blocker_summary else 'non identifiés'}. "
+                        f"Actions possibles: {', '.join(actions)}."
+                    )
+                    understaffed_segments.append(
+                        {
+                            "date": iso_date,
+                            "vacation": vacation,
+                            "segment": segment,
+                            "required_agents": required_agents,
+                            "eligible_agents": eligible_count,
+                            "blockers": blocker_counts,
+                            "sample_blocked_agents": sample_blocked_agents,
+                            "actions": actions,
+                        }
                     )
 
     if overstaffed_manual_shift_days:
@@ -841,6 +923,7 @@ def _diagnose_staffing_capacity_conflicts(
                 ),
                 "count": overstaffed_manual_shift_days,
                 "details": overstaffed_details[:5],
+                "segments": overstaffed_segments[:5],
             }
         )
     if understaffed_shift_days:
@@ -853,6 +936,7 @@ def _diagnose_staffing_capacity_conflicts(
                 ),
                 "count": understaffed_shift_days,
                 "details": understaffed_details[:5],
+                "segments": understaffed_segments[:5],
             }
         )
 
@@ -887,8 +971,8 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
     },
     {
         "constraint": "avoid_day_after_night",
-        "label": "repos après une Nuit",
-        "detail": "Une affectation le lendemain d'une Nuit semble nécessaire pour trouver une solution.",
+        "label": "repos après affectation de nuit",
+        "detail": "Une affectation le lendemain d'une vacation nécessitant un repos semble nécessaire pour trouver une solution.",
     },
     {
         "constraint": "limit_cdp_per_week",
@@ -912,13 +996,13 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
     },
     {
         "constraint": "block_night_before_unavailable",
-        "label": "Nuit avant indisponibilité",
-        "detail": "Une Nuit avant une indisponibilité semble nécessaire pour trouver une solution.",
+        "label": "affectation repos avant indisponibilité",
+        "detail": "Une affectation nécessitant un repos avant une indisponibilité semble nécessaire pour trouver une solution.",
     },
     {
         "constraint": "block_night_before_training",
-        "label": "Nuit avant formation",
-        "detail": "Une Nuit avant une formation semble nécessaire pour trouver une solution.",
+        "label": "affectation repos avant formation",
+        "detail": "Une affectation nécessitant un repos avant une formation semble nécessaire pour trouver une solution.",
     },
     {
         "constraint": "limit_pre_post_training",
@@ -932,8 +1016,8 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
     },
     {
         "constraint": "block_monday_night_after_weekend_nights",
-        "label": "Nuit du lundi après nuits de week-end",
-        "detail": "La règle de Nuit du lundi après nuits de week-end semble bloquer une solution.",
+        "label": "affectation de nuit du lundi après week-end",
+        "detail": "La règle d'affectation de nuit du lundi après des affectations de nuit de week-end semble bloquer une solution.",
     },
     {
         "constraint": "apply_agent_restrictions",
