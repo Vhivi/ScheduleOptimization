@@ -20,8 +20,13 @@
         <tbody>
           <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
             <td>{{ agent }}</td>
-            <td v-for="day in monthDays" :key="day" :style="{ backgroundColor: getColumnColor(agent, day) }">
-              {{ getVacationForAgent(agent, day) || '//' }}
+            <td
+              v-for="day in monthDays"
+              :key="day"
+              :style="{ backgroundColor: getColumnColor(agent, day) }"
+              :title="getCellTitle(agent, day)"
+            >
+              {{ getDisplayValueForAgent(agent, day) || '//' }}
             </td>
             <td>{{ calculateNumberShifts(agent, monthDays) }}</td>
             <td>{{ calculateTotalHours(agent, monthDays) }} h</td>
@@ -73,6 +78,11 @@ export default {
       default: () => ({})
     },
     restrictionDurations: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    assignmentLabels: {
       type: Object,
       required: false,
       default: () => ({})
@@ -231,6 +241,30 @@ export default {
       }
       return this.planningLookup?.[agent]?.[day] || null;
     },
+    getWorkedAssignmentForAgent(agent, day) {
+      return this.planningLookup?.[agent]?.[day] || null;
+    },
+    getAssignmentLabel(assignment) {
+      return this.assignmentLabels?.[assignment] || assignment;
+    },
+    getDisplayValueForAgent(agent, day) {
+      const statusOrVacation = this.getVacationForAgent(agent, day);
+      if (!statusOrVacation) {
+        return null;
+      }
+      const workedAssignment = this.getWorkedAssignmentForAgent(agent, day);
+      if (workedAssignment && statusOrVacation === workedAssignment) {
+        return this.getAssignmentLabel(workedAssignment);
+      }
+      return statusOrVacation;
+    },
+    getCellTitle(agent, day) {
+      const workedAssignment = this.getWorkedAssignmentForAgent(agent, day);
+      if (workedAssignment && this.assignmentLabels?.[workedAssignment]) {
+        return workedAssignment;
+      }
+      return this.getVacationForAgent(agent, day) || '';
+    },
     isVacationDay(agent, day) {
       const vacations = this.dayOff?.[agent] || [];
       const dayDate = this.resolveDayDate(day);
@@ -325,12 +359,12 @@ export default {
         if (restriction && this.restrictionDurations?.[restriction.type]) {
           return total + this.restrictionDurations[restriction.type];
         }
-        const vacation = this.getVacationForAgent(agent, day);
+        const vacation = this.getWorkedAssignmentForAgent(agent, day);
         return total + (this.vacationDurations[vacation] || 0);
       }, 0);
     },
     calculateNumberShifts(agent, days) {
-      return days.filter((day) => this.getVacationForAgent(agent, day)).length;
+      return days.filter((day) => this.getWorkedAssignmentForAgent(agent, day)).length;
     }
   }
 };

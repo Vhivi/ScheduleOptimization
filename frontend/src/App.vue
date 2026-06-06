@@ -172,7 +172,7 @@
                 <select v-model="selectedShifts[agent.name][day]">
                   <option value="">-</option>
                   <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
-                    {{ vacation }}
+                    {{ getAssignmentLabel(vacation) }}
                   </option>
                 </select>
               </td>
@@ -204,7 +204,7 @@
                   <select v-model="manualSelectedShifts[agent.name][day]">
                     <option value="">-</option>
                     <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
-                      {{ vacation }}
+                      {{ getAssignmentLabel(vacation) }}
                     </option>
                     <option value="status:unavailable">Indisponible</option>
                     <option value="status:training">Formation</option>
@@ -279,6 +279,23 @@
         </ul>
       </div>
 
+      <div v-if="isExistingOptimizationMode && optimizationModifiedAssignments.length" class="info-card">
+        <span class="info-icon">i</span>
+        <div>
+          <strong>Affectations existantes modifiées</strong>
+          <ul class="modified-list">
+            <li
+              v-for="(modification, index) in optimizationModifiedAssignments"
+              :key="`mod_${index}`"
+            >
+              {{ modification.agent }} - {{ modification.date || modification.day }} :
+              {{ getAssignmentLabel(modification.initial_value) }} -> {{ getAssignmentLabel(modification.final_value) || 'cellule vidée' }}
+              ({{ formatModificationType(modification.change_type) }})
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
           {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
@@ -301,7 +318,8 @@
           :dayOff="dayOffFromConfig"
           :training="trainingFromConfig"
           :restrictions="restrictionsFromConfig"
-          :restrictionsDurations="restrictionDurationsFromConfig"
+          :restrictionDurations="restrictionDurationsFromConfig"
+          :assignmentLabels="assignmentLabels"
           :planningStartDate="startDate"
         />
       </div>
@@ -370,6 +388,7 @@ export default {
       endDate: null,
       planningResult: null,
       vacationDurations: null,
+      assignmentLabels: {},
       weekSchedule: [],
       vacationColors: {
         Jour: '#75FA79',
@@ -396,6 +415,7 @@ export default {
       optimizationSuggestions: [],
       optimizationBlockingReasons: [],
       optimizationImpactedCells: [],
+      optimizationModifiedAssignments: [],
       optimizationMeta: null,
       optimizationStatus: null,
       isLoading: false,
@@ -509,6 +529,7 @@ export default {
     resetPlanningData() {
       this.planningResult = null;
       this.vacationDurations = null;
+      this.assignmentLabels = {};
       this.weekSchedule = [];
       this.holidaysFromConfig = [];
       this.unavailableFromConfig = null;
@@ -522,6 +543,7 @@ export default {
       this.optimizationStatus = null;
       this.optimizationBlockingReasons = [];
       this.optimizationImpactedCells = [];
+      this.optimizationModifiedAssignments = [];
     },
     async applyConfigToState(config) {
       this.isHydratingConfig = true;
@@ -701,6 +723,18 @@ export default {
       });
       this.assignableVacationsData = this.buildAssignableVacations(this.configData);
     },
+    getAssignmentLabel(assignment) {
+      if (!assignment) return '';
+      return this.assignmentLabels?.[assignment] || assignment;
+    },
+    formatModificationType(changeType) {
+      const labels = {
+        changed_to_full: 'remplacée par vacation complète',
+        changed_to_half: 'remplacée par demi-vacation',
+        cleared: 'vidée'
+      };
+      return labels[changeType] || changeType || 'modifiée';
+    },
     setVacationDuration(vacation, value) {
       const parsed = Number(value);
       this.configData.vacation_durations[vacation] = Number.isFinite(parsed) ? parsed : 1;
@@ -858,6 +892,7 @@ export default {
         const response = await apiPost(endpoint, payload);
         this.planningResult = response.data.planning;
         this.vacationDurations = response.data.vacation_durations;
+        this.assignmentLabels = response.data.assignment_labels || {};
         this.vacationColors = { ...this.vacationColors, ...(response.data.vacation_colors || {}) };
         this.assignableVacationsData = response.data.assignable_vacations || this.assignableVacationsData;
         this.weekSchedule = response.data.week_schedule;
@@ -871,6 +906,7 @@ export default {
         this.optimizationSuggestions = response.data.suggestions || [];
         this.optimizationBlockingReasons = response.data.blocking_reasons || [];
         this.optimizationImpactedCells = response.data.impacted_cells || [];
+        this.optimizationModifiedAssignments = response.data.modified_existing_assignments || [];
         this.optimizationMeta = response.data.meta || null;
         this.optimizationStatus = response.data.status || null;
       } catch (error) {
@@ -881,6 +917,7 @@ export default {
           this.optimizationSuggestions = responseData.suggestions || [];
           this.optimizationBlockingReasons = responseData.blocking_reasons || [];
           this.optimizationImpactedCells = responseData.impacted_cells || [];
+          this.optimizationModifiedAssignments = responseData.modified_existing_assignments || [];
           this.optimizationMeta = responseData.meta || null;
           this.infoMessage = responseData.error || "Aucune solution trouvée. Consultez les suggestions.";
         } else if (responseData?.info) {
@@ -1112,6 +1149,11 @@ button:disabled {
   color: #8a0000;
   font-size: 14px;
   margin-top: 4px;
+}
+
+.modified-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
 }
 
 .info-card {
