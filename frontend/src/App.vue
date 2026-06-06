@@ -171,7 +171,7 @@
               >
                 <select v-model="selectedShifts[agent.name][day]">
                   <option value="">-</option>
-                  <option v-for="vacation in vacations" :key="vacation" :value="vacation">
+                  <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
                     {{ vacation }}
                   </option>
                 </select>
@@ -203,7 +203,7 @@
                 >
                   <select v-model="manualSelectedShifts[agent.name][day]">
                     <option value="">-</option>
-                    <option v-for="vacation in vacations" :key="vacation" :value="vacation">
+                    <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
                       {{ vacation }}
                     </option>
                     <option value="status:unavailable">Indisponible</option>
@@ -388,6 +388,7 @@ export default {
       previousWeekSchedule: [],
       agents: [],
       vacations: ['Jour', 'Nuit', 'CDP'],
+      assignableVacationsData: ['Jour', 'Nuit', 'CDP'],
       selectedShifts: {},
       manualWeekSchedule: [],
       manualSelectedShifts: {},
@@ -415,6 +416,12 @@ export default {
           Jour: 1,
           Nuit: 1,
           CDP: 1
+        },
+        half_vacations: {},
+        vacation_colors: {
+          Jour: '#75FA79',
+          Nuit: '#9175FA',
+          CDP: '#A59384'
         },
         holidays: [],
         solver: {}
@@ -473,12 +480,31 @@ export default {
     },
     restrictionTypesDurations() {
       return this.restrictionDurationsFromConfig || this.configData?.restriction_types_durations || {};
+    },
+    assignableVacations() {
+      return this.assignableVacationsData?.length ? this.assignableVacationsData : this.vacations;
     }
   },
   methods: {
     resetMessages() {
       this.errorMessage = null;
       this.infoMessage = null;
+    },
+
+    buildAssignableVacations(config) {
+      const assignable = [...(config?.vacations || [])];
+      const seen = new Set(assignable);
+      Object.entries(config?.half_vacations || {}).forEach(([parent, halfConfig]) => {
+        if (!seen.has(parent) || halfConfig?.enabled === false) return;
+        (halfConfig.segments || []).forEach((segment) => {
+          const name = segment?.name;
+          if (name && !seen.has(name)) {
+            seen.add(name);
+            assignable.push(name);
+          }
+        });
+      });
+      return assignable;
     },
     resetPlanningData() {
       this.planningResult = null;
@@ -507,6 +533,8 @@ export default {
       normalized.holidays = Array.isArray(normalized.holidays) ? normalized.holidays : [];
       normalized.solver = normalized.solver || {};
       normalized.restriction_types_durations = normalized.restriction_types_durations || {};
+      normalized.half_vacations = normalized.half_vacations || {};
+      normalized.vacation_colors = normalized.vacation_colors || {};
 
       normalized.vacations = normalized.vacations.map((value) => String(value).trim()).filter(Boolean);
       normalized.vacations.forEach((vacation) => {
@@ -540,6 +568,8 @@ export default {
       this.vacationsInput = normalized.vacations.join(', ');
       this.holidaysInput = normalized.holidays.join(', ');
       this.vacations = [...normalized.vacations];
+      this.assignableVacationsData = this.buildAssignableVacations(normalized);
+      this.vacationColors = { ...this.vacationColors, ...normalized.vacation_colors };
       this.agents = [...normalized.agents];
       this.restrictionDurationsFromConfig = normalized.restriction_types_durations;
       await this.$nextTick();
@@ -578,6 +608,8 @@ export default {
 
       payload.vacation_durations = payload.vacation_durations || {};
       payload.staffing_requirements = payload.staffing_requirements || {};
+      payload.half_vacations = payload.half_vacations || {};
+      payload.vacation_colors = payload.vacation_colors || {};
 
       payload.vacations.forEach((vacation) => {
         const duration = Number(payload.vacation_durations[vacation]);
@@ -663,7 +695,11 @@ export default {
         if (this.configData.staffing_requirements[vacation] == null) {
           this.configData.staffing_requirements[vacation] = 1;
         }
+        if (this.configData.vacation_colors?.[vacation] == null) {
+          this.configData.vacation_colors[vacation] = this.vacationColors[vacation] || '#ffffff';
+        }
       });
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
     },
     setVacationDuration(vacation, value) {
       const parsed = Number(value);
@@ -723,6 +759,7 @@ export default {
         });
         this.previousWeekSchedule = response.data.previous_week_schedule;
         this.agents = response.data.agents || [];
+        this.assignableVacationsData = response.data.assignable_vacations || this.assignableVacationsData;
         this.selectedShifts = {};
         this.agents.forEach((agent) => {
           if (!agent.name) {
@@ -821,6 +858,8 @@ export default {
         const response = await apiPost(endpoint, payload);
         this.planningResult = response.data.planning;
         this.vacationDurations = response.data.vacation_durations;
+        this.vacationColors = { ...this.vacationColors, ...(response.data.vacation_colors || {}) };
+        this.assignableVacationsData = response.data.assignable_vacations || this.assignableVacationsData;
         this.weekSchedule = response.data.week_schedule;
         this.holidaysFromConfig = response.data.holidays;
         this.unavailableFromConfig = response.data.unavailable;
