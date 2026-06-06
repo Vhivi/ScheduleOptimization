@@ -3,33 +3,57 @@
     {
       "name": "Agent1",
       "preferences": {
-        "preferred": ["Jour", "CDP"],
-        "avoid": ["Nuit"]
+        "preferred": [
+          "Jour",
+          "CDP"
+        ],
+        "avoid": [
+          "Nuit"
+        ]
       },
       "restriction": [],
-      "unavailable": ["15-01-2026"],
-      "training": ["20-01-2026"],
+      "unavailable": [
+        "15-01-2026"
+      ],
+      "training": [
+        "20-01-2026"
+      ],
       "exclusion": [],
       "vacations": [
-        { "start": "02-03-2026", "end": "08-03-2026" }
+        {
+          "start": "02-03-2026",
+          "end": "08-03-2026"
+        }
       ]
     },
     {
       "name": "Agent2",
       "preferences": {
-        "preferred": ["Nuit"],
-        "avoid": ["Jour", "CDP"]
+        "preferred": [
+          "Nuit"
+        ],
+        "avoid": [
+          "Jour",
+          "CDP"
+        ]
       },
-      "restriction": ["Jour"],
+      "restriction": [
+        "Jour"
+      ],
       "unavailable": [],
       "training": [],
-      "exclusion": ["01-01-2026"],
+      "exclusion": [
+        "01-01-2026"
+      ],
       "vacations": []
     },
     {
       "name": "Agent3",
       "preferences": {
-        "preferred": ["Jour", "CDP"],
+        "preferred": [
+          "Jour",
+          "CDP"
+        ],
         "avoid": []
       },
       "restriction": [],
@@ -37,11 +61,18 @@
       "training": [],
       "exclusion": [],
       "vacations": [
-        { "start": "10-08-2026", "end": "23-08-2026" }
+        {
+          "start": "10-08-2026",
+          "end": "23-08-2026"
+        }
       ]
     }
   ],
-  "vacations": ["Jour", "Nuit", "CDP"],
+  "vacations": [
+    "Jour",
+    "Nuit",
+    "CDP"
+  ],
   "staffing_requirements": {
     "Jour": 1,
     "Nuit": 1,
@@ -78,5 +109,52 @@
     "optimize_period_balance": false,
     "period_balance_weight": 2,
     "min_free_weekends_per_horizon": 3
+  },
+  "half_vacations": {
+    "Jour": {
+      "enabled": true,
+      "penalty": 500,
+      "segments": [
+        {
+          "name": "Jour matin",
+          "label": "J matin",
+          "duration": 6
+        },
+        {
+          "name": "Jour après-midi",
+          "label": "J aprem",
+          "duration": 6
+        }
+      ]
+    },
+    "Nuit": {
+      "enabled": true,
+      "penalty": 700,
+      "segments": [
+        {
+          "name": "Nuit début",
+          "label": "N début",
+          "duration": 6,
+          "is_night": true,
+          "requires_next_day_rest": true
+        },
+        {
+          "name": "Nuit fin",
+          "label": "N fin",
+          "duration": 6,
+          "is_night": true,
+          "requires_next_day_rest": true
+        }
+      ]
+    }
+  },
+  "vacation_colors": {
+    "Jour": "#75FA79",
+    "Jour matin": "#B9F6CA",
+    "Jour après-midi": "#00C853",
+    "Nuit": "#9175FA",
+    "Nuit début": "#B39DDB",
+    "Nuit fin": "#673AB7",
+    "CDP": "#FFD966"
   }
 }
