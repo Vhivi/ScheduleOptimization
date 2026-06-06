@@ -169,6 +169,7 @@ def generate_planning(
     initial_shifts,
     runtime_config,
     planning_start_date=None,
+    existing_assignments=None,
 ):
     """
     Generates a planning based on the given parameters.
@@ -202,6 +203,7 @@ def generate_planning(
         day_off=dayOff,
         previous_week_schedule=previous_week_schedule,
         initial_shifts=initial_shifts,
+        existing_assignments=existing_assignments or {},
         holidays=runtime_config["holidays"],
         planning_start_date=planning_start_date,
     )
