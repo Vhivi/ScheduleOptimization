@@ -79,6 +79,13 @@ def validate_runtime_config(candidate_config):
                         "message": f"Unknown parent vacation '{parent}'.",
                     }
                 )
+            elif parent == "CDP":
+                errors.append(
+                    {
+                        "path": "half_vacations/CDP",
+                        "message": "CDP ne peut pas être découpé en demi-vacations.",
+                    }
+                )
 
     return errors
 
