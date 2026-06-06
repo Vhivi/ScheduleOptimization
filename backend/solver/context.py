@@ -57,6 +57,7 @@ class SolverContext:
     day_off: dict
     previous_week_schedule: List[str]
     initial_shifts: dict
+    existing_assignments: dict
     holidays: List[str]
     planning_start_date: datetime | None = None
 
