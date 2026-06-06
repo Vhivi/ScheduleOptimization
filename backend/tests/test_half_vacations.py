@@ -1,5 +1,7 @@
+from copy import deepcopy
+
 from app import get_week_schedule, validate_runtime_config
-from solver.catalog import build_vacation_catalog
+from solver.catalog import assignment_matches_choice, build_vacation_catalog
 from solver.engine import generate_planning
 
 
@@ -124,3 +126,155 @@ def test_half_vacations_are_forbidden_on_weekends():
     )
 
     assert "info" in result
+
+
+def test_solver_chooses_half_vacations_when_full_shift_exceeds_weekly_hours():
+    config = _runtime_config()
+    config["solver"]["max_weekly_hours"] = 6
+    agents = config["agents"]
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-05")
+
+    result = generate_planning(
+        agents=agents,
+        vacations=config["vacations"],
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in agents},
+        previous_week_schedule=[],
+        initial_shifts={},
+        runtime_config=config,
+        planning_start_date="2026-01-05",
+    )
+
+    assert "info" not in result
+    assignments = [vacation for shifts in result.values() for _, vacation in shifts]
+    assert sorted(assignments) == ["Jour après-midi", "Jour matin"]
+
+
+def test_half_night_requires_next_day_rest():
+    config = _runtime_config()
+    config["agents"] = [_agent(f"Agent{i}", preferred=["Jour", "Nuit"]) for i in range(1, 5)]
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {
+        "Nuit": {
+            "enabled": True,
+            "penalty": 700,
+            "segments": [
+                {
+                    "name": "Nuit début",
+                    "label": "N début",
+                    "duration": 6,
+                    "is_night": True,
+                    "requires_next_day_rest": True,
+                },
+                {
+                    "name": "Nuit fin",
+                    "label": "N fin",
+                    "duration": 6,
+                    "is_night": True,
+                    "requires_next_day_rest": True,
+                },
+            ],
+        }
+    }
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-06")
+
+    feasible_result = generate_planning(
+        agents=config["agents"],
+        vacations=config["vacations"],
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in config["agents"]},
+        previous_week_schedule=[],
+        initial_shifts={"Agent1": [(week_schedule[0], "Nuit début")]},
+        runtime_config=config,
+        planning_start_date="2026-01-05",
+    )
+    blocked_result = generate_planning(
+        agents=config["agents"],
+        vacations=config["vacations"],
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in config["agents"]},
+        previous_week_schedule=[],
+        initial_shifts={
+            "Agent1": [(week_schedule[0], "Nuit début"), (week_schedule[1], "Jour")]
+        },
+        runtime_config=config,
+        planning_start_date="2026-01-05",
+    )
+
+    assert "info" not in feasible_result
+    assert "info" in blocked_result
+
+
+def test_half_vacations_are_forbidden_on_holidays():
+    config = _runtime_config()
+    config["holidays"] = ["05-01"]
+    agents = config["agents"]
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-05")
+
+    result = generate_planning(
+        agents=agents,
+        vacations=config["vacations"],
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in agents},
+        previous_week_schedule=[],
+        initial_shifts={
+            "Agent1": [(week_schedule[0], "Jour matin")],
+            "Agent2": [(week_schedule[0], "Jour après-midi")],
+        },
+        runtime_config=config,
+        planning_start_date="2026-01-05",
+    )
+
+    assert "info" in result
+
+
+def test_parent_restriction_blocks_half_vacation_segments():
+    config = _runtime_config()
+    config["agents"][0]["restriction"] = ["Jour"]
+    agents = config["agents"]
+    week_schedule = get_week_schedule("2026-01-05", "2026-01-05")
+
+    result = generate_planning(
+        agents=agents,
+        vacations=config["vacations"],
+        week_schedule=week_schedule,
+        dayOff={agent["name"]: [] for agent in agents},
+        previous_week_schedule=[],
+        initial_shifts={
+            "Agent1": [(week_schedule[0], "Jour matin")],
+            "Agent2": [(week_schedule[0], "Jour après-midi")],
+        },
+        runtime_config=config,
+        planning_start_date="2026-01-05",
+    )
+
+    assert "info" in result
+
+
+def test_avoid_parent_inherits_and_segment_avoid_is_targeted():
+    config = _runtime_config()
+    catalog = build_vacation_catalog(config)
+
+    assert assignment_matches_choice(catalog, "Jour matin", {"Jour"})
+    assert assignment_matches_choice(catalog, "Jour matin", {"Jour matin"})
+    assert not assignment_matches_choice(catalog, "Jour après-midi", {"Jour matin"})
+
+
+def test_config_rejects_cdp_half_vacations():
+    config = deepcopy(_runtime_config())
+    config["vacations"] = ["Jour", "CDP"]
+    config["vacation_durations"]["CDP"] = 5.5
+    config["half_vacations"]["CDP"] = {
+        "enabled": True,
+        "penalty": 1000,
+        "segments": [
+            {"name": "CDP matin", "duration": 2.75},
+            {"name": "CDP après-midi", "duration": 2.75},
+        ],
+    }
+
+    errors = validate_runtime_config(config)
+
+    assert any(error["path"] == "half_vacations/CDP" for error in errors)

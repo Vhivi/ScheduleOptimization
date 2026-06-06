@@ -262,6 +262,7 @@ def test_generate_planning_route_valid_data(client):
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
+    assert result["assignment_labels"]["Jour"] == "Jour"
     assert len(result["week_schedule"]) == 2
 
 
@@ -722,6 +723,59 @@ def test_optimize_existing_planning_keeps_multiple_manual_shifts(client):
     assert ["Lun. 05-01", vacations[0]] in payload["planning"][agent_a]
     assert ["Lun. 05-01", vacations[1]] in payload["planning"][agent_b]
     assert payload["meta"]["manual_cell_count"] == 2
+
+
+def test_optimize_existing_planning_reports_modified_existing_assignment(client):
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {}
+    agent_name = config["agents"][0]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Nuit"]]},
+        "vacation_durations": {"Jour": 12, "Nuit": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour", "Nuit"],
+        "assignment_labels": {"Jour": "Jour", "Nuit": "Nuit"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    assert payload["modified_existing_assignments"] == [
+        {
+            "agent": agent_name,
+            "date": "2026-01-05",
+            "day": "Lun. 05-01",
+            "initial_value": "Jour",
+            "final_value": "Nuit",
+            "change_type": "changed_to_full",
+        }
+    ]
 
 
 def test_inject_manual_status_entries_adds_unavailable_day():
