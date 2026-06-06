@@ -175,6 +175,10 @@ def _build_planning_payload(payload, runtime_config):
     vacations = runtime_config["vacations"]
     catalog = build_vacation_catalog(runtime_config)
     assignable_vacations = catalog["assignable_vacations"]
+    assignment_labels = {
+        assignment: metadata.label or assignment
+        for assignment, metadata in catalog["assignment_metadata"].items()
+    }
     vacation_durations = dict(runtime_config["vacation_durations"])
     for assignment, metadata in catalog["assignment_metadata"].items():
         vacation_durations[assignment] = metadata.duration / 10
@@ -214,6 +218,9 @@ def _build_planning_payload(payload, runtime_config):
     initial_shifts = payload.get("initial_shifts", {})
     if not isinstance(initial_shifts, dict):
         return {"error": "initial_shifts must be an object"}, 400
+    existing_assignments = payload.get("existing_assignments", {})
+    if not isinstance(existing_assignments, dict):
+        return {"error": "existing_assignments must be an object"}, 400
 
     # Validate initial shifts
     valid_agents = [agent["name"] for agent in agents]
@@ -237,6 +244,27 @@ def _build_planning_payload(payload, runtime_config):
             if vacation not in valid_vacations:
                 return {"error": f"Invalid vacation: {vacation}"}, 400
 
+    validated_existing_assignments = {}
+    for agent_name, assignments in existing_assignments.items():
+        if agent_name not in valid_agents:
+            return {"error": f"Invalid agent: {agent_name}"}, 400
+        if not isinstance(assignments, list):
+            return {"error": f"existing_assignments for {agent_name} must be a list"}, 400
+        for assignment in assignments:
+            if (
+                not isinstance(assignment, (list, tuple))
+                or len(assignment) != 2
+                or not isinstance(assignment[0], str)
+                or not isinstance(assignment[1], str)
+            ):
+                return {
+                    "error": "Each existing assignment must be [day, vacation] with string values"
+                }, 400
+            day, vacation = assignment
+            if vacation not in valid_vacations:
+                return {"error": f"Invalid vacation: {vacation}"}, 400
+            validated_existing_assignments[(agent_name, day)] = vacation
+
     for chunk_start, chunk_end in periods:
         # Convert the start and end dates into strings
         start_date_str = chunk_start.strftime("%Y-%m-%d")
@@ -257,6 +285,7 @@ def _build_planning_payload(payload, runtime_config):
                 initial_shifts,
                 planning_start_date=start_date_str,
                 runtime_config=runtime_config,
+                existing_assignments=validated_existing_assignments,
             )
         except ValueError as exc:
             return {"error": str(exc)}, 400
@@ -298,6 +327,7 @@ def _build_planning_payload(payload, runtime_config):
         "vacation_durations": vacation_durations,
         "vacation_colors": runtime_config.get("vacation_colors", {}),
         "assignable_vacations": assignable_vacations,
+        "assignment_labels": assignment_labels,
         "week_schedule": original_week_schedule,
         "holidays": holidays,
         "unavailable": unavailable,
@@ -370,7 +400,7 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
         (runtime_config.get("restriction_types_durations") or {}).keys()
     )
 
-    initial_shifts = {}
+    existing_assignments = {}
     status_entries = []
     warnings = []
     for entry in manual_entries:
@@ -397,7 +427,7 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
             if value not in valid_vacations:
                 return None, None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
             day_label = format_day_label(entry_date)
-            initial_shifts.setdefault(agent, []).append((day_label, value))
+            existing_assignments.setdefault(agent, []).append((day_label, value))
         elif entry_type == "status":
             if value in {"unavailable", "training", "vacations"}:
                 pass  # These are valid status types
@@ -424,7 +454,7 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
         else:
             return None, None, None, (jsonify({"error": f"Invalid entry type: {entry_type}"}), 400)
 
-    return initial_shifts, status_entries, warnings, None
+    return existing_assignments, status_entries, warnings, None
 
 
 def _inject_manual_status_entries(runtime_config, status_entries):
@@ -460,6 +490,54 @@ def _inject_manual_status_entries(runtime_config, status_entries):
             target.setdefault("restrictions", [])
             target["restrictions"].append({"date": day_str, "type": restriction_type})
     return injected_config, warnings
+
+
+def _build_day_label_iso_lookup(start_date_str, end_date_str):
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+    lookup = {}
+    current = start_date
+    while current <= end_date:
+        lookup[format_day_label(current)] = current.strftime("%Y-%m-%d")
+        current += timedelta(days=1)
+    return lookup
+
+
+def _detect_modified_existing_assignments(result, existing_assignments, runtime_config, start_date_str, end_date_str):
+    catalog = build_vacation_catalog(runtime_config)
+    metadata_by_assignment = catalog["assignment_metadata"]
+    day_to_iso = _build_day_label_iso_lookup(start_date_str, end_date_str)
+    final_by_agent_day = {}
+    for agent_name, shifts in (result.get("planning") or {}).items():
+        for day, vacation in shifts:
+            final_by_agent_day[(agent_name, day)] = vacation
+
+    modifications = []
+    for agent_name, assignments in (existing_assignments or {}).items():
+        for day, initial_vacation in assignments:
+            final_vacation = final_by_agent_day.get((agent_name, day))
+            if final_vacation == initial_vacation:
+                continue
+
+            if final_vacation is None:
+                change_type = "cleared"
+            elif metadata_by_assignment.get(final_vacation) and metadata_by_assignment[final_vacation].is_half:
+                change_type = "changed_to_half"
+            else:
+                change_type = "changed_to_full"
+
+            modifications.append(
+                {
+                    "agent": agent_name,
+                    "date": day_to_iso.get(day),
+                    "day": day,
+                    "initial_value": initial_vacation,
+                    "final_value": final_vacation,
+                    "change_type": change_type,
+                }
+            )
+    return modifications
+
 
 def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None, blocking_reasons=None):
     suggestions = []
@@ -1032,7 +1110,7 @@ def optimize_existing_planning_route():
     if date_error is not None:
         return date_error
 
-    initial_shifts, status_entries, warnings, entries_error = _parse_manual_entries(
+    existing_assignments, status_entries, warnings, entries_error = _parse_manual_entries(
         payload.get("manual_entries", []), runtime_config, start_date, end_date
     )
     if entries_error is not None:
@@ -1046,7 +1124,8 @@ def optimize_existing_planning_route():
         payload={
             "start_date": payload["start_date"],
             "end_date": payload["end_date"],
-            "initial_shifts": initial_shifts,
+            "initial_shifts": {},
+            "existing_assignments": existing_assignments,
         },
         runtime_config=effective_runtime_config,
     )
@@ -1069,7 +1148,8 @@ def optimize_existing_planning_route():
                 planning_payload={
                     "start_date": payload["start_date"],
                     "end_date": payload["end_date"],
-                    "initial_shifts": initial_shifts,
+                    "initial_shifts": {},
+                    "existing_assignments": existing_assignments,
                 },
                 runtime_config=effective_runtime_config,
             )
@@ -1126,6 +1206,13 @@ def optimize_existing_planning_route():
     result["status"] = status
     result["warnings"] = warnings
     result["suggestions"] = suggestions
+    result["modified_existing_assignments"] = _detect_modified_existing_assignments(
+        result,
+        existing_assignments,
+        effective_runtime_config,
+        payload["start_date"],
+        payload["end_date"],
+    )
     result["meta"] = {
         "manual_cell_count": len(manual_entries),
         "conflict_count": len(warnings),
@@ -1312,6 +1399,7 @@ def generate_planning(
     initial_shifts,
     planning_start_date=None,
     runtime_config=None,
+    existing_assignments=None,
 ):
     # Public facade kept stable for existing route and tests.
     effective_runtime_config = runtime_config or get_active_config()
@@ -1324,6 +1412,7 @@ def generate_planning(
         initial_shifts=initial_shifts,
         runtime_config=effective_runtime_config,
         planning_start_date=planning_start_date,
+        existing_assignments=existing_assignments,
     )
 
 set_active_config(get_active_config())
