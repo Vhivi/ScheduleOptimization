@@ -51,6 +51,8 @@ Allowed shift names:
 - Notes:
   - Shift names are now dynamic (`"Soutien"`, `"Renfort"`, etc. are allowed).
   - The solver uses this list as the source of truth for generated shift types.
+  - `CDP` keeps a historical hard limit of 2 assignments per agent and per week.
+    Other workload limits are hour-based through `solver.max_weekly_hours`.
 
 ### `staffing_requirements` (optional)
 
@@ -68,6 +70,12 @@ Allowed shift names:
 - Required for each configured vacation:
   - Every value in `vacations` must have a matching key in `vacation_durations`.
 - Purpose: paid-hour durations used by balancing constraints.
+
+### `half_vacations` (optional)
+
+- Type: object keyed by parent vacation name.
+- Purpose: define assignable segments that can cover a parent vacation segment by segment.
+- `CDP` is intentionally not splittable; `half_vacations.CDP` is rejected at runtime.
 
 ### `holidays` (required)
 
