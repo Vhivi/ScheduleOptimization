@@ -41,11 +41,10 @@ def register(registry: ConstraintRegistry) -> None:
     - Require at least one shift per agent
     - Cover daily shifts
     - Avoid day after night
-    - Limit CDP per week
+    - Limit CDP per week (historical hard business exception)
     - Block unavailable days
     - Block training days
     - Block leave and compute paid hours
-    - Limit day shifts per week
     - Block night before unavailable
     - Block night before training
     - Limit pre/post training
@@ -283,6 +282,9 @@ def limit_cdp_per_week(ctx: SolverContext) -> None:
     """
     Limits the number of CDP shifts per week to two.
 
+    CDP keeps this hard historical business exception even though the general
+    workload rule is hour-based through solver.max_weekly_hours.
+
     This constraint is applied per agent and per week in the week's schedule.
     For each agent, it ensures that the sum of all CDP shift variables for that agent
     on that week is less than or equal to two. This prevents the agent from being
@@ -407,36 +409,6 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
                             ctx.model.Add(ctx.planning[(agent_name, weekend_str, vacation)] == 0)
 
     ctx.leave_paid_hours_by_day = leave_paid_hours_by_day
-
-
-def limit_day_shifts_per_week(ctx: SolverContext) -> None:
-    """
-    Limits the number of day shifts per week to three.
-
-    This constraint is applied per agent and per week in the week's schedule.
-    For each agent, it ensures that the sum of all day shift variables for that agent
-    on that week is less than or equal to three. This prevents the agent from being
-    assigned more than three day shifts per week.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    if not _has_shift(ctx, DAY_SHIFT):
-        return
-
-    week_days = [
-        (day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in ctx.week_schedule
-    ]
-    weeks_dict = defaultdict(list)
-    for day_str, day_date in week_days:
-        week_number = day_date.isocalendar()[:2]
-        weeks_dict[week_number].append(day_str)
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        for days in weeks_dict.values():
-            ctx.model.Add(sum(ctx.planning[(agent_name, day, DAY_SHIFT)] for day in days) <= 3)
-
 
 def block_night_before_unavailable(ctx: SolverContext) -> None:
     """
