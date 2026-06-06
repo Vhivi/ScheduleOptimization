@@ -407,7 +407,7 @@ def test_diagnose_manual_entry_conflicts_detects_understaffed_shift_capacity():
     staffing_reason = next(
         reason for reason in reasons if reason["code"] == "STAFFING_REQUIREMENT_UNMET"
     )
-    assert staffing_reason["count"] == 1
+    assert staffing_reason["count"] == 2
     assert "2026-01-15 / Jour" in staffing_reason["details"][0]
 
 
@@ -446,9 +446,10 @@ def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
     assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
 
 
-def test_diagnose_manual_entry_conflicts_detects_day_shift_weekly_limit():
+def test_diagnose_manual_entry_conflicts_does_not_emit_day_shift_weekly_quota():
     config = deepcopy(load_default_config())
     agent_name = config["agents"][0]["name"]
+    config["solver"]["max_weekly_hours"] = 48
     entries = [
         {
             "agent": agent_name,
@@ -462,14 +463,8 @@ def test_diagnose_manual_entry_conflicts_detects_day_shift_weekly_limit():
 
     reasons = _diagnose_manual_entry_conflicts(entries, config)
 
-    weekly_limit_reason = next(
-        reason
-        for reason in reasons
-        if reason["code"] == "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"
-    )
-    assert weekly_limit_reason["count"] == 1
-    assert "4 vacations Jour" in weekly_limit_reason["details"][0]
-
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED" not in reason_codes
 
 def test_diagnose_manual_entry_conflicts_detects_shift_after_night():
     config = deepcopy(load_default_config())
