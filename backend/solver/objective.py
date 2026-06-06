@@ -58,11 +58,38 @@ def apply_objective(ctx: SolverContext) -> None:
         )
     )
 
+    preserve_existing_weight = 10000
+    change_existing_full_penalty = 1000
+    change_existing_half_penalty = 2000
+    preserve_existing_assignments = []
+    change_existing_assignments = []
+    known_agents = {agent["name"] for agent in ctx.agents}
+    for (agent_name, day), existing_vacation in (ctx.existing_assignments or {}).items():
+        if (
+            agent_name not in known_agents
+            or day not in ctx.week_schedule
+            or existing_vacation not in ctx.assignable_vacations
+        ):
+            continue
+        for vacation in ctx.assignable_vacations:
+            variable = ctx.planning[(agent_name, day, vacation)]
+            if vacation == existing_vacation:
+                preserve_existing_assignments.append(variable * preserve_existing_weight)
+            else:
+                penalty = (
+                    change_existing_half_penalty
+                    if is_half_assignment(ctx, vacation)
+                    else change_existing_full_penalty
+                )
+                change_existing_assignments.append(variable * penalty)
+
     objective = (
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
+        + cp_model.LinearExpr.Sum(preserve_existing_assignments)
         - half_vacation_penalties
+        - cp_model.LinearExpr.Sum(change_existing_assignments)
         - ctx.weekend_balancing_objective
     )
     if ctx.optimize_period_balance:
