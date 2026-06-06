@@ -410,6 +410,12 @@ def test_diagnose_manual_entry_conflicts_detects_understaffed_shift_capacity():
     )
     assert staffing_reason["count"] == 2
     assert "2026-01-15 / Jour" in staffing_reason["details"][0]
+    assert staffing_reason["segments"][0]["date"] == "2026-01-15"
+    assert staffing_reason["segments"][0]["vacation"] == "Jour"
+    assert staffing_reason["segments"][0]["required_agents"] == 2
+    assert staffing_reason["segments"][0]["eligible_agents"] == 0
+    assert "status" in staffing_reason["segments"][0]["blockers"]
+    assert "free_agent" in staffing_reason["segments"][0]["actions"]
 
 
 def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
@@ -516,6 +522,30 @@ def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
 
     assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
     assert "couverture quotidienne" in reasons[0]["message"]
+
+
+def test_probe_relaxed_hard_constraints_uses_generic_rest_wording():
+    config = deepcopy(load_default_config())
+
+    def fake_build(payload, runtime_config):
+        disabled = runtime_config.get("_disabled_hard_constraints_for_diagnostics", [])
+        if disabled == ["avoid_day_after_night"]:
+            return {"planning": {}}, 200
+        return {"info": "No solution found."}, 400
+
+    with patch("app._build_planning_payload", side_effect=fake_build):
+        reasons = _probe_relaxed_hard_constraints(
+            {
+                "start_date": "2026-01-15",
+                "end_date": "2026-01-15",
+                "initial_shifts": {},
+            },
+            config,
+        )
+
+    assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
+    assert "repos après affectation de nuit" in reasons[0]["message"]
+    assert "Nuit" not in reasons[0]["message"]
 
 
 def test_optimize_existing_planning_unsat_uses_relaxed_constraint_diagnostics(client):
