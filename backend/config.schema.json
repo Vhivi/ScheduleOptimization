@@ -105,6 +105,25 @@
           "minimum": 0
         }
       }
+    },
+    "half_vacations": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/half_vacation"
+      }
+    },
+    "vacation_colors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^#[0-9A-Fa-f]{6}$"
+      }
+    },
+    "vacation_metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/vacation_metadata"
+      }
     }
   },
   "$defs": {
@@ -203,6 +222,74 @@
               }
             }
           }
+        }
+      }
+    },
+    "vacation_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_night": {
+          "type": "boolean"
+        },
+        "requires_next_day_rest": {
+          "type": "boolean"
+        }
+      }
+    },
+    "half_vacation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "penalty",
+        "segments"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "penalty": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/half_vacation_segment"
+          }
+        }
+      }
+    },
+    "half_vacation_segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "duration"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/shift"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "is_night": {
+          "type": "boolean"
+        },
+        "requires_next_day_rest": {
+          "type": "boolean"
         }
       }
     }

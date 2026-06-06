@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
 
+from .catalog import assignment_matches_choice, is_half_assignment
 from .context import SolverContext
 
 
@@ -21,8 +22,8 @@ def apply_objective(ctx: SolverContext) -> None:
             ctx.planning[(agent["name"], day, vacation)] * weight_preferred
             for agent in ctx.agents
             for day in ctx.week_schedule
-            for vacation in ctx.vacations
-            if vacation in agent["preferences"]["preferred"]
+            for vacation in ctx.assignable_vacations
+            if assignment_matches_choice(ctx, vacation, agent["preferences"]["preferred"])
         )
     )
 
@@ -31,8 +32,8 @@ def apply_objective(ctx: SolverContext) -> None:
             ctx.planning[(agent["name"], day, vacation)] * weight_other
             for agent in ctx.agents
             for day in ctx.week_schedule
-            for vacation in ctx.vacations
-            if vacation not in agent["preferences"]["preferred"]
+            for vacation in ctx.assignable_vacations
+            if not assignment_matches_choice(ctx, vacation, agent["preferences"]["preferred"])
         )
     )
 
@@ -41,8 +42,19 @@ def apply_objective(ctx: SolverContext) -> None:
             ctx.planning[(agent["name"], day, vacation)] * weight_avoid
             for agent in ctx.agents
             for day in ctx.week_schedule
-            for vacation in ctx.vacations
-            if vacation in agent["preferences"]["avoid"]
+            for vacation in ctx.assignable_vacations
+            if assignment_matches_choice(ctx, vacation, agent["preferences"]["avoid"])
+        )
+    )
+
+    half_vacation_penalties = cp_model.LinearExpr.Sum(
+        list(
+            ctx.planning[(agent["name"], day, vacation)]
+            * ctx.assignment_metadata[vacation].penalty
+            for agent in ctx.agents
+            for day in ctx.week_schedule
+            for vacation in ctx.assignable_vacations
+            if is_half_assignment(ctx, vacation)
         )
     )
 
@@ -50,6 +62,7 @@ def apply_objective(ctx: SolverContext) -> None:
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
+        - half_vacation_penalties
         - ctx.weekend_balancing_objective
     )
     if ctx.optimize_period_balance:

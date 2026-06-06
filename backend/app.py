@@ -6,6 +6,7 @@ from copy import deepcopy
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from jsonschema import Draft202012Validator
+from solver.catalog import build_vacation_catalog, is_night_assignment, requires_next_day_rest
 from solver.engine import generate_planning as generate_planning_engine
 
 app = Flask(__name__)
@@ -59,6 +60,23 @@ def validate_runtime_config(candidate_config):
                         "message": (
                             f"Missing duration for configured vacation '{vacation}'."
                         ),
+                    }
+                )
+
+    if not errors:
+        try:
+            build_vacation_catalog(candidate_config)
+        except ValueError as exc:
+            errors.append({"path": "half_vacations", "message": str(exc)})
+
+    half_vacations = candidate_config.get("half_vacations", {})
+    if isinstance(vacations, list) and isinstance(half_vacations, dict):
+        for parent in half_vacations:
+            if parent not in vacations:
+                errors.append(
+                    {
+                        "path": f"half_vacations/{parent}",
+                        "message": f"Unknown parent vacation '{parent}'.",
                     }
                 )
 
@@ -148,7 +166,11 @@ def _build_planning_payload(payload, runtime_config):
     # Retrieving data from the JSON file
     agents = runtime_config["agents"]
     vacations = runtime_config["vacations"]
-    vacation_durations = runtime_config["vacation_durations"]
+    catalog = build_vacation_catalog(runtime_config)
+    assignable_vacations = catalog["assignable_vacations"]
+    vacation_durations = dict(runtime_config["vacation_durations"])
+    for assignment, metadata in catalog["assignment_metadata"].items():
+        vacation_durations[assignment] = metadata.duration / 10
     holidays = runtime_config["holidays"]
     unavailable = {}
     dayOff = {}
@@ -188,7 +210,7 @@ def _build_planning_payload(payload, runtime_config):
 
     # Validate initial shifts
     valid_agents = [agent["name"] for agent in agents]
-    valid_vacations = vacations
+    valid_vacations = assignable_vacations
     for agent_name, shifts in initial_shifts.items():
         if not isinstance(shifts, list):
             return {"error": f"initial_shifts for {agent_name} must be a list"}, 400
@@ -267,6 +289,8 @@ def _build_planning_payload(payload, runtime_config):
     return {
         "planning": full_planning,
         "vacation_durations": vacation_durations,
+        "vacation_colors": runtime_config.get("vacation_colors", {}),
+        "assignable_vacations": assignable_vacations,
         "week_schedule": original_week_schedule,
         "holidays": holidays,
         "unavailable": unavailable,
@@ -334,7 +358,7 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
         return None, None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
 
     valid_agents = {agent["name"] for agent in runtime_config["agents"]}
-    valid_vacations = set(runtime_config["vacations"])
+    valid_vacations = set(build_vacation_catalog(runtime_config)["assignable_vacations"])
     valid_restriction_types = set(
         (runtime_config.get("restriction_types_durations") or {}).keys()
     )
@@ -544,7 +568,7 @@ def _build_manual_shift_indexes(manual_entries):
     return manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
 
 
-def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day):
+def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config):
     agent_name = agent["name"]
     locked_shifts = manual_shifts_by_agent_day.get((agent_name, iso_date), [])
     if locked_shifts:
@@ -552,16 +576,19 @@ def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day
 
     if _agent_has_status_on_day(agent, iso_date):
         return False
-    if vacation in (agent.get("restriction") or []):
+    restricted = set(agent.get("restriction") or [])
+    if vacation in restricted:
+        return False
+    catalog = build_vacation_catalog(runtime_config)
+    metadata = catalog["assignment_metadata"].get(vacation)
+    if metadata and metadata.parent in restricted:
         return False
     return True
-
 
 def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config):
     reasons = []
     by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
     details_by_code = {
-        "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED": [],
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": [],
         "MANUAL_SHIFT_AFTER_NIGHT": [],
         "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": [],
@@ -569,22 +596,17 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": [],
     }
     counts_by_code = {code: 0 for code in details_by_code}
+    catalog = build_vacation_catalog(runtime_config)
 
     weekly_counts = {}
     for (agent_name, iso_date), shifts in manual_shifts_by_agent_day.items():
         if agent_name not in by_agent or not is_valid_date(iso_date):
             continue
         week_key = (agent_name, datetime.strptime(iso_date, "%Y-%m-%d").isocalendar()[:2])
-        weekly_counts.setdefault(week_key, {"Jour": 0, "CDP": 0})
-        weekly_counts[week_key]["Jour"] += shifts.count("Jour")
+        weekly_counts.setdefault(week_key, {"CDP": 0})
         weekly_counts[week_key]["CDP"] += shifts.count("CDP")
 
     for (agent_name, week), counts in weekly_counts.items():
-        if counts["Jour"] > 3:
-            counts_by_code["MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"] += 1
-            details_by_code["MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"].append(
-                f"{agent_name} / semaine {week[1]}: {counts['Jour']} vacations Jour manuelles pour 3 maximum"
-            )
         if counts["CDP"] > 2:
             counts_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"] += 1
             details_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"].append(
@@ -600,17 +622,21 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
         next_iso = (day_dt + timedelta(days=1)).strftime("%Y-%m-%d")
         next_day_str = (day_dt + timedelta(days=1)).strftime("%d-%m-%Y")
 
-        if "Nuit" in shifts:
+        rest_triggering_shifts = [
+            shift for shift in shifts if requires_next_day_rest(catalog, shift)
+        ]
+        if rest_triggering_shifts:
             next_manual_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
             if next_manual_shifts:
                 counts_by_code["MANUAL_SHIFT_AFTER_NIGHT"] += 1
                 details_by_code["MANUAL_SHIFT_AFTER_NIGHT"].append(
-                    f"{agent_name} / {iso_date}: Nuit suivie de {', '.join(next_manual_shifts)} le {next_iso}"
+                    f"{agent_name} / {iso_date}: {', '.join(rest_triggering_shifts)} "
+                    f"suivie de {', '.join(next_manual_shifts)} le {next_iso}"
                 )
             if next_day_str in (agent.get("unavailable") or []) or next_day_str in (agent.get("training") or []):
                 counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
                 details_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"].append(
-                    f"{agent_name} / {iso_date}: Nuit avant indisponibilité ou formation le {next_iso}"
+                    f"{agent_name} / {iso_date}: affectation de nuit avant indisponibilité ou formation le {next_iso}"
                 )
 
         if day_dt.weekday() == 5 and _agent_has_status_on_day(agent, next_iso):
@@ -628,7 +654,11 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
             previous_shifts = manual_shifts_by_agent_day.get((agent_name, previous_iso), [])
             next_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
             forbidden_previous = [shift for shift in previous_shifts if shift != "CDP"]
-            forbidden_next = [shift for shift in next_shifts if shift not in {"CDP", "Nuit"}]
+            forbidden_next = [
+                shift
+                for shift in next_shifts
+                if shift != "CDP" and not is_night_assignment(catalog, shift)
+            ]
             if forbidden_previous or forbidden_next:
                 counts_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"] += 1
                 details_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"].append(
@@ -636,7 +666,6 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
                 )
 
     reason_messages = {
-        "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED": "La limite de 3 vacations Jour par semaine est dépassée par des saisies manuelles.",
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
         "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle est posée le lendemain d'une Nuit manuelle.",
         "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une Nuit manuelle est posée avant une indisponibilité ou une formation.",
@@ -662,9 +691,9 @@ def _diagnose_staffing_capacity_conflicts(
 ):
     reasons = []
     agents = runtime_config.get("agents", [])
-    vacations = runtime_config.get("vacations", [])
     staffing_requirements = runtime_config.get("staffing_requirements", {})
     holidays = set(runtime_config.get("holidays", []))
+    catalog = build_vacation_catalog(runtime_config)
 
     understaffed_shift_days = 0
     overstaffed_manual_shift_days = 0
@@ -675,37 +704,55 @@ def _diagnose_staffing_capacity_conflicts(
         day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
         day_token = day_dt.strftime("%d-%m")
         is_weekend = day_dt.weekday() >= 5
-        for vacation in vacations:
+        for vacation in catalog["coverage_vacations"]:
             required_agents = staffing_requirements.get(vacation, 1)
             if vacation == "CDP" and (is_weekend or day_token in holidays):
                 required_agents = 0
 
-            manual_count = manual_counts_by_day_shift.get((iso_date, vacation), 0)
-            if manual_count > required_agents:
-                overstaffed_manual_shift_days += 1
-                overstaffed_details.append(
-                    f"{iso_date} / {vacation}: {manual_count} manuel(s) pour {required_agents} requis"
+            for segment in catalog["coverage_segments"].get(vacation, [vacation]):
+                covering_assignments = catalog["segment_covering_assignments"].get(
+                    (vacation, segment), [vacation]
                 )
-                continue
+                manual_count = sum(
+                    manual_counts_by_day_shift.get((iso_date, assignment), 0)
+                    for assignment in covering_assignments
+                )
+                if manual_count > required_agents:
+                    overstaffed_manual_shift_days += 1
+                    overstaffed_details.append(
+                        f"{iso_date} / {vacation} / {segment}: "
+                        f"{manual_count} manuel(s) pour {required_agents} requis"
+                    )
+                    continue
 
-            eligible_count = sum(
-                1
-                for agent in agents
-                if _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day)
-            )
-            if eligible_count < required_agents:
-                understaffed_shift_days += 1
-                understaffed_details.append(
-                    f"{iso_date} / {vacation}: {eligible_count} agent(s) possible(s) pour {required_agents} requis"
+                eligible_count = sum(
+                    1
+                    for agent in agents
+                    if any(
+                        _agent_can_cover_shift(
+                            agent,
+                            iso_date,
+                            assignment,
+                            manual_shifts_by_agent_day,
+                            runtime_config,
+                        )
+                        for assignment in covering_assignments
+                    )
                 )
+                if eligible_count < required_agents:
+                    understaffed_shift_days += 1
+                    understaffed_details.append(
+                        f"{iso_date} / {vacation} / {segment}: "
+                        f"{eligible_count} agent(s) possible(s) pour {required_agents} requis"
+                    )
 
     if overstaffed_manual_shift_days:
         reasons.append(
             {
                 "code": "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT",
                 "message": (
-                    "Trop de vacations manuelles sont posées sur au moins un couple "
-                    "date/vacation par rapport au besoin configuré."
+                    "Trop d'affectations manuelles sont posées sur au moins un "
+                    "segment par rapport au besoin configuré."
                 ),
                 "count": overstaffed_manual_shift_days,
                 "details": overstaffed_details[:5],
@@ -716,8 +763,8 @@ def _diagnose_staffing_capacity_conflicts(
             {
                 "code": "STAFFING_REQUIREMENT_UNMET",
                 "message": (
-                    "Le besoin de couverture ne peut pas être atteint pour au moins une "
-                    "date/vacation avec les agents encore disponibles."
+                    "Le besoin de couverture ne peut pas être atteint pour au moins "
+                    "un segment avec les agents encore disponibles."
                 ),
                 "count": understaffed_shift_days,
                 "details": understaffed_details[:5],
@@ -777,11 +824,6 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
         "constraint": "block_leave_and_compute_paid_hours",
         "label": "congés",
         "detail": "Relâcher les congés rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
-    },
-    {
-        "constraint": "limit_day_shifts_per_week",
-        "label": "limite de 3 vacations Jour par semaine",
-        "detail": "La limite hebdomadaire des vacations Jour semble trop contraignante pour couvrir la période.",
     },
     {
         "constraint": "block_night_before_unavailable",
@@ -962,8 +1004,14 @@ def compute_previous_week_schedule():
     start_date = payload["start_date"]
     previous_week_schedule = get_previous_week_schedule(start_date)
 
-    agents = get_active_config()["agents"]
-    return jsonify({"previous_week_schedule": previous_week_schedule, "agents": agents})
+    runtime_config = get_active_config()
+    agents = runtime_config["agents"]
+    assignable_vacations = build_vacation_catalog(runtime_config)["assignable_vacations"]
+    return jsonify({
+        "previous_week_schedule": previous_week_schedule,
+        "agents": agents,
+        "assignable_vacations": assignable_vacations,
+    })
 
 
 @app.route("/optimize-existing-planning", methods=["POST"])

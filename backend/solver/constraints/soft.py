@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
 
+from ..catalog import assignment_parent
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import split_by_month_or_period
@@ -22,7 +23,7 @@ def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: li
     :return: The sum of assignments for the given agent, day, and list of vacations.
     :rtype: int
     """
-    relevant = [vacation for vacation in vacations if vacation in ctx.vacations]
+    relevant = [vacation for vacation in vacations if vacation in ctx.assignable_vacations]
     if not relevant:
         return 0
     return sum(ctx.planning[(agent_name, day, vacation)] for vacation in relevant)
@@ -41,10 +42,14 @@ def _working_vacations(ctx: SolverContext) -> list[str]:
     :return: A list of working vacations.
     :rtype: list[str]
     """
-    vacations = [vacation for vacation in ctx.vacations if vacation != CDP_SHIFT]
+    vacations = [
+        vacation
+        for vacation in ctx.assignable_vacations
+        if assignment_parent(ctx, vacation) != CDP_SHIFT
+    ]
     if vacations:
         return vacations
-    return list(ctx.vacations)
+    return list(ctx.assignable_vacations)
 
 
 def register(registry: ConstraintRegistry) -> None:
@@ -81,7 +86,7 @@ def balance_paid_hours(ctx: SolverContext) -> None:
             list(
                 sum(
                     ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                    for vacation in ctx.vacations
+                    for vacation in ctx.assignable_vacations
                 )
                 + _leave_paid_hours(ctx, agent_name, day)
                 for day in ctx.week_schedule
@@ -120,7 +125,7 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
                 list(
                     sum(
                         ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                        for vacation in ctx.vacations
+                        for vacation in ctx.assignable_vacations
                     )
                     + _leave_paid_hours(ctx, agent_name, day)
                     for day in period
