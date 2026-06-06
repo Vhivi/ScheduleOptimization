@@ -13,7 +13,7 @@
           <tr>
             <th>Agent</th>
             <th v-for="day in monthDays" :key="day">{{ day }}</th>
-            <th>Total Vacations</th>
+            <th>Total affectations</th>
             <th>Total Heures</th>
           </tr>
         </thead>
