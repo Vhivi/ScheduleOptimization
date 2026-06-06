@@ -139,4 +139,42 @@ describe('PlanningTable.vue', () => {
     expect(text).not.toContain('Jour');
     expect(text).not.toContain('Nuit');
   });
+
+  it('uses assignment labels while keeping worked-hour and worked-assignment totals', () => {
+    const wrapper = shallowMount(PlanningTable, {
+      props: {
+        planning: {
+          Agent1: [['Lun. 05-01', 'Jour matin']],
+        },
+        weekSchedule: ['Lun. 05-01', 'Mar. 06-01'],
+        vacationDurations: {
+          'Jour matin': 6,
+        },
+        vacationColors: {
+          'Jour matin': '#B9F6CA',
+        },
+        assignmentLabels: {
+          'Jour matin': 'J matin',
+        },
+        holidays: [],
+        unavailable: {
+          Agent1: ['06-01-2026'],
+        },
+        dayOff: {
+          Agent1: [],
+        },
+        training: {
+          Agent1: [],
+        },
+        planningStartDate: '2026-01-05',
+      },
+    });
+
+    const text = wrapper.text();
+    expect(text).toContain('J matin');
+    expect(text).toContain('Ind.');
+    expect(text).toContain('1');
+    expect(text).toContain('6 h');
+    expect(wrapper.find('tbody td[title="Jour matin"]').exists()).toBe(true);
+  });
 });
