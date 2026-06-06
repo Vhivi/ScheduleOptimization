@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from ortools.sat.python import cp_model
 
+from .catalog import build_vacation_catalog
 from .constraints import hard, mixed, soft
 from .context import SolverContext
 from .objective import apply_objective
@@ -22,7 +23,7 @@ def _build_planning_variables(ctx: SolverContext) -> None:
     for agent in ctx.agents:
         agent_name = agent["name"]
         for day in set(ctx.week_schedule + ctx.previous_week_schedule):
-            for vacation in ctx.vacations:
+            for vacation in ctx.assignable_vacations:
                 ctx.planning[(agent_name, day, vacation)] = ctx.model.NewBoolVar(
                     f"planning_{agent_name}_{day}_{vacation}"
                 )
@@ -67,21 +68,18 @@ def _load_shift_durations(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
-    configured_durations = ctx.config["vacation_durations"]
-    missing_vacation_durations = [
-        vacation for vacation in ctx.vacations if vacation not in configured_durations
-    ]
-    if missing_vacation_durations:
-        missing_joined = ", ".join(sorted(missing_vacation_durations))
-        raise ValueError(
-            "Missing vacation_durations entries for configured vacations: "
-            f"{missing_joined}"
-        )
+    catalog = build_vacation_catalog(ctx.config)
+    ctx.assignable_vacations = catalog["assignable_vacations"]
+    ctx.assignment_metadata = catalog["assignment_metadata"]
+    ctx.coverage_segments = catalog["coverage_segments"]
+    ctx.segment_covering_assignments = catalog["segment_covering_assignments"]
+    ctx.half_vacation_names = catalog["half_vacation_names"]
 
     ctx.shift_durations = {
-        vacation: int(configured_durations[vacation] * 10) for vacation in ctx.vacations
+        vacation: metadata.duration
+        for vacation, metadata in ctx.assignment_metadata.items()
     }
-    ctx.conge_duration = int(ctx.config["vacation_durations"]["Conge"] * 10)
+    ctx.conge_duration = int(round(ctx.config["vacation_durations"]["Conge"] * 10))
 
     staffing_config = ctx.config.get("staffing_requirements", {})
     ctx.staffing_requirements = {}
@@ -156,7 +154,7 @@ def _extract_solution(ctx: SolverContext, solver: cp_model.CpSolver):
         agent_name = agent["name"]
         result[agent_name] = []
         for day in ctx.week_schedule:
-            for vacation in ctx.vacations:
+            for vacation in ctx.assignable_vacations:
                 if solver.Value(ctx.planning[(agent_name, day, vacation)]):
                     result[agent_name].append((day, vacation))
     return result
@@ -192,6 +190,8 @@ def generate_planning(
     :return: A dictionary containing the generated planning, where each key is an agent name and each value is a list of tuples, where each tuple contains a day and a vacation type.
     :rtype: Dict[str, List[Tuple[str, str]]]
     """
+    runtime_config = dict(runtime_config)
+    runtime_config.setdefault("vacations", vacations)
     model = cp_model.CpModel()
     ctx = SolverContext(
         model=model,
