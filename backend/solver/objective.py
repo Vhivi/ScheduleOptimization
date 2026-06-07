@@ -58,6 +58,20 @@ def apply_objective(ctx: SolverContext) -> None:
         )
     )
 
+    agent_usage_bonus_weight = 5
+    agent_usage_bonus_terms = []
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        is_used = ctx.model.NewBoolVar(f"{agent_name}_used_at_least_once")
+        worked_assignments = [
+            ctx.planning[(agent_name, day, vacation)]
+            for day in ctx.week_schedule
+            for vacation in ctx.assignable_vacations
+        ]
+        ctx.model.Add(sum(worked_assignments) >= 1).OnlyEnforceIf(is_used)
+        ctx.model.Add(sum(worked_assignments) == 0).OnlyEnforceIf(is_used.Not())
+        agent_usage_bonus_terms.append(is_used * agent_usage_bonus_weight)
+
     preserve_existing_weight = 10000
     change_existing_full_penalty = 1000
     change_existing_half_penalty = 2000
@@ -87,6 +101,7 @@ def apply_objective(ctx: SolverContext) -> None:
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
+        + cp_model.LinearExpr.Sum(agent_usage_bonus_terms)
         + cp_model.LinearExpr.Sum(preserve_existing_assignments)
         - half_vacation_penalties
         - cp_model.LinearExpr.Sum(change_existing_assignments)
