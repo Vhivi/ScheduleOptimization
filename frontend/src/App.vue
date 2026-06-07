@@ -352,6 +352,40 @@
                   {{ detail }}
                 </li>
               </ul>
+              <div v-if="reason.segments?.length" class="diagnostic-segments">
+                <div
+                  v-for="(segment, segmentIndex) in reason.segments"
+                  :key="`reason_${index}_segment_${segmentIndex}`"
+                  class="diagnostic-segment"
+                >
+                  <strong>
+                    {{ segment.date }} / {{ segment.vacation }} / {{ segment.segment }}
+                  </strong>
+                  <span v-if="segment.required_agents != null">
+                    Besoin: {{ segment.required_agents }}
+                  </span>
+                  <span v-if="segment.eligible_agents != null">
+                    Agents possibles: {{ segment.eligible_agents }}
+                  </span>
+                  <span v-if="segment.manual_count != null">
+                    Saisies: {{ segment.manual_count }}
+                  </span>
+                  <p v-if="formatBlockers(segment.blockers)" class="diagnostic-line">
+                    Blocages: {{ formatBlockers(segment.blockers) }}
+                  </p>
+                  <p v-if="formatActions(segment.actions)" class="diagnostic-line">
+                    Actions: {{ formatActions(segment.actions) }}
+                  </p>
+                  <ul v-if="segment.sample_blocked_agents?.length" class="blocked-agents">
+                    <li
+                      v-for="(blockedAgent, blockedIndex) in segment.sample_blocked_agents"
+                      :key="`reason_${index}_segment_${segmentIndex}_agent_${blockedIndex}`"
+                    >
+                      {{ blockedAgent.agent }}: {{ formatReasonCodes(blockedAgent.reasons) }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </li>
           </ul>
           <p v-if="optimizationImpactedCells.length">
@@ -1018,6 +1052,44 @@ export default {
       };
       return labels[changeType] || changeType || 'modifiée';
     },
+    formatBlockerCode(code) {
+      const labels = {
+        existing_assignment: 'affectation existante differente',
+        status: 'statut bloquant',
+        restriction: 'restriction directe',
+        parent_restriction: 'restriction parent',
+        half_weekend: 'demi-vacation interdite week-end',
+        half_holiday: 'demi-vacation interdite jour ferie'
+      };
+      return labels[code] || code;
+    },
+    formatActionCode(code) {
+      const labels = {
+        clear_cell: 'vider une cellule',
+        reduce_existing_assignment_count: 'reduire les saisies existantes',
+        free_agent: 'liberer un agent',
+        increase_max_weekly_hours: 'augmenter le plafond horaire',
+        reduce_staffing_requirement: 'reduire le besoin de couverture',
+        use_full_vacation: 'utiliser une vacation complete',
+        allow_or_assign_half_vacations: 'autoriser ou assigner des demi-vacations'
+      };
+      return labels[code] || code;
+    },
+    formatBlockers(blockers) {
+      if (!blockers || typeof blockers !== 'object') return '';
+      return Object.entries(blockers)
+        .filter(([, count]) => count)
+        .map(([code, count]) => `${this.formatBlockerCode(code)} (${count})`)
+        .join(', ');
+    },
+    formatActions(actions) {
+      if (!Array.isArray(actions) || actions.length === 0) return '';
+      return actions.map((action) => this.formatActionCode(action)).join(', ');
+    },
+    formatReasonCodes(reasons) {
+      if (!Array.isArray(reasons) || reasons.length === 0) return 'blocage non precise';
+      return reasons.map((reason) => this.formatBlockerCode(reason)).join(', ');
+    },
     setVacationDuration(vacation, value) {
       const parsed = Number(value);
       this.configData.vacation_durations[vacation] = Number.isFinite(parsed) ? parsed : 1;
@@ -1494,6 +1566,33 @@ button:disabled {
   color: #8a0000;
   font-size: 14px;
   margin-top: 4px;
+}
+
+.diagnostic-segments {
+  margin-top: 8px;
+}
+
+.diagnostic-segment {
+  background: #fffafa;
+  border: 1px solid #e6b4b4;
+  border-radius: 6px;
+  color: #690000;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.diagnostic-segment span {
+  display: inline-block;
+  margin-right: 12px;
+}
+
+.diagnostic-line {
+  margin: 6px 0 0;
+}
+
+.blocked-agents {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
 
 .modified-list {

@@ -188,4 +188,59 @@ describe('App.vue', () => {
       'Jour apres-midi': '#00C853',
     });
   });
+
+  it('renders structured blocking reason segments', async () => {
+    const wrapper = shallowMount(App, {
+      global: {
+        stubs: {
+          PlanningTable: true,
+        },
+      },
+    });
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.setData({
+      activeMode: 'planning',
+      generationMode: 'existing',
+      optimizationBlockingReasons: [
+        {
+          code: 'STAFFING_REQUIREMENT_UNMET',
+          message: 'Le besoin de couverture ne peut pas etre atteint.',
+          count: 1,
+          segments: [
+            {
+              date: '2026-01-15',
+              vacation: 'Jour',
+              segment: 'Jour matin',
+              required_agents: 2,
+              eligible_agents: 0,
+              blockers: {
+                status: 2,
+                parent_restriction: 1,
+              },
+              actions: ['free_agent', 'reduce_staffing_requirement'],
+              sample_blocked_agents: [
+                {
+                  agent: 'Agent1',
+                  reasons: ['status'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const text = wrapper.text();
+    expect(text).toContain('2026-01-15 / Jour / Jour matin');
+    expect(text).toContain('Besoin: 2');
+    expect(text).toContain('Agents possibles: 0');
+    expect(text).toContain('statut bloquant (2)');
+    expect(text).toContain('restriction parent (1)');
+    expect(text).toContain('liberer un agent');
+    expect(text).toContain('reduire le besoin de couverture');
+    expect(text).toContain('Agent1: statut bloquant');
+  });
 });
