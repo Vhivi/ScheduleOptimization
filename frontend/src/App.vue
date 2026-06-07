@@ -771,6 +771,7 @@ export default {
       }
 
       payload.half_vacations = this.buildHalfVacationsPayload(payload);
+      payload.vacation_colors = this.buildVacationColorsPayload(payload);
 
       payload.agents = (payload.agents || []).map((agent, index) => ({
         ...defaultAgent(`Agent${index + 1}`),
@@ -825,6 +826,21 @@ export default {
         };
       });
       return halfVacations;
+    },
+    buildVacationColorsPayload(payload) {
+      const allowedNames = new Set(payload.vacations || []);
+      Object.values(payload.half_vacations || {}).forEach((halfConfig) => {
+        (halfConfig.segments || []).forEach((segment) => {
+          allowedNames.add(segment.name);
+        });
+      });
+      const colors = {};
+      Object.entries(payload.vacation_colors || {}).forEach(([vacation, color]) => {
+        if (allowedNames.has(vacation) && /^#[0-9A-Fa-f]{6}$/.test(color)) {
+          colors[vacation] = color;
+        }
+      });
+      return colors;
     },
     formatValidationErrors(details) {
       if (!Array.isArray(details) || details.length === 0) {
