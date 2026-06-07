@@ -61,6 +61,103 @@
       </div>
 
       <div class="config-block">
+        <h3>Demi-vacations</h3>
+        <p v-if="hasCdpVacation" class="config-note">CDP n'est pas decoupable.</p>
+
+        <div v-for="parent in splittableVacations" :key="`half_${parent}`" class="half-vacation-card">
+          <div class="half-vacation-header">
+            <strong>{{ parent }}</strong>
+            <label class="inline-control">
+              <input
+                type="checkbox"
+                :checked="isHalfVacationEnabled(parent)"
+                @change="setHalfVacationEnabled(parent, $event.target.checked)"
+              />
+              Activer
+            </label>
+            <label>
+              Penalite
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :disabled="!isHalfVacationEnabled(parent)"
+                :value="getHalfVacationConfig(parent).penalty"
+                @input="setHalfVacationPenalty(parent, $event.target.value)"
+              />
+            </label>
+            <button
+              class="secondary-btn"
+              :disabled="!isHalfVacationEnabled(parent)"
+              @click="addHalfVacationSegment(parent)"
+            >
+              Ajouter segment
+            </button>
+          </div>
+
+          <div v-if="isHalfVacationEnabled(parent)" class="half-segments">
+            <div
+              v-for="(segment, segmentIndex) in getHalfVacationConfig(parent).segments"
+              :key="`seg_${parent}_${segmentIndex}`"
+              class="half-segment-row"
+            >
+              <label>
+                Nom
+                <input
+                  type="text"
+                  :value="segment.name"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'name', $event.target.value)"
+                />
+              </label>
+              <label>
+                Label
+                <input
+                  type="text"
+                  :value="segment.label"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'label', $event.target.value)"
+                />
+              </label>
+              <label>
+                Duree
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  :value="segment.duration"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'duration', $event.target.value)"
+                />
+              </label>
+              <label>
+                Couleur
+                <input
+                  type="color"
+                  :value="getVacationColorValue(segment.name)"
+                  @input="setVacationColor(segment.name, $event.target.value)"
+                />
+              </label>
+              <label class="inline-control">
+                <input
+                  type="checkbox"
+                  :checked="Boolean(segment.is_night)"
+                  @change="setHalfVacationSegmentField(parent, segmentIndex, 'is_night', $event.target.checked)"
+                />
+                Nuit
+              </label>
+              <label class="inline-control">
+                <input
+                  type="checkbox"
+                  :checked="Boolean(segment.requires_next_day_rest)"
+                  @change="setHalfVacationSegmentField(parent, segmentIndex, 'requires_next_day_rest', $event.target.checked)"
+                />
+                Repos J+1
+              </label>
+              <button class="danger-btn compact-btn" @click="removeHalfVacationSegment(parent, segmentIndex)">X</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="config-block">
         <h3>Agents</h3>
         <button @click="addAgent">Ajouter un agent</button>
 
@@ -503,6 +600,12 @@ export default {
     },
     assignableVacations() {
       return this.assignableVacationsData?.length ? this.assignableVacationsData : this.vacations;
+    },
+    splittableVacations() {
+      return (this.configData.vacations || []).filter((vacation) => vacation !== 'CDP');
+    },
+    hasCdpVacation() {
+      return (this.configData.vacations || []).includes('CDP');
     }
   },
   methods: {
@@ -571,6 +674,26 @@ export default {
       if (normalized.vacation_durations.Conge == null) {
         normalized.vacation_durations.Conge = 7;
       }
+
+      Object.entries(normalized.half_vacations).forEach(([parent, halfConfig]) => {
+        if (parent === 'CDP' || !normalized.vacations.includes(parent)) {
+          delete normalized.half_vacations[parent];
+          return;
+        }
+        normalized.half_vacations[parent] = {
+          enabled: halfConfig?.enabled !== false,
+          penalty: Number.isFinite(Number(halfConfig?.penalty)) ? Number(halfConfig.penalty) : 500,
+          segments: Array.isArray(halfConfig?.segments)
+            ? halfConfig.segments.map((segment) => ({
+              name: segment?.name || '',
+              label: segment?.label || '',
+              duration: Number.isFinite(Number(segment?.duration)) ? Number(segment.duration) : 1,
+              is_night: Boolean(segment?.is_night),
+              requires_next_day_rest: Boolean(segment?.requires_next_day_rest)
+            }))
+            : []
+        };
+      });
 
       normalized.agents = normalized.agents.map((agent, index) => ({
         ...defaultAgent(`Agent${index + 1}`),
@@ -647,6 +770,8 @@ export default {
         payload.vacation_durations.Conge = Number(payload.vacation_durations.Conge);
       }
 
+      payload.half_vacations = this.buildHalfVacationsPayload(payload);
+
       payload.agents = (payload.agents || []).map((agent, index) => ({
         ...defaultAgent(`Agent${index + 1}`),
         ...agent,
@@ -668,6 +793,38 @@ export default {
       }));
 
       return payload;
+    },
+    buildHalfVacationsPayload(payload) {
+      const halfVacations = {};
+      Object.entries(payload.half_vacations || {}).forEach(([parent, halfConfig]) => {
+        if (parent === 'CDP' || !payload.vacations.includes(parent) || halfConfig?.enabled === false) {
+          return;
+        }
+        const segments = (halfConfig?.segments || [])
+          .map((segment) => {
+            const name = String(segment?.name || '').trim();
+            const label = String(segment?.label || '').trim();
+            const duration = Number(segment?.duration);
+            if (!name || !Number.isFinite(duration) || duration <= 0) {
+              return null;
+            }
+            const normalizedSegment = { name, duration };
+            if (label) normalizedSegment.label = label;
+            if (segment?.is_night) normalizedSegment.is_night = true;
+            if (segment?.requires_next_day_rest) normalizedSegment.requires_next_day_rest = true;
+            return normalizedSegment;
+          })
+          .filter(Boolean);
+        if (segments.length < 2) {
+          return;
+        }
+        halfVacations[parent] = {
+          enabled: true,
+          penalty: Math.max(0, Math.floor(Number(halfConfig?.penalty) || 0)),
+          segments
+        };
+      });
+      return halfVacations;
     },
     formatValidationErrors(details) {
       if (!Array.isArray(details) || details.length === 0) {
@@ -721,7 +878,117 @@ export default {
           this.configData.vacation_colors[vacation] = this.vacationColors[vacation] || '#ffffff';
         }
       });
+      Object.keys(this.configData.half_vacations || {}).forEach((parent) => {
+        if (!parsed.includes(parent) || parent === 'CDP') {
+          delete this.configData.half_vacations[parent];
+        }
+      });
       this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    getHalfVacationConfig(parent) {
+      return this.configData.half_vacations?.[parent] || { enabled: false, penalty: 500, segments: [] };
+    },
+    isHalfVacationEnabled(parent) {
+      return this.configData.half_vacations?.[parent]?.enabled === true;
+    },
+    ensureHalfVacationConfig(parent) {
+      if (parent === 'CDP') return null;
+      if (!this.configData.half_vacations) {
+        this.configData.half_vacations = {};
+      }
+      if (!this.configData.half_vacations[parent]) {
+        const parentDuration = Number(this.configData.vacation_durations?.[parent]) || 2;
+        this.configData.half_vacations[parent] = {
+          enabled: true,
+          penalty: 500,
+          segments: [
+            {
+              name: `${parent} 1`,
+              label: `${parent} 1`,
+              duration: parentDuration / 2
+            },
+            {
+              name: `${parent} 2`,
+              label: `${parent} 2`,
+              duration: parentDuration / 2
+            }
+          ]
+        };
+      }
+      return this.configData.half_vacations[parent];
+    },
+    setHalfVacationEnabled(parent, enabled) {
+      if (!enabled) {
+        if (this.configData.half_vacations?.[parent]) {
+          this.configData.half_vacations[parent].enabled = false;
+        }
+        this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+        return;
+      }
+      const config = this.ensureHalfVacationConfig(parent);
+      if (config) {
+        config.enabled = true;
+      }
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    setHalfVacationPenalty(parent, value) {
+      const config = this.ensureHalfVacationConfig(parent);
+      if (!config) return;
+      const parsed = Math.floor(Number(value));
+      config.penalty = Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+    },
+    addHalfVacationSegment(parent) {
+      const config = this.ensureHalfVacationConfig(parent);
+      if (!config) return;
+      config.segments.push({
+        name: `${parent} ${config.segments.length + 1}`,
+        label: `${parent} ${config.segments.length + 1}`,
+        duration: 1
+      });
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    removeHalfVacationSegment(parent, segmentIndex) {
+      const config = this.getHalfVacationConfig(parent);
+      if (!Array.isArray(config.segments)) return;
+      const [removed] = config.segments.splice(segmentIndex, 1);
+      if (removed?.name && this.configData.vacation_colors) {
+        delete this.configData.vacation_colors[removed.name];
+      }
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    setHalfVacationSegmentField(parent, segmentIndex, field, value) {
+      const config = this.ensureHalfVacationConfig(parent);
+      const segment = config?.segments?.[segmentIndex];
+      if (!segment) return;
+      const previousName = segment.name;
+      if (field === 'duration') {
+        const parsed = Number(value);
+        segment.duration = Number.isFinite(parsed) ? parsed : 1;
+      } else if (field === 'is_night' || field === 'requires_next_day_rest') {
+        segment[field] = Boolean(value);
+      } else {
+        segment[field] = value;
+      }
+      if (field === 'name' && previousName !== value) {
+        if (this.configData.vacation_colors?.[previousName] && !this.configData.vacation_colors?.[value]) {
+          this.configData.vacation_colors[value] = this.configData.vacation_colors[previousName];
+        }
+        if (this.configData.vacation_colors?.[previousName]) {
+          delete this.configData.vacation_colors[previousName];
+        }
+        this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+      }
+    },
+    getVacationColorValue(vacation) {
+      return this.configData.vacation_colors?.[vacation] || '#ffffff';
+    },
+    setVacationColor(vacation, color) {
+      if (!vacation) return;
+      if (!this.configData.vacation_colors) {
+        this.configData.vacation_colors = {};
+      }
+      this.configData.vacation_colors[vacation] = color;
+      this.vacationColors = { ...this.vacationColors, [vacation]: color };
     },
     getAssignmentLabel(assignment) {
       if (!assignment) return '';
@@ -1081,6 +1348,68 @@ button:disabled {
   font-weight: bold;
 }
 
+.config-note {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 4px 0 10px;
+}
+
+.half-vacation-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dce8f7;
+  border-radius: 8px;
+  background: white;
+}
+
+.half-vacation-header {
+  display: grid;
+  grid-template-columns: 140px 110px 140px 150px;
+  gap: 10px;
+  align-items: center;
+}
+
+.half-vacation-header input[type="number"] {
+  max-width: 110px;
+  margin: 2px 0 0;
+}
+
+.half-segments {
+  margin-top: 10px;
+}
+
+.half-segment-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(100px, 1fr) 90px 90px 70px 90px 42px;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.half-segment-row input[type="text"],
+.half-segment-row input[type="number"] {
+  margin: 2px 0 0;
+  max-width: none;
+}
+
+.half-segment-row input[type="color"] {
+  width: 54px;
+  height: 34px;
+  padding: 2px;
+  margin-top: 2px;
+}
+
+.inline-control {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.compact-btn {
+  padding: 6px 10px;
+  margin-bottom: 0;
+}
+
 .agent-card {
   margin-top: 12px;
   padding: 12px;
@@ -1256,7 +1585,9 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .vacation-row {
+  .vacation-row,
+  .half-vacation-header,
+  .half-segment-row {
     grid-template-columns: 1fr;
     justify-items: start;
   }
