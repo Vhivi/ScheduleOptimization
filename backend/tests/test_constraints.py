@@ -597,6 +597,72 @@ def test_generate_planning_paid_leave_hours_balancing_regression():
     assert "info" not in result
 
 
+def test_generate_planning_allows_agent_with_full_period_leave_to_have_no_shift():
+    """
+    Agents fully blocked by leave should not make the model infeasible merely
+    because they receive no worked assignment on the generated period.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [{"start": "05-01-2026", "end": "09-01-2026"}],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    vacations = ["Jour"]
+    week_schedule = [
+        "Lun. 05-01",
+        "Mar. 06-01",
+        "Mer. 07-01",
+        "Jeu. 08-01",
+        "Ven. 09-01",
+    ]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-01-05",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 600,
+                "period_max_gap": 600,
+                "max_weekly_hours": 60,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert "info" not in result
+    assert result["Agent1"] == []
+    assert len(result["Agent2"]) == len(week_schedule)
+
+
 def test_generate_planning_ignores_leave_periods_from_other_years():
     """
     Regression test: leave periods from another year must not block a target planning year.
