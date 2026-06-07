@@ -183,5 +183,9 @@ describe('App.vue', () => {
       { name: 'Jour matin', duration: 6, label: 'J matin' },
       { name: 'Jour apres-midi', duration: 6, label: 'J aprem' },
     ]);
+    expect(payload.vacation_colors).toEqual({
+      'Jour matin': '#B9F6CA',
+      'Jour apres-midi': '#00C853',
+    });
   });
 });
