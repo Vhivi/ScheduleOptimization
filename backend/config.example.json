@@ -148,6 +148,14 @@
       ]
     }
   },
+  "vacation_metadata": {
+    "Nuit": {
+      "is_night": true,
+      "requires_next_day_rest": true,
+      "start_time": "19:00",
+      "end_time": "07:00"
+    }
+  },
   "vacation_colors": {
     "Jour": "#75FA79",
     "Jour matin": "#B9F6CA",

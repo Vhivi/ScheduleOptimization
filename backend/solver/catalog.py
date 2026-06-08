@@ -18,6 +18,8 @@ class AssignmentMetadata:
     penalty: int = 0
     is_night: bool = False
     requires_next_day_rest: bool = False
+    start_time: str | None = None
+    end_time: str | None = None
 
 
 def _duration_to_tenths(value: Any, field_name: str) -> int:
@@ -69,6 +71,8 @@ def build_vacation_catalog(config: dict[str, Any]) -> dict[str, Any]:
             label=parent_metadata.get("label", parent),
             is_night=parent_is_night,
             requires_next_day_rest=parent_requires_rest,
+            start_time=parent_metadata.get("start_time"),
+            end_time=parent_metadata.get("end_time"),
         )
         assignable_vacations.append(parent)
 
@@ -112,6 +116,8 @@ def build_vacation_catalog(config: dict[str, Any]) -> dict[str, Any]:
                     penalty=penalty,
                     is_night=segment_is_night,
                     requires_next_day_rest=segment_requires_rest,
+                    start_time=segment.get("start_time", parent_metadata.get("start_time")),
+                    end_time=segment.get("end_time", parent_metadata.get("end_time")),
                 )
                 assignable_vacations.append(segment_name)
                 segment_covering_assignments[(parent, segment_name)] = [parent, segment_name]

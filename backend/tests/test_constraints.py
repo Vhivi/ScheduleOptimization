@@ -1,9 +1,11 @@
 from copy import deepcopy
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
+from solver.catalog import AssignmentMetadata
 from solver.constraints.mixed import limit_weekly_nights_and_hours
 
 
@@ -37,6 +39,72 @@ def _solve_forced_weekly_shifts(max_weekly_hours):
         ("Mar. 02-06", "Jour"),
         ("Mer. 03-06", "Nuit"),
         ("Jeu. 04-06", "Nuit"),
+    }
+    for day in week:
+        for vacation in vacations:
+            model.Add(
+                planning[(agent_name, day, vacation)]
+                == int((day, vacation) in forced_shifts)
+            )
+
+    solver = cp_model.CpSolver()
+    return solver.Solve(model)
+
+
+def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    vacations = ["Jour", "Nuit"]
+    week = [
+        "Lun. 05-01",
+        "Mar. 06-01",
+        "Mer. 07-01",
+        "Jeu. 08-01",
+        "Ven. 09-01",
+        "Sam. 10-01",
+        "Dim. 11-01",
+    ]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in week
+        for vacation in vacations
+    }
+    start_date = datetime(2026, 1, 5)
+
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        assignable_vacations=vacations,
+        weeks_split=[week],
+        week_schedule=week,
+        planning=planning,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(week)},
+        assignment_metadata={
+            "Jour": AssignmentMetadata(name="Jour", parent="Jour", duration=120),
+            "Nuit": AssignmentMetadata(
+                name="Nuit",
+                parent="Nuit",
+                duration=120,
+                is_night=True,
+                requires_next_day_rest=True,
+                start_time="19:00",
+                end_time="07:00",
+            ),
+        },
+        shift_durations={"Jour": 120, "Nuit": 120},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+
+    forced_shifts = {
+        ("Mar. 06-01", "Jour"),
+        ("Ven. 09-01", "Nuit"),
+        ("Sam. 10-01", "Nuit"),
+        ("Dim. 11-01", "Nuit"),
     }
     for day in week:
         for vacation in vacations:
@@ -736,6 +804,17 @@ def test_weekly_hours_limit_uses_configured_cap():
     """
 
     status = _solve_forced_weekly_shifts(max_weekly_hours=480)
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_weekly_hours_limit_splits_sunday_overnight_shift():
+    """
+    Tuesday day + Friday/Saturday nights + Sunday night is 41h in the current
+    week when Sunday 19:00-07:00 contributes only 5h before Monday.
+    """
+
+    status = _solve_forced_temporal_weekly_shifts(max_weekly_hours=450)
 
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
     
