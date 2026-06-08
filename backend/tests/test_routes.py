@@ -4,6 +4,7 @@ from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
+    RELAXED_CONSTRAINT_DIAGNOSTICS,
     _diagnose_manual_entry_conflicts,
     _probe_relaxed_hard_constraints,
     _inject_manual_status_entries,
@@ -522,6 +523,12 @@ def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
 
     assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
     assert "couverture quotidienne" in reasons[0]["message"]
+
+
+def test_relaxed_constraints_do_not_include_agent_minimum_assignment():
+    constraints = [diagnostic["constraint"] for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS]
+
+    assert "require_at_least_one_shift_per_agent" not in constraints
 
 
 def test_probe_relaxed_hard_constraints_uses_generic_rest_wording():

@@ -950,11 +950,6 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
         "detail": "Un agent aurait probablement besoin de couvrir plusieurs vacations le même jour.",
     },
     {
-        "constraint": "require_at_least_one_shift_per_agent",
-        "label": "au moins une vacation par agent",
-        "detail": "Tous les agents ne peuvent peut-être pas recevoir au moins une vacation sur la période.",
-    },
-    {
         "constraint": "cover_daily_shifts",
         "label": "couverture quotidienne des besoins",
         "detail": "Le nombre d'agents requis par date/vacation semble incompatible avec les disponibilités restantes.",

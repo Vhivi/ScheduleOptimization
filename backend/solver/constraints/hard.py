@@ -38,7 +38,6 @@ def register(registry: ConstraintRegistry) -> None:
     The hard constraints are:
     - Apply initial shifts
     - Limit one shift per day
-    - Require at least one shift per agent
     - Cover daily shifts
     - Avoid day after night
     - Limit CDP per week (historical hard business exception)
@@ -54,7 +53,6 @@ def register(registry: ConstraintRegistry) -> None:
     """
     registry.register_hard(apply_initial_shifts)
     registry.register_hard(limit_one_shift_per_day)
-    registry.register_hard(require_at_least_one_shift_per_agent)
     registry.register_hard(cover_daily_shifts)
     registry.register_hard(enforce_full_weekend_composition)
     registry.register_hard(enforce_min_free_weekends_per_horizon)
@@ -115,29 +113,6 @@ def limit_one_shift_per_day(ctx: SolverContext) -> None:
                 sum(ctx.planning[(agent_name, day, vacation)] for vacation in ctx.assignable_vacations)
                 <= 1
             )
-
-
-def require_at_least_one_shift_per_agent(ctx: SolverContext) -> None:
-    """
-    Requires each agent to have at least one shift per week.
-
-    This constraint is applied per agent and ensures that the sum of all shift variables
-    for that agent on all days in the week's schedule is greater than or equal to one.
-    This prevents the agent from being assigned no shifts at all.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        ctx.model.Add(
-            sum(
-                ctx.planning[(agent_name, day, vacation)]
-                for day in ctx.week_schedule
-                for vacation in ctx.assignable_vacations
-            )
-            >= 1
-        )
 
 
 def cover_daily_shifts(ctx: SolverContext) -> None:
