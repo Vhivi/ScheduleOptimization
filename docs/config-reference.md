@@ -167,7 +167,9 @@ Example:
   "Nuit": {
     "label": "N",
     "is_night": true,
-    "requires_next_day_rest": true
+    "requires_next_day_rest": true,
+    "start_time": "19:00",
+    "end_time": "07:00"
   }
 }
 ```
@@ -176,6 +178,10 @@ Notes:
 
 - `is_night` marks an assignment as a night assignment for night-specific safety rules.
 - `requires_next_day_rest` blocks non-night work on the following day.
+- `start_time` and `end_time` are optional `HH:MM` values used only by `solver.max_weekly_hours`.
+- If `end_time` is less than or equal to `start_time`, the shift is treated as ending the next day.
+- Example: a Sunday `Nuit` from `19:00` to `07:00` contributes 5h to the Sunday week and 7h to the next Monday week.
+- If either time is missing, the full `vacation_durations` value is counted on the assignment day, preserving legacy behavior.
 - Segment-level metadata in `half_vacations[].segments[]` overrides or inherits from the parent behavior.
 
 ### `holidays` (required)
