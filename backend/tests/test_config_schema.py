@@ -87,6 +87,42 @@ def test_schema_accepts_max_weekly_hours():
     assert errors == []
 
 
+def test_schema_accepts_temporal_vacation_metadata():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example.setdefault("vacation_metadata", {})["Nuit"] = {
+        "is_night": True,
+        "requires_next_day_rest": True,
+        "start_time": "19:00",
+        "end_time": "07:00",
+    }
+    example["half_vacations"]["Nuit"]["segments"][0]["start_time"] = "19:00"
+    example["half_vacations"]["Nuit"]["segments"][0]["end_time"] = "01:00"
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors == []
+
+
+def test_schema_rejects_invalid_temporal_vacation_metadata_time():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example.setdefault("vacation_metadata", {})["Nuit"] = {
+        "start_time": "24:00",
+        "end_time": "07:00",
+    }
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors != []
+    assert any(
+        "start_time" in "/".join(str(part) for part in error.path)
+        for error in errors
+    )
+
+
 @pytest.mark.parametrize("max_weekly_hours", [0, -1])
 def test_schema_rejects_non_positive_max_weekly_hours(max_weekly_hours):
     schema = _load_json(SCHEMA_PATH)
