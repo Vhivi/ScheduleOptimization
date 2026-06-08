@@ -61,6 +61,103 @@
       </div>
 
       <div class="config-block">
+        <h3>Demi-vacations</h3>
+        <p v-if="hasCdpVacation" class="config-note">CDP n'est pas decoupable.</p>
+
+        <div v-for="parent in splittableVacations" :key="`half_${parent}`" class="half-vacation-card">
+          <div class="half-vacation-header">
+            <strong>{{ parent }}</strong>
+            <label class="inline-control">
+              <input
+                type="checkbox"
+                :checked="isHalfVacationEnabled(parent)"
+                @change="setHalfVacationEnabled(parent, $event.target.checked)"
+              />
+              Activer
+            </label>
+            <label>
+              Penalite
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :disabled="!isHalfVacationEnabled(parent)"
+                :value="getHalfVacationConfig(parent).penalty"
+                @input="setHalfVacationPenalty(parent, $event.target.value)"
+              />
+            </label>
+            <button
+              class="secondary-btn"
+              :disabled="!isHalfVacationEnabled(parent)"
+              @click="addHalfVacationSegment(parent)"
+            >
+              Ajouter segment
+            </button>
+          </div>
+
+          <div v-if="isHalfVacationEnabled(parent)" class="half-segments">
+            <div
+              v-for="(segment, segmentIndex) in getHalfVacationConfig(parent).segments"
+              :key="`seg_${parent}_${segmentIndex}`"
+              class="half-segment-row"
+            >
+              <label>
+                Nom
+                <input
+                  type="text"
+                  :value="segment.name"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'name', $event.target.value)"
+                />
+              </label>
+              <label>
+                Label
+                <input
+                  type="text"
+                  :value="segment.label"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'label', $event.target.value)"
+                />
+              </label>
+              <label>
+                Duree
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  :value="segment.duration"
+                  @input="setHalfVacationSegmentField(parent, segmentIndex, 'duration', $event.target.value)"
+                />
+              </label>
+              <label>
+                Couleur
+                <input
+                  type="color"
+                  :value="getVacationColorValue(segment.name)"
+                  @input="setVacationColor(segment.name, $event.target.value)"
+                />
+              </label>
+              <label class="inline-control">
+                <input
+                  type="checkbox"
+                  :checked="Boolean(segment.is_night)"
+                  @change="setHalfVacationSegmentField(parent, segmentIndex, 'is_night', $event.target.checked)"
+                />
+                Nuit
+              </label>
+              <label class="inline-control">
+                <input
+                  type="checkbox"
+                  :checked="Boolean(segment.requires_next_day_rest)"
+                  @change="setHalfVacationSegmentField(parent, segmentIndex, 'requires_next_day_rest', $event.target.checked)"
+                />
+                Repos J+1
+              </label>
+              <button class="danger-btn compact-btn" @click="removeHalfVacationSegment(parent, segmentIndex)">X</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="config-block">
         <h3>Agents</h3>
         <button @click="addAgent">Ajouter un agent</button>
 
@@ -171,8 +268,8 @@
               >
                 <select v-model="selectedShifts[agent.name][day]">
                   <option value="">-</option>
-                  <option v-for="vacation in vacations" :key="vacation" :value="vacation">
-                    {{ vacation }}
+                  <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
+                    {{ getAssignmentLabel(vacation) }}
                   </option>
                 </select>
               </td>
@@ -203,8 +300,8 @@
                 >
                   <select v-model="manualSelectedShifts[agent.name][day]">
                     <option value="">-</option>
-                    <option v-for="vacation in vacations" :key="vacation" :value="vacation">
-                      {{ vacation }}
+                    <option v-for="vacation in assignableVacations" :key="vacation" :value="vacation">
+                      {{ getAssignmentLabel(vacation) }}
                     </option>
                     <option value="status:unavailable">Indisponible</option>
                     <option value="status:training">Formation</option>
@@ -255,6 +352,40 @@
                   {{ detail }}
                 </li>
               </ul>
+              <div v-if="reason.segments?.length" class="diagnostic-segments">
+                <div
+                  v-for="(segment, segmentIndex) in reason.segments"
+                  :key="`reason_${index}_segment_${segmentIndex}`"
+                  class="diagnostic-segment"
+                >
+                  <strong>
+                    {{ segment.date }} / {{ segment.vacation }} / {{ segment.segment }}
+                  </strong>
+                  <span v-if="segment.required_agents != null">
+                    Besoin: {{ segment.required_agents }}
+                  </span>
+                  <span v-if="segment.eligible_agents != null">
+                    Agents possibles: {{ segment.eligible_agents }}
+                  </span>
+                  <span v-if="segment.manual_count != null">
+                    Saisies: {{ segment.manual_count }}
+                  </span>
+                  <p v-if="formatBlockers(segment.blockers)" class="diagnostic-line">
+                    Blocages: {{ formatBlockers(segment.blockers) }}
+                  </p>
+                  <p v-if="formatActions(segment.actions)" class="diagnostic-line">
+                    Actions: {{ formatActions(segment.actions) }}
+                  </p>
+                  <ul v-if="segment.sample_blocked_agents?.length" class="blocked-agents">
+                    <li
+                      v-for="(blockedAgent, blockedIndex) in segment.sample_blocked_agents"
+                      :key="`reason_${index}_segment_${segmentIndex}_agent_${blockedIndex}`"
+                    >
+                      {{ blockedAgent.agent }}: {{ formatReasonCodes(blockedAgent.reasons) }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </li>
           </ul>
           <p v-if="optimizationImpactedCells.length">
@@ -279,6 +410,23 @@
         </ul>
       </div>
 
+      <div v-if="isExistingOptimizationMode && optimizationModifiedAssignments.length" class="info-card">
+        <span class="info-icon">i</span>
+        <div>
+          <strong>Affectations existantes modifiées</strong>
+          <ul class="modified-list">
+            <li
+              v-for="(modification, index) in optimizationModifiedAssignments"
+              :key="`mod_${index}`"
+            >
+              {{ modification.agent }} - {{ modification.date || modification.day }} :
+              {{ getAssignmentLabel(modification.initial_value) }} -> {{ getAssignmentLabel(modification.final_value) || 'cellule vidée' }}
+              ({{ formatModificationType(modification.change_type) }})
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
           {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
@@ -301,7 +449,8 @@
           :dayOff="dayOffFromConfig"
           :training="trainingFromConfig"
           :restrictions="restrictionsFromConfig"
-          :restrictionsDurations="restrictionDurationsFromConfig"
+          :restrictionDurations="restrictionDurationsFromConfig"
+          :assignmentLabels="assignmentLabels"
           :planningStartDate="startDate"
         />
       </div>
@@ -370,6 +519,7 @@ export default {
       endDate: null,
       planningResult: null,
       vacationDurations: null,
+      assignmentLabels: {},
       weekSchedule: [],
       vacationColors: {
         Jour: '#75FA79',
@@ -388,6 +538,7 @@ export default {
       previousWeekSchedule: [],
       agents: [],
       vacations: ['Jour', 'Nuit', 'CDP'],
+      assignableVacationsData: ['Jour', 'Nuit', 'CDP'],
       selectedShifts: {},
       manualWeekSchedule: [],
       manualSelectedShifts: {},
@@ -395,6 +546,7 @@ export default {
       optimizationSuggestions: [],
       optimizationBlockingReasons: [],
       optimizationImpactedCells: [],
+      optimizationModifiedAssignments: [],
       optimizationMeta: null,
       optimizationStatus: null,
       isLoading: false,
@@ -415,6 +567,12 @@ export default {
           Jour: 1,
           Nuit: 1,
           CDP: 1
+        },
+        half_vacations: {},
+        vacation_colors: {
+          Jour: '#75FA79',
+          Nuit: '#9175FA',
+          CDP: '#A59384'
         },
         holidays: [],
         solver: {}
@@ -473,6 +631,15 @@ export default {
     },
     restrictionTypesDurations() {
       return this.restrictionDurationsFromConfig || this.configData?.restriction_types_durations || {};
+    },
+    assignableVacations() {
+      return this.assignableVacationsData?.length ? this.assignableVacationsData : this.vacations;
+    },
+    splittableVacations() {
+      return (this.configData.vacations || []).filter((vacation) => vacation !== 'CDP');
+    },
+    hasCdpVacation() {
+      return (this.configData.vacations || []).includes('CDP');
     }
   },
   methods: {
@@ -480,9 +647,26 @@ export default {
       this.errorMessage = null;
       this.infoMessage = null;
     },
+
+    buildAssignableVacations(config) {
+      const assignable = [...(config?.vacations || [])];
+      const seen = new Set(assignable);
+      Object.entries(config?.half_vacations || {}).forEach(([parent, halfConfig]) => {
+        if (!seen.has(parent) || halfConfig?.enabled === false) return;
+        (halfConfig.segments || []).forEach((segment) => {
+          const name = segment?.name;
+          if (name && !seen.has(name)) {
+            seen.add(name);
+            assignable.push(name);
+          }
+        });
+      });
+      return assignable;
+    },
     resetPlanningData() {
       this.planningResult = null;
       this.vacationDurations = null;
+      this.assignmentLabels = {};
       this.weekSchedule = [];
       this.holidaysFromConfig = [];
       this.unavailableFromConfig = null;
@@ -496,6 +680,7 @@ export default {
       this.optimizationStatus = null;
       this.optimizationBlockingReasons = [];
       this.optimizationImpactedCells = [];
+      this.optimizationModifiedAssignments = [];
     },
     async applyConfigToState(config) {
       this.isHydratingConfig = true;
@@ -507,6 +692,8 @@ export default {
       normalized.holidays = Array.isArray(normalized.holidays) ? normalized.holidays : [];
       normalized.solver = normalized.solver || {};
       normalized.restriction_types_durations = normalized.restriction_types_durations || {};
+      normalized.half_vacations = normalized.half_vacations || {};
+      normalized.vacation_colors = normalized.vacation_colors || {};
 
       normalized.vacations = normalized.vacations.map((value) => String(value).trim()).filter(Boolean);
       normalized.vacations.forEach((vacation) => {
@@ -521,6 +708,26 @@ export default {
       if (normalized.vacation_durations.Conge == null) {
         normalized.vacation_durations.Conge = 7;
       }
+
+      Object.entries(normalized.half_vacations).forEach(([parent, halfConfig]) => {
+        if (parent === 'CDP' || !normalized.vacations.includes(parent)) {
+          delete normalized.half_vacations[parent];
+          return;
+        }
+        normalized.half_vacations[parent] = {
+          enabled: halfConfig?.enabled !== false,
+          penalty: Number.isFinite(Number(halfConfig?.penalty)) ? Number(halfConfig.penalty) : 500,
+          segments: Array.isArray(halfConfig?.segments)
+            ? halfConfig.segments.map((segment) => ({
+              name: segment?.name || '',
+              label: segment?.label || '',
+              duration: Number.isFinite(Number(segment?.duration)) ? Number(segment.duration) : 1,
+              is_night: Boolean(segment?.is_night),
+              requires_next_day_rest: Boolean(segment?.requires_next_day_rest)
+            }))
+            : []
+        };
+      });
 
       normalized.agents = normalized.agents.map((agent, index) => ({
         ...defaultAgent(`Agent${index + 1}`),
@@ -540,6 +747,8 @@ export default {
       this.vacationsInput = normalized.vacations.join(', ');
       this.holidaysInput = normalized.holidays.join(', ');
       this.vacations = [...normalized.vacations];
+      this.assignableVacationsData = this.buildAssignableVacations(normalized);
+      this.vacationColors = { ...this.vacationColors, ...normalized.vacation_colors };
       this.agents = [...normalized.agents];
       this.restrictionDurationsFromConfig = normalized.restriction_types_durations;
       await this.$nextTick();
@@ -578,6 +787,8 @@ export default {
 
       payload.vacation_durations = payload.vacation_durations || {};
       payload.staffing_requirements = payload.staffing_requirements || {};
+      payload.half_vacations = payload.half_vacations || {};
+      payload.vacation_colors = payload.vacation_colors || {};
 
       payload.vacations.forEach((vacation) => {
         const duration = Number(payload.vacation_durations[vacation]);
@@ -592,6 +803,9 @@ export default {
       } else {
         payload.vacation_durations.Conge = Number(payload.vacation_durations.Conge);
       }
+
+      payload.half_vacations = this.buildHalfVacationsPayload(payload);
+      payload.vacation_colors = this.buildVacationColorsPayload(payload);
 
       payload.agents = (payload.agents || []).map((agent, index) => ({
         ...defaultAgent(`Agent${index + 1}`),
@@ -614,6 +828,53 @@ export default {
       }));
 
       return payload;
+    },
+    buildHalfVacationsPayload(payload) {
+      const halfVacations = {};
+      Object.entries(payload.half_vacations || {}).forEach(([parent, halfConfig]) => {
+        if (parent === 'CDP' || !payload.vacations.includes(parent) || halfConfig?.enabled === false) {
+          return;
+        }
+        const segments = (halfConfig?.segments || [])
+          .map((segment) => {
+            const name = String(segment?.name || '').trim();
+            const label = String(segment?.label || '').trim();
+            const duration = Number(segment?.duration);
+            if (!name || !Number.isFinite(duration) || duration <= 0) {
+              return null;
+            }
+            const normalizedSegment = { name, duration };
+            if (label) normalizedSegment.label = label;
+            if (segment?.is_night) normalizedSegment.is_night = true;
+            if (segment?.requires_next_day_rest) normalizedSegment.requires_next_day_rest = true;
+            return normalizedSegment;
+          })
+          .filter(Boolean);
+        if (segments.length < 2) {
+          return;
+        }
+        halfVacations[parent] = {
+          enabled: true,
+          penalty: Math.max(0, Math.floor(Number(halfConfig?.penalty) || 0)),
+          segments
+        };
+      });
+      return halfVacations;
+    },
+    buildVacationColorsPayload(payload) {
+      const allowedNames = new Set(payload.vacations || []);
+      Object.values(payload.half_vacations || {}).forEach((halfConfig) => {
+        (halfConfig.segments || []).forEach((segment) => {
+          allowedNames.add(segment.name);
+        });
+      });
+      const colors = {};
+      Object.entries(payload.vacation_colors || {}).forEach(([vacation, color]) => {
+        if (allowedNames.has(vacation) && /^#[0-9A-Fa-f]{6}$/.test(color)) {
+          colors[vacation] = color;
+        }
+      });
+      return colors;
     },
     formatValidationErrors(details) {
       if (!Array.isArray(details) || details.length === 0) {
@@ -663,7 +924,171 @@ export default {
         if (this.configData.staffing_requirements[vacation] == null) {
           this.configData.staffing_requirements[vacation] = 1;
         }
+        if (this.configData.vacation_colors?.[vacation] == null) {
+          this.configData.vacation_colors[vacation] = this.vacationColors[vacation] || '#ffffff';
+        }
       });
+      Object.keys(this.configData.half_vacations || {}).forEach((parent) => {
+        if (!parsed.includes(parent) || parent === 'CDP') {
+          delete this.configData.half_vacations[parent];
+        }
+      });
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    getHalfVacationConfig(parent) {
+      return this.configData.half_vacations?.[parent] || { enabled: false, penalty: 500, segments: [] };
+    },
+    isHalfVacationEnabled(parent) {
+      return this.configData.half_vacations?.[parent]?.enabled === true;
+    },
+    ensureHalfVacationConfig(parent) {
+      if (parent === 'CDP') return null;
+      if (!this.configData.half_vacations) {
+        this.configData.half_vacations = {};
+      }
+      if (!this.configData.half_vacations[parent]) {
+        const parentDuration = Number(this.configData.vacation_durations?.[parent]) || 2;
+        this.configData.half_vacations[parent] = {
+          enabled: true,
+          penalty: 500,
+          segments: [
+            {
+              name: `${parent} 1`,
+              label: `${parent} 1`,
+              duration: parentDuration / 2
+            },
+            {
+              name: `${parent} 2`,
+              label: `${parent} 2`,
+              duration: parentDuration / 2
+            }
+          ]
+        };
+      }
+      return this.configData.half_vacations[parent];
+    },
+    setHalfVacationEnabled(parent, enabled) {
+      if (!enabled) {
+        if (this.configData.half_vacations?.[parent]) {
+          this.configData.half_vacations[parent].enabled = false;
+        }
+        this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+        return;
+      }
+      const config = this.ensureHalfVacationConfig(parent);
+      if (config) {
+        config.enabled = true;
+      }
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    setHalfVacationPenalty(parent, value) {
+      const config = this.ensureHalfVacationConfig(parent);
+      if (!config) return;
+      const parsed = Math.floor(Number(value));
+      config.penalty = Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+    },
+    addHalfVacationSegment(parent) {
+      const config = this.ensureHalfVacationConfig(parent);
+      if (!config) return;
+      config.segments.push({
+        name: `${parent} ${config.segments.length + 1}`,
+        label: `${parent} ${config.segments.length + 1}`,
+        duration: 1
+      });
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    removeHalfVacationSegment(parent, segmentIndex) {
+      const config = this.getHalfVacationConfig(parent);
+      if (!Array.isArray(config.segments)) return;
+      const [removed] = config.segments.splice(segmentIndex, 1);
+      if (removed?.name && this.configData.vacation_colors) {
+        delete this.configData.vacation_colors[removed.name];
+      }
+      this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+    },
+    setHalfVacationSegmentField(parent, segmentIndex, field, value) {
+      const config = this.ensureHalfVacationConfig(parent);
+      const segment = config?.segments?.[segmentIndex];
+      if (!segment) return;
+      const previousName = segment.name;
+      if (field === 'duration') {
+        const parsed = Number(value);
+        segment.duration = Number.isFinite(parsed) ? parsed : 1;
+      } else if (field === 'is_night' || field === 'requires_next_day_rest') {
+        segment[field] = Boolean(value);
+      } else {
+        segment[field] = value;
+      }
+      if (field === 'name' && previousName !== value) {
+        if (this.configData.vacation_colors?.[previousName] && !this.configData.vacation_colors?.[value]) {
+          this.configData.vacation_colors[value] = this.configData.vacation_colors[previousName];
+        }
+        if (this.configData.vacation_colors?.[previousName]) {
+          delete this.configData.vacation_colors[previousName];
+        }
+        this.assignableVacationsData = this.buildAssignableVacations(this.configData);
+      }
+    },
+    getVacationColorValue(vacation) {
+      return this.configData.vacation_colors?.[vacation] || '#ffffff';
+    },
+    setVacationColor(vacation, color) {
+      if (!vacation) return;
+      if (!this.configData.vacation_colors) {
+        this.configData.vacation_colors = {};
+      }
+      this.configData.vacation_colors[vacation] = color;
+      this.vacationColors = { ...this.vacationColors, [vacation]: color };
+    },
+    getAssignmentLabel(assignment) {
+      if (!assignment) return '';
+      return this.assignmentLabels?.[assignment] || assignment;
+    },
+    formatModificationType(changeType) {
+      const labels = {
+        changed_to_full: 'remplacée par vacation complète',
+        changed_to_half: 'remplacée par demi-vacation',
+        cleared: 'vidée'
+      };
+      return labels[changeType] || changeType || 'modifiée';
+    },
+    formatBlockerCode(code) {
+      const labels = {
+        existing_assignment: 'affectation existante differente',
+        status: 'statut bloquant',
+        restriction: 'restriction directe',
+        parent_restriction: 'restriction parent',
+        half_weekend: 'demi-vacation interdite week-end',
+        half_holiday: 'demi-vacation interdite jour ferie'
+      };
+      return labels[code] || code;
+    },
+    formatActionCode(code) {
+      const labels = {
+        clear_cell: 'vider une cellule',
+        reduce_existing_assignment_count: 'reduire les saisies existantes',
+        free_agent: 'liberer un agent',
+        increase_max_weekly_hours: 'augmenter le plafond horaire',
+        reduce_staffing_requirement: 'reduire le besoin de couverture',
+        use_full_vacation: 'utiliser une vacation complete',
+        allow_or_assign_half_vacations: 'autoriser ou assigner des demi-vacations'
+      };
+      return labels[code] || code;
+    },
+    formatBlockers(blockers) {
+      if (!blockers || typeof blockers !== 'object') return '';
+      return Object.entries(blockers)
+        .filter(([, count]) => count)
+        .map(([code, count]) => `${this.formatBlockerCode(code)} (${count})`)
+        .join(', ');
+    },
+    formatActions(actions) {
+      if (!Array.isArray(actions) || actions.length === 0) return '';
+      return actions.map((action) => this.formatActionCode(action)).join(', ');
+    },
+    formatReasonCodes(reasons) {
+      if (!Array.isArray(reasons) || reasons.length === 0) return 'blocage non precise';
+      return reasons.map((reason) => this.formatBlockerCode(reason)).join(', ');
     },
     setVacationDuration(vacation, value) {
       const parsed = Number(value);
@@ -723,6 +1148,7 @@ export default {
         });
         this.previousWeekSchedule = response.data.previous_week_schedule;
         this.agents = response.data.agents || [];
+        this.assignableVacationsData = response.data.assignable_vacations || this.assignableVacationsData;
         this.selectedShifts = {};
         this.agents.forEach((agent) => {
           if (!agent.name) {
@@ -821,6 +1247,9 @@ export default {
         const response = await apiPost(endpoint, payload);
         this.planningResult = response.data.planning;
         this.vacationDurations = response.data.vacation_durations;
+        this.assignmentLabels = response.data.assignment_labels || {};
+        this.vacationColors = { ...this.vacationColors, ...(response.data.vacation_colors || {}) };
+        this.assignableVacationsData = response.data.assignable_vacations || this.assignableVacationsData;
         this.weekSchedule = response.data.week_schedule;
         this.holidaysFromConfig = response.data.holidays;
         this.unavailableFromConfig = response.data.unavailable;
@@ -832,6 +1261,7 @@ export default {
         this.optimizationSuggestions = response.data.suggestions || [];
         this.optimizationBlockingReasons = response.data.blocking_reasons || [];
         this.optimizationImpactedCells = response.data.impacted_cells || [];
+        this.optimizationModifiedAssignments = response.data.modified_existing_assignments || [];
         this.optimizationMeta = response.data.meta || null;
         this.optimizationStatus = response.data.status || null;
       } catch (error) {
@@ -842,6 +1272,7 @@ export default {
           this.optimizationSuggestions = responseData.suggestions || [];
           this.optimizationBlockingReasons = responseData.blocking_reasons || [];
           this.optimizationImpactedCells = responseData.impacted_cells || [];
+          this.optimizationModifiedAssignments = responseData.modified_existing_assignments || [];
           this.optimizationMeta = responseData.meta || null;
           this.infoMessage = responseData.error || "Aucune solution trouvée. Consultez les suggestions.";
         } else if (responseData?.info) {
@@ -1005,6 +1436,68 @@ button:disabled {
   font-weight: bold;
 }
 
+.config-note {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 4px 0 10px;
+}
+
+.half-vacation-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dce8f7;
+  border-radius: 8px;
+  background: white;
+}
+
+.half-vacation-header {
+  display: grid;
+  grid-template-columns: 140px 110px 140px 150px;
+  gap: 10px;
+  align-items: center;
+}
+
+.half-vacation-header input[type="number"] {
+  max-width: 110px;
+  margin: 2px 0 0;
+}
+
+.half-segments {
+  margin-top: 10px;
+}
+
+.half-segment-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(100px, 1fr) 90px 90px 70px 90px 42px;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.half-segment-row input[type="text"],
+.half-segment-row input[type="number"] {
+  margin: 2px 0 0;
+  max-width: none;
+}
+
+.half-segment-row input[type="color"] {
+  width: 54px;
+  height: 34px;
+  padding: 2px;
+  margin-top: 2px;
+}
+
+.inline-control {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.compact-btn {
+  padding: 6px 10px;
+  margin-bottom: 0;
+}
+
 .agent-card {
   margin-top: 12px;
   padding: 12px;
@@ -1073,6 +1566,38 @@ button:disabled {
   color: #8a0000;
   font-size: 14px;
   margin-top: 4px;
+}
+
+.diagnostic-segments {
+  margin-top: 8px;
+}
+
+.diagnostic-segment {
+  background: #fffafa;
+  border: 1px solid #e6b4b4;
+  border-radius: 6px;
+  color: #690000;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.diagnostic-segment span {
+  display: inline-block;
+  margin-right: 12px;
+}
+
+.diagnostic-line {
+  margin: 6px 0 0;
+}
+
+.blocked-agents {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.modified-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
 }
 
 .info-card {
@@ -1175,7 +1700,9 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .vacation-row {
+  .vacation-row,
+  .half-vacation-header,
+  .half-segment-row {
     grid-template-columns: 1fr;
     justify-items: start;
   }

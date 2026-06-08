@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added configurable half-vacation support with assignable split segments, segment labels, colors, soft penalties, and night/rest metadata.
+- Added segment-based coverage so parent shifts can be covered by full assignments or matching half-vacation segments.
+- Added structured backend diagnostics for existing-schedule optimization, including segment-level blockers, suggested actions, and sample blocked agents.
+- Added frontend display for assignment labels, modified existing assignments, and structured optimization diagnostics.
+- Added frontend half-vacation configuration editing for segments, penalties, colors, night flags, and next-day rest flags.
+
+### Changed
+
+- Changed existing-schedule optimization so existing assignments are preserved through objective weighting instead of being treated as hard locks.
+- Changed the historical minimum-assignment rule from a hard constraint to a weak objective bonus, allowing fully unavailable or on-leave agents to receive zero worked assignments.
+- Updated planning totals so `Total affectations` counts worked assignments only while `Total Heures` uses actual assignment durations.
+- Expanded configuration documentation for `half_vacations`, `vacation_colors`, and `vacation_metadata`.
+
+### Fixed
+
+- Prevented `CDP` from being configured as a split half-vacation.
+- Removed stale segment colors from frontend configuration payloads before saving.
+- Removed obsolete relaxed diagnostics for the former hard minimum-assignment rule.
+
 ## [0.9.3] - 2026-06-01
 
 ### Fixed

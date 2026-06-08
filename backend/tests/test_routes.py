@@ -4,6 +4,7 @@ from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
+    RELAXED_CONSTRAINT_DIAGNOSTICS,
     _diagnose_manual_entry_conflicts,
     _probe_relaxed_hard_constraints,
     _inject_manual_status_entries,
@@ -262,6 +263,7 @@ def test_generate_planning_route_valid_data(client):
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
+    assert result["assignment_labels"]["Jour"] == "Jour"
     assert len(result["week_schedule"]) == 2
 
 
@@ -407,8 +409,14 @@ def test_diagnose_manual_entry_conflicts_detects_understaffed_shift_capacity():
     staffing_reason = next(
         reason for reason in reasons if reason["code"] == "STAFFING_REQUIREMENT_UNMET"
     )
-    assert staffing_reason["count"] == 1
+    assert staffing_reason["count"] == 2
     assert "2026-01-15 / Jour" in staffing_reason["details"][0]
+    assert staffing_reason["segments"][0]["date"] == "2026-01-15"
+    assert staffing_reason["segments"][0]["vacation"] == "Jour"
+    assert staffing_reason["segments"][0]["required_agents"] == 2
+    assert staffing_reason["segments"][0]["eligible_agents"] == 0
+    assert "status" in staffing_reason["segments"][0]["blockers"]
+    assert "free_agent" in staffing_reason["segments"][0]["actions"]
 
 
 def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
@@ -446,9 +454,10 @@ def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
     assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
 
 
-def test_diagnose_manual_entry_conflicts_detects_day_shift_weekly_limit():
+def test_diagnose_manual_entry_conflicts_does_not_emit_day_shift_weekly_quota():
     config = deepcopy(load_default_config())
     agent_name = config["agents"][0]["name"]
+    config["solver"]["max_weekly_hours"] = 48
     entries = [
         {
             "agent": agent_name,
@@ -462,14 +471,8 @@ def test_diagnose_manual_entry_conflicts_detects_day_shift_weekly_limit():
 
     reasons = _diagnose_manual_entry_conflicts(entries, config)
 
-    weekly_limit_reason = next(
-        reason
-        for reason in reasons
-        if reason["code"] == "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED"
-    )
-    assert weekly_limit_reason["count"] == 1
-    assert "4 vacations Jour" in weekly_limit_reason["details"][0]
-
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED" not in reason_codes
 
 def test_diagnose_manual_entry_conflicts_detects_shift_after_night():
     config = deepcopy(load_default_config())
@@ -520,6 +523,36 @@ def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
 
     assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
     assert "couverture quotidienne" in reasons[0]["message"]
+
+
+def test_relaxed_constraints_do_not_include_agent_minimum_assignment():
+    constraints = [diagnostic["constraint"] for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS]
+
+    assert "require_at_least_one_shift_per_agent" not in constraints
+
+
+def test_probe_relaxed_hard_constraints_uses_generic_rest_wording():
+    config = deepcopy(load_default_config())
+
+    def fake_build(payload, runtime_config):
+        disabled = runtime_config.get("_disabled_hard_constraints_for_diagnostics", [])
+        if disabled == ["avoid_day_after_night"]:
+            return {"planning": {}}, 200
+        return {"info": "No solution found."}, 400
+
+    with patch("app._build_planning_payload", side_effect=fake_build):
+        reasons = _probe_relaxed_hard_constraints(
+            {
+                "start_date": "2026-01-15",
+                "end_date": "2026-01-15",
+                "initial_shifts": {},
+            },
+            config,
+        )
+
+    assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
+    assert "repos après affectation de nuit" in reasons[0]["message"]
+    assert "Nuit" not in reasons[0]["message"]
 
 
 def test_optimize_existing_planning_unsat_uses_relaxed_constraint_diagnostics(client):
@@ -727,6 +760,59 @@ def test_optimize_existing_planning_keeps_multiple_manual_shifts(client):
     assert ["Lun. 05-01", vacations[0]] in payload["planning"][agent_a]
     assert ["Lun. 05-01", vacations[1]] in payload["planning"][agent_b]
     assert payload["meta"]["manual_cell_count"] == 2
+
+
+def test_optimize_existing_planning_reports_modified_existing_assignment(client):
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {}
+    agent_name = config["agents"][0]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Nuit"]]},
+        "vacation_durations": {"Jour": 12, "Nuit": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour", "Nuit"],
+        "assignment_labels": {"Jour": "Jour", "Nuit": "Nuit"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    assert payload["modified_existing_assignments"] == [
+        {
+            "agent": agent_name,
+            "date": "2026-01-05",
+            "day": "Lun. 05-01",
+            "initial_value": "Jour",
+            "final_value": "Nuit",
+            "change_type": "changed_to_full",
+        }
+    ]
 
 
 def test_inject_manual_status_entries_adds_unavailable_day():
