@@ -1,5 +1,6 @@
 import { shallowMount } from '@vue/test-utils';
 import App from '../src/App.vue';
+import { apiPost } from '../src/apiClient';
 
 jest.mock('../src/apiClient', () => ({
   apiGet: jest.fn(() => Promise.resolve({
@@ -242,5 +243,76 @@ describe('App.vue', () => {
     expect(text).toContain('liberer un agent');
     expect(text).toContain('reduire le besoin de couverture');
     expect(text).toContain('Agent1: statut bloquant');
+  });
+
+  it('sends the strict existing assignment option when optimizing existing planning', async () => {
+    apiPost.mockResolvedValueOnce({
+      data: {
+        planning: {},
+        vacation_durations: {},
+        assignment_labels: {},
+        vacation_colors: {},
+        assignable_vacations: ['Jour'],
+        week_schedule: ['Lun. 05-01'],
+        holidays: [],
+        unavailable: {},
+        dayOff: {},
+        training: {},
+        restrictions: {},
+        restriction_types_durations: {},
+        warnings: [],
+        suggestions: [],
+        blocking_reasons: [],
+        impacted_cells: [],
+        modified_existing_assignments: [],
+        meta: { existing_assignments_strict: false },
+        status: 'ok',
+      },
+    });
+    const wrapper = shallowMount(App, {
+      global: {
+        stubs: {
+          PlanningTable: true,
+        },
+      },
+    });
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.setData({
+      activeMode: 'planning',
+      generationMode: 'existing',
+      startDate: '2026-01-05',
+      endDate: '2026-01-05',
+      existingAssignmentsStrict: false,
+      agents: [{ name: 'Agent1' }],
+      manualWeekSchedule: ['Lun. 05-01'],
+    });
+    await wrapper.vm.$nextTick();
+    await wrapper.setData({
+      manualSelectedShifts: {
+        Agent1: {
+          'Lun. 05-01': 'Jour',
+        },
+      },
+    });
+
+    await wrapper.vm.generatePlanning();
+
+    expect(apiPost).toHaveBeenCalledWith('/optimize-existing-planning', {
+      start_date: '2026-01-05',
+      end_date: '2026-01-05',
+      manual_entries: [
+        {
+          agent: 'Agent1',
+          date: '2026-01-05',
+          slot: 'day',
+          type: 'shift',
+          value: 'Jour',
+        },
+      ],
+      existing_assignments_strict: false,
+    });
   });
 });
