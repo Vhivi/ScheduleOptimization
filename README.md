@@ -31,11 +31,13 @@
 - 🔨 Flexible parameters defined through the `config.json` file.
 - ✉️ Support for agent preferences, exclusions, training days, and **multiple leave periods**.
 - 🧩 Dynamic shift types and simultaneous staffing quotas per shift (`staffing_requirements`).
+- Split-shift support through configurable `half_vacations`, including half-day/half-night segments, labels, colors, penalties, and night/rest metadata.
 
 ### 🔧 Visual Interactivity
 
 - 🔍 Vue.js-powered frontend for seamless schedule visualization and interaction.
 - ⚙️ Built-in interactive configuration mode (load active/default config, edit, save, and generate without backend restart).
+- Existing-schedule optimization mode with structured blocking diagnostics and modified-assignment reporting.
 
 ---
 
@@ -154,10 +156,21 @@ Core sections in `config.json`:
 - `vacations`: generated shift types (dynamic names supported)
 - `staffing_requirements`: simultaneous required agents per shift (`>= 0`, fallback `1`)
 - `vacation_durations`: paid-hour durations for each configured shift plus `Conge`
+- `half_vacations`: optional split segments for parent shifts such as `Jour` or `Nuit`
+- `vacation_colors`: frontend display colors for full shifts and half-vacation segments
+- `vacation_metadata`: optional labels and night/rest behavior for parent shifts
 - `holidays`: recurring public holidays
 - `solver`: optional runtime and fairness tuning
   - `max_weekly_hours`: strict weekly worked-hours cap per agent, default `36`
   - `global_max_gap` / `period_max_gap`: paid-hour balance gaps between agents, expressed in tenths of hours
+
+Half-vacation notes:
+
+- Parent shifts remain assignable as full shifts.
+- Enabled half-vacation segments can cover parent shift requirements segment by segment.
+- `CDP` is intentionally not splittable.
+- Half-vacations are rejected on weekends and recurring holidays.
+- See `docs/config-reference.md` for full examples and validation rules.
 
 ---
 

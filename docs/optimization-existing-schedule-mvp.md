@@ -1,5 +1,16 @@
 # Optimization of Existing Schedule — MVP Technical Spec
 
+## Status Note
+
+This document describes the original MVP target. The implemented feature has since evolved:
+
+- manual shift entries are now treated as existing assignments to preserve when possible, not hard locks;
+- status entries still inject hard non-working constraints;
+- backend responses include structured blocking reasons, segment-level diagnostics, impacted cells, suggestions, and modified existing assignments;
+- the frontend displays warnings, suggestions, blocking reasons, structured diagnostic segments, and existing assignments modified by the optimizer.
+
+Use this document as historical implementation context. For current API/config behavior, also see `docs/config-reference.md` and the route tests in `backend/tests/test_routes.py`.
+
 ## 1) Goal
 
 Add a third planning mode that lets users:
