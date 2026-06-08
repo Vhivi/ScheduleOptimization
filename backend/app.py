@@ -265,7 +265,9 @@ def _build_planning_payload(payload, runtime_config):
                 return {"error": f"Invalid vacation: {vacation}"}, 400
             validated_existing_assignments[(agent_name, day)] = vacation
 
-    for chunk_start, chunk_end in periods:
+    locked_initial_shifts = deepcopy(initial_shifts)
+
+    for chunk_index, (chunk_start, chunk_end) in enumerate(periods):
         # Convert the start and end dates into strings
         start_date_str = chunk_start.strftime("%Y-%m-%d")
         end_date_str = chunk_end.strftime("%Y-%m-%d")
@@ -276,13 +278,18 @@ def _build_planning_payload(payload, runtime_config):
 
         # Calling up the schedule generation function
         try:
+            chunk_initial_shifts = deepcopy(initial_shifts)
+            if chunk_index > 0:
+                for agent_name, shifts in locked_initial_shifts.items():
+                    chunk_initial_shifts.setdefault(agent_name, []).extend(shifts)
+
             result = generate_planning(
                 agents,
                 vacations,
                 week_schedule,
                 dayOff,
                 previous_week_schedule,
-                initial_shifts,
+                chunk_initial_shifts,
                 planning_start_date=start_date_str,
                 runtime_config=runtime_config,
                 existing_assignments=validated_existing_assignments,
@@ -1198,12 +1205,13 @@ def optimize_existing_planning_route():
         runtime_config, status_entries
     )
     warnings.extend(status_warnings)
+    existing_assignments_strict = bool(payload.get("existing_assignments_strict", True))
 
     result, status_code = _build_planning_payload(
         payload={
             "start_date": payload["start_date"],
             "end_date": payload["end_date"],
-            "initial_shifts": {},
+            "initial_shifts": existing_assignments if existing_assignments_strict else {},
             "existing_assignments": existing_assignments,
         },
         runtime_config=effective_runtime_config,
@@ -1227,7 +1235,7 @@ def optimize_existing_planning_route():
                 planning_payload={
                     "start_date": payload["start_date"],
                     "end_date": payload["end_date"],
-                    "initial_shifts": {},
+                    "initial_shifts": existing_assignments if existing_assignments_strict else {},
                     "existing_assignments": existing_assignments,
                 },
                 runtime_config=effective_runtime_config,
@@ -1272,6 +1280,7 @@ def optimize_existing_planning_route():
                     "meta": {
                         "manual_cell_count": len(manual_entries),
                         "conflict_count": len(warnings),
+                        "existing_assignments_strict": existing_assignments_strict,
                     },
                 }
             ),
@@ -1295,6 +1304,7 @@ def optimize_existing_planning_route():
     result["meta"] = {
         "manual_cell_count": len(manual_entries),
         "conflict_count": len(warnings),
+        "existing_assignments_strict": existing_assignments_strict,
     }
     return jsonify(result)
 
