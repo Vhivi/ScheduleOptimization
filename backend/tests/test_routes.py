@@ -310,6 +310,90 @@ def test_optimize_existing_planning_accepts_manual_shift_and_returns_ok_status(c
     assert [forced_day_label, forced_vacation] in payload["planning"][agent_name]
 
 
+def test_optimize_existing_planning_locks_manual_shifts_by_default(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Jour"]]},
+        "vacation_durations": {"Jour": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour"],
+        "assignment_labels": {"Jour": "Jour"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 200
+    planning_payload = build_payload.call_args.kwargs["payload"]
+    assert planning_payload["initial_shifts"] == {agent_name: [("Lun. 05-01", "Jour")]}
+    assert response.get_json()["meta"]["existing_assignments_strict"] is True
+
+
+def test_optimize_existing_planning_can_keep_manual_shifts_soft(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "existing_assignments_strict": False,
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Jour"]]},
+        "vacation_durations": {"Jour": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour"],
+        "assignment_labels": {"Jour": "Jour"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 200
+    planning_payload = build_payload.call_args.kwargs["payload"]
+    assert planning_payload["initial_shifts"] == {}
+    assert planning_payload["existing_assignments"] == {agent_name: [("Lun. 05-01", "Jour")]}
+    assert response.get_json()["meta"]["existing_assignments_strict"] is False
+
+
 def test_optimize_existing_planning_returns_warning_for_status_entries(client):
     data = {
         "start_date": "2026-01-05",
