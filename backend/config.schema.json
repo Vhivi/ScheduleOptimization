@@ -238,6 +238,12 @@
         },
         "requires_next_day_rest": {
           "type": "boolean"
+        },
+        "start_time": {
+          "$ref": "#/$defs/time_of_day"
+        },
+        "end_time": {
+          "$ref": "#/$defs/time_of_day"
         }
       }
     },
@@ -290,8 +296,18 @@
         },
         "requires_next_day_rest": {
           "type": "boolean"
+        },
+        "start_time": {
+          "$ref": "#/$defs/time_of_day"
+        },
+        "end_time": {
+          "$ref": "#/$defs/time_of_day"
         }
       }
+    },
+    "time_of_day": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
     }
   }
 }
