@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 
 
 def split_into_weeks(week_schedule):
@@ -71,3 +71,30 @@ def day_token(date_full: str) -> str:
     :rtype: str
     """
     return datetime.strptime(date_full, "%d-%m-%Y").strftime("%d-%m")
+
+
+def _parse_time_of_day(value: str) -> time:
+    return datetime.strptime(value, "%H:%M").time()
+
+
+def weekly_hour_contribution_tenths(day_date, metadata, fallback_duration, week_key):
+    """Return assignment hours that belong to an ISO week, in tenths of hours."""
+    if not day_date or not metadata or not metadata.start_time or not metadata.end_time:
+        return fallback_duration if day_date and day_date.isocalendar()[:2] == week_key else 0
+
+    start_time = _parse_time_of_day(metadata.start_time)
+    end_time = _parse_time_of_day(metadata.end_time)
+    start_at = datetime.combine(day_date.date(), start_time)
+    end_at = datetime.combine(day_date.date(), end_time)
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+
+    week_monday = date.fromisocalendar(week_key[0], week_key[1], 1)
+    week_start = datetime.combine(week_monday, time.min)
+    week_end = week_start + timedelta(days=7)
+
+    overlap_start = max(start_at, week_start)
+    overlap_end = min(end_at, week_end)
+    if overlap_end <= overlap_start:
+        return 0
+    return int(round((overlap_end - overlap_start).total_seconds() / 360))
