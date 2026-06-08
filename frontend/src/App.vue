@@ -427,6 +427,13 @@
         </div>
       </div>
 
+      <div v-if="isExistingOptimizationMode" class="existing-options">
+        <label class="inline-control">
+          <input type="checkbox" v-model="existingAssignmentsStrict" />
+          Verrouiller les vacations saisies
+        </label>
+      </div>
+
       <div>
         <button @click="generatePlanning" :disabled="isLoading || isConfigSaving">
           {{ isLoading ? "Génération en cours..." : actionButtonLabel }}
@@ -542,6 +549,7 @@ export default {
       selectedShifts: {},
       manualWeekSchedule: [],
       manualSelectedShifts: {},
+      existingAssignmentsStrict: true,
       optimizationWarnings: [],
       optimizationSuggestions: [],
       optimizationBlockingReasons: [],
@@ -1225,6 +1233,7 @@ export default {
       }
       if (this.isExistingOptimizationMode) {
         payload.manual_entries = [];
+        payload.existing_assignments_strict = this.existingAssignmentsStrict;
         Object.entries(this.manualSelectedShifts).forEach(([agent, days]) => {
           Object.entries(days || {}).forEach(([dayLabel, value]) => {
             if (!value) return;
@@ -1491,6 +1500,10 @@ button:disabled {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+}
+
+.existing-options {
+  margin: 14px 0 10px;
 }
 
 .compact-btn {
