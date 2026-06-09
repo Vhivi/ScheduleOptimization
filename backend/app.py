@@ -749,11 +749,14 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
         ]
         if rest_triggering_shifts:
             next_manual_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
-            if next_manual_shifts:
+            forbidden_next_manual_shifts = [
+                shift for shift in next_manual_shifts if not is_night_assignment(catalog, shift)
+            ]
+            if forbidden_next_manual_shifts:
                 counts_by_code["MANUAL_SHIFT_AFTER_NIGHT"] += 1
                 details_by_code["MANUAL_SHIFT_AFTER_NIGHT"].append(
                     f"{agent_name} / {iso_date}: {', '.join(rest_triggering_shifts)} "
-                    f"suivie de {', '.join(next_manual_shifts)} le {next_iso}"
+                    f"suivie de {', '.join(forbidden_next_manual_shifts)} le {next_iso}"
                 )
             if next_day_str in (agent.get("unavailable") or []) or next_day_str in (agent.get("training") or []):
                 counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
@@ -789,7 +792,7 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
 
     reason_messages = {
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
-        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle est posée le lendemain d'une affectation nécessitant un repos.",
+        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle non-nuit est posée le lendemain d'une affectation nécessitant un repos.",
         "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation nécessitant un repos est posée avant une indisponibilité ou une formation.",
         "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": "Une vacation manuelle ne respecte pas les règles de veille/lendemain de formation.",
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",

@@ -351,6 +351,69 @@ def test_optimize_existing_planning_locks_manual_shifts_by_default(client):
     assert response.get_json()["meta"]["existing_assignments_strict"] is True
 
 
+def test_optimize_existing_planning_accepts_locked_consecutive_manual_nights(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = [
+        {
+            "name": "Agent Nuit",
+            "preferences": {"preferred": ["Nuit"], "avoid": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+        {
+            "name": "Agent Jour",
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+    ]
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {}
+    config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    set_active_config(config)
+
+    data = {
+        "start_date": "2026-01-12",
+        "end_date": "2026-01-13",
+        "manual_entries": [
+            {
+                "agent": "Agent Nuit",
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+            {
+                "agent": "Agent Nuit",
+                "date": "2026-01-13",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+        ],
+    }
+
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["warnings"] == []
+    assert payload["meta"]["existing_assignments_strict"] is True
+    assert ["Lun. 12-01", "Nuit"] in payload["planning"]["Agent Nuit"]
+    assert ["Mar. 13-01", "Nuit"] in payload["planning"]["Agent Nuit"]
+
+
 def test_optimize_existing_planning_can_keep_manual_shifts_soft(client):
     agent_name = load_default_config()["agents"][0]["name"]
     data = {
@@ -584,6 +647,34 @@ def test_diagnose_manual_entry_conflicts_detects_shift_after_night():
 
     reason_codes = [reason["code"] for reason in reasons]
     assert "MANUAL_SHIFT_AFTER_NIGHT" in reason_codes
+
+
+def test_diagnose_manual_entry_conflicts_allows_consecutive_manual_nights():
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+            {
+                "agent": agent_name,
+                "date": "2026-01-13",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_AFTER_NIGHT" not in reason_codes
 
 
 def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
