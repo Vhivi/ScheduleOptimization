@@ -15,6 +15,7 @@ from ..utils import day_token
 DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
 CDP_SHIFT = "CDP"
+FRENCH_WEEKDAY_ABBREVIATIONS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 
 
 def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
@@ -29,6 +30,11 @@ def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
     :rtype: bool
     """
     return shift_name in ctx.vacations
+
+
+def _format_day_label(day_date: datetime) -> str:
+    day_name = FRENCH_WEEKDAY_ABBREVIATIONS[day_date.weekday()]
+    return f"{day_name}. {day_date.strftime('%d-%m')}"
 
 
 def register(registry: ConstraintRegistry) -> None:
@@ -375,7 +381,7 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
                 previous_saturday = vacation_start - timedelta(days=2)
                 previous_sunday = vacation_start - timedelta(days=1)
                 for weekend_day in [previous_saturday, previous_sunday]:
-                    weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
+                    weekend_str = _format_day_label(weekend_day)
                     if (
                         weekend_str in ctx.week_schedule
                         or weekend_str in ctx.previous_week_schedule

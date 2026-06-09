@@ -785,6 +785,75 @@ def test_generate_planning_ignores_leave_periods_from_other_years():
     assert "info" not in result
 
 
+def test_monday_leave_blocks_previous_weekend_with_french_day_labels():
+    """
+    Regression test: leave starting on Monday must block the preceding Saturday/Sunday.
+
+    The weekend labels must use the same French format as week_schedule; otherwise
+    the constraint silently misses the generated days.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [{"start": "06-01-2025", "end": "10-01-2025"}],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    vacations = ["Jour"]
+    week_schedule = [
+        "Sam. 04-01",
+        "Dim. 05-01",
+        "Lun. 06-01",
+    ]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={
+            "Agent1": [
+                ("Sam. 04-01", "Jour"),
+                ("Dim. 05-01", "Jour"),
+            ]
+        },
+        planning_start_date="2025-01-04",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 600,
+                "period_max_gap": 600,
+                "max_weekly_hours": 60,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert result == {"info": "No solution found."}
+
+
 def test_weekly_hours_limit_counts_night_shifts_with_default_cap():
     """
     Regression test: weekly hour cap must count night shifts, not only day/CDP.
