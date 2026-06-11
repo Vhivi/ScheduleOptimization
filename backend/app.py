@@ -6,7 +6,12 @@ from copy import deepcopy
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from jsonschema import Draft202012Validator
-from solver.catalog import build_vacation_catalog, is_night_assignment, requires_next_day_rest
+from solver.catalog import (
+    assignment_matches_choice,
+    build_vacation_catalog,
+    is_night_assignment,
+    requires_next_day_rest,
+)
 from solver.engine import generate_planning as generate_planning_engine
 
 app = Flask(__name__)
@@ -568,8 +573,29 @@ def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None,
         if reason.get("code") not in {"GLOBAL_UNSAT", "PREVALIDATION_WARNINGS_PRESENT"}
     ]
     if unsat_reason is not None and manual_entries and actionable_reasons:
-        first = manual_entries[0]
         first_reason = actionable_reasons[0]
+        actionable_segments = [
+            segment
+            for segment in first_reason.get("segments", [])
+            if "clear_cell" in (segment.get("actions") or [])
+            and segment.get("agent")
+            and segment.get("date")
+        ]
+        if actionable_segments:
+            for segment in actionable_segments:
+                suggestions.append(
+                    {
+                        "agent": segment.get("agent"),
+                        "date": segment.get("date"),
+                        "slot": segment.get("slot", "day"),
+                        "reason_code": first_reason.get("code", "GLOBAL_UNSAT"),
+                        "message": first_reason.get("message", unsat_reason),
+                        "proposals": [{"action": "clear_cell"}],
+                    }
+                )
+            return suggestions
+
+        first = manual_entries[0]
         suggestions.append(
             {
                 "agent": first.get("agent"),
@@ -618,6 +644,32 @@ def _date_matches_vacation_period(iso_date, vacation_periods):
         if start_dt <= day_dt <= end_dt:
             return True
     return False
+
+
+def _manual_conflict_segment(entry, blocker, label, extra=None):
+    segment = {
+        "agent": entry.get("agent"),
+        "date": entry.get("date"),
+        "slot": entry.get("slot", "day"),
+        "value": entry.get("value"),
+        "vacation": entry.get("value"),
+        "segment": label,
+        "blockers": {blocker: 1},
+        "actions": ["clear_cell"],
+    }
+    if extra:
+        segment.update(extra)
+    return segment
+
+
+def _manual_conflict_details(segments):
+    return [
+        (
+            f"{segment.get('agent')} - {segment.get('date')} - "
+            f"{segment.get('value')}: {segment.get('segment')}"
+        )
+        for segment in segments
+    ]
 
 
 def _agent_has_status_on_day(agent, iso_date):
@@ -1069,6 +1121,7 @@ def _probe_relaxed_hard_constraints(planning_payload, runtime_config):
 def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
     reasons = []
     by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
+    catalog = build_vacation_catalog(runtime_config)
     (
         manual_shifts_by_agent_day,
         manual_counts_by_day_shift,
@@ -1081,6 +1134,10 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
     training_conflicts = 0
     restriction_conflicts = 0
     vacation_conflicts = 0
+    unavailable_segments = []
+    training_segments = []
+    restriction_segments = []
+    vacation_segments = []
 
     for entry in manual_entries:
         if entry.get("type") != "shift":
@@ -1101,12 +1158,34 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
 
         if day_str in (agent.get("unavailable") or []):
             unavailable_conflicts += 1
+            unavailable_segments.append(
+                _manual_conflict_segment(entry, "status", "indisponibilité")
+            )
         if day_str in (agent.get("training") or []):
             training_conflicts += 1
-        if shift_value in (agent.get("restriction") or []):
+            training_segments.append(
+                _manual_conflict_segment(entry, "status", "formation")
+            )
+        matching_restrictions = [
+            restriction
+            for restriction in (agent.get("restriction") or [])
+            if assignment_matches_choice(catalog, shift_value, {restriction})
+        ]
+        if matching_restrictions:
             restriction_conflicts += 1
+            restriction_segments.append(
+                _manual_conflict_segment(
+                    entry,
+                    "restriction",
+                    ", ".join(matching_restrictions),
+                    {"restriction": matching_restrictions[0]},
+                )
+            )
         if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
             vacation_conflicts += 1
+            vacation_segments.append(
+                _manual_conflict_segment(entry, "status", "congés")
+            )
 
     if duplicate_count:
         reasons.append(
@@ -1122,6 +1201,8 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
                 "code": "MANUAL_SHIFT_ON_UNAVAILABLE_DAY",
                 "message": "Une vacation manuelle a été posée sur un jour d'indisponibilité.",
                 "count": unavailable_conflicts,
+                "details": _manual_conflict_details(unavailable_segments),
+                "segments": unavailable_segments,
             }
         )
     if training_conflicts:
@@ -1130,6 +1211,8 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
                 "code": "MANUAL_SHIFT_ON_TRAINING_DAY",
                 "message": "Une vacation manuelle a été posée sur un jour de formation.",
                 "count": training_conflicts,
+                "details": _manual_conflict_details(training_segments),
+                "segments": training_segments,
             }
         )
     if vacation_conflicts:
@@ -1138,6 +1221,8 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
                 "code": "MANUAL_SHIFT_DURING_VACATION",
                 "message": "Une vacation manuelle a été posée pendant une période de congé.",
                 "count": vacation_conflicts,
+                "details": _manual_conflict_details(vacation_segments),
+                "segments": vacation_segments,
             }
         )
     if restriction_conflicts:
@@ -1146,6 +1231,8 @@ def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
                 "code": "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION",
                 "message": "Une vacation manuelle correspond à une restriction agent.",
                 "count": restriction_conflicts,
+                "details": _manual_conflict_details(restriction_segments),
+                "segments": restriction_segments,
             }
         )
 
