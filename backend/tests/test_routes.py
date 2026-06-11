@@ -601,6 +601,75 @@ def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
     assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
 
 
+def test_diagnose_manual_entry_conflicts_reports_restricted_manual_cell():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent["restriction"] = ["Jour"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+        config,
+    )
+
+    restriction_reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    )
+    assert restriction_reason["count"] == 1
+    assert restriction_reason["segments"] == [
+        {
+            "agent": agent["name"],
+            "date": "2026-01-15",
+            "slot": "day",
+            "value": "Jour",
+            "vacation": "Jour",
+            "segment": "Jour",
+            "blockers": {"restriction": 1},
+            "actions": ["clear_cell"],
+            "restriction": "Jour",
+        }
+    ]
+
+
+def test_diagnose_manual_entry_conflicts_detects_parent_restriction_for_half_shift():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent["restriction"] = ["Jour"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour après-midi",
+            }
+        ],
+        config,
+    )
+
+    restriction_reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    )
+    assert restriction_reason["count"] == 1
+    assert restriction_reason["segments"][0]["agent"] == agent["name"]
+    assert restriction_reason["segments"][0]["date"] == "2026-01-15"
+    assert restriction_reason["segments"][0]["value"] == "Jour après-midi"
+    assert restriction_reason["segments"][0]["restriction"] == "Jour"
+
+
 def test_diagnose_manual_entry_conflicts_does_not_emit_day_shift_weekly_quota():
     config = deepcopy(load_default_config())
     agent_name = config["agents"][0]["name"]
@@ -878,6 +947,52 @@ def test_optimize_existing_planning_unsat_omits_manual_reason_when_specific_diag
     assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
     assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
     assert payload["suggestions"][0]["reason_code"] == "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT"
+
+
+def test_optimize_existing_planning_suggests_actual_restricted_manual_cell(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = config["agents"][:2]
+    first_agent = config["agents"][0]
+    restricted_agent = config["agents"][1]
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+    restricted_agent["restriction"] = ["Jour"]
+    set_active_config(config)
+
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": first_agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+            {
+                "agent": restricted_agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+        ],
+    }
+
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    assert payload["suggestions"][0]["reason_code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    assert payload["suggestions"][0]["agent"] == restricted_agent["name"]
+    assert payload["suggestions"][0]["date"] == "2026-01-15"
+    assert payload["suggestions"][0]["agent"] != first_agent["name"]
 
 
 def test_optimize_existing_planning_rejects_unknown_status_value(client):
