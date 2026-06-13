@@ -567,10 +567,16 @@ def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None,
     if suggestions:
         return suggestions
 
+    non_actionable_reason_codes = {
+        "GLOBAL_UNSAT",
+        "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS",
+        "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN",
+        "PREVALIDATION_WARNINGS_PRESENT",
+    }
     actionable_reasons = [
         reason
         for reason in (blocking_reasons or [])
-        if reason.get("code") not in {"GLOBAL_UNSAT", "PREVALIDATION_WARNINGS_PRESENT"}
+        if reason.get("code") not in non_actionable_reason_codes
     ]
     if unsat_reason is not None and manual_entries and actionable_reasons:
         first_reason = actionable_reasons[0]
@@ -594,18 +600,6 @@ def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None,
                     }
                 )
             return suggestions
-
-        first = manual_entries[0]
-        suggestions.append(
-            {
-                "agent": first.get("agent"),
-                "date": first.get("date"),
-                "slot": first.get("slot", "day"),
-                "reason_code": first_reason.get("code", "GLOBAL_UNSAT"),
-                "message": first_reason.get("message", unsat_reason),
-                "proposals": [{"action": "clear_cell"}],
-            }
-        )
     return suggestions
 
 
@@ -622,6 +616,137 @@ def _build_blocking_reasons_from_context(manual_entries, warnings, unsat_reason)
             }
         )
     return reasons
+
+
+def _manual_entries_to_initial_shifts(manual_entries):
+    initial_shifts = {}
+    for entry in manual_entries:
+        if entry.get("type") != "shift" or not is_valid_date(entry.get("date")):
+            continue
+        agent = entry.get("agent")
+        value = entry.get("value")
+        if not agent or not value:
+            continue
+        entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
+        initial_shifts.setdefault(agent, []).append((format_day_label(entry_date), value))
+    return initial_shifts
+
+
+def _manual_lock_segment(entry, label):
+    return {
+        "agent": entry.get("agent"),
+        "date": entry.get("date"),
+        "slot": entry.get("slot", "day"),
+        "value": entry.get("value"),
+        "vacation": entry.get("value"),
+        "segment": label,
+        "actions": ["clear_cell"],
+    }
+
+
+def _diagnose_manual_lock_impact(planning_payload, manual_entries, runtime_config):
+    manual_shift_entries = [
+        entry
+        for entry in manual_entries
+        if entry.get("type") == "shift" and is_valid_date(entry.get("date"))
+    ]
+    if not manual_shift_entries:
+        return []
+
+    unlocked_payload = deepcopy(planning_payload)
+    unlocked_payload["initial_shifts"] = {}
+    _, unlocked_status_code = _build_planning_payload(
+        payload=unlocked_payload,
+        runtime_config=runtime_config,
+    )
+    if unlocked_status_code != 200:
+        return [
+            {
+                "code": "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS",
+                "message": (
+                    "Le planning reste infaisable meme sans verrouiller les cellules "
+                    "manuelles. Le blocage ne vient donc pas uniquement de ces verrous."
+                ),
+                "count": 1,
+            }
+        ]
+
+    isolated_segments = []
+    for entry in manual_shift_entries:
+        single_payload = deepcopy(planning_payload)
+        single_payload["initial_shifts"] = _manual_entries_to_initial_shifts([entry])
+        _, single_status_code = _build_planning_payload(
+            payload=single_payload,
+            runtime_config=runtime_config,
+        )
+        if single_status_code != 200:
+            isolated_segments.append(_manual_lock_segment(entry, "cellule manuelle"))
+
+    if isolated_segments:
+        return [
+            {
+                "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+                "message": (
+                    "Une ou plusieurs cellules manuelles, sans contradiction directe "
+                    "apparente, rendent le planning infaisable lorsqu'elles sont verrouillees."
+                ),
+                "count": len(isolated_segments),
+                "details": [
+                    f"{segment['agent']} - {segment['date']} - {segment['value']}"
+                    for segment in isolated_segments[:5]
+                ],
+                "segments": isolated_segments[:5],
+            }
+        ]
+
+    entries_by_date = {}
+    for entry in manual_shift_entries:
+        entries_by_date.setdefault(entry.get("date"), []).append(entry)
+
+    date_segments = []
+    for iso_date, entries in sorted(entries_by_date.items()):
+        if len(entries) <= 1:
+            continue
+        date_payload = deepcopy(planning_payload)
+        date_payload["initial_shifts"] = _manual_entries_to_initial_shifts(entries)
+        _, date_status_code = _build_planning_payload(
+            payload=date_payload,
+            runtime_config=runtime_config,
+        )
+        if date_status_code != 200:
+            date_segments.extend(
+                _manual_lock_segment(entry, f"combinaison du {iso_date}")
+                for entry in entries
+            )
+
+    if date_segments:
+        return [
+            {
+                "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+                "message": (
+                    "Les cellules manuelles d'une meme date ne violent pas directement "
+                    "une regle, mais leur verrouillage rend le planning infaisable."
+                ),
+                "count": len(date_segments),
+                "details": [
+                    f"{segment['agent']} - {segment['date']} - {segment['value']}"
+                    for segment in date_segments[:5]
+                ],
+                "segments": date_segments[:5],
+            }
+        ]
+
+    return [
+        {
+            "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+            "message": (
+                "Aucune contradiction directe n'a ete detectee sur les cellules "
+                "manuelles. Le planning est faisable sans les verrouiller, mais "
+                "leur combinaison complete rend le modele infaisable."
+            ),
+            "count": len(manual_shift_entries),
+        }
+    ]
 
 
 def _date_matches_vacation_period(iso_date, vacation_periods):
@@ -1332,6 +1457,19 @@ def optimize_existing_planning_route():
             )
             if relaxed_constraint_reasons:
                 blocking_reasons.extend(relaxed_constraint_reasons)
+            elif manual_entries and existing_assignments_strict:
+                manual_lock_reasons = _diagnose_manual_lock_impact(
+                    planning_payload={
+                        "start_date": payload["start_date"],
+                        "end_date": payload["end_date"],
+                        "initial_shifts": existing_assignments,
+                        "existing_assignments": existing_assignments,
+                    },
+                    manual_entries=manual_entries,
+                    runtime_config=effective_runtime_config,
+                )
+                if manual_lock_reasons:
+                    blocking_reasons.extend(manual_lock_reasons)
             elif manual_entries:
                 blocking_reasons.append(
                     {
