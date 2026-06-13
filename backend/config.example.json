@@ -2,6 +2,7 @@
   "agents": [
     {
       "name": "Agent1",
+      "include_in_balance": true,
       "preferences": {
         "preferred": [
           "Jour",

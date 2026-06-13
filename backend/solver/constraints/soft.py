@@ -8,6 +8,11 @@ from ..utils import split_by_month_or_period
 CDP_SHIFT = "CDP"
 
 
+def _agents_in_paid_hours_balance(ctx: SolverContext) -> list[dict]:
+    """Return agents participating in paid-hours balance constraints."""
+    return [agent for agent in ctx.agents if agent.get("include_in_balance", True)]
+
+
 def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: list[str]) -> int:
     """
     Computes the sum of assignments for a given agent, day, and list of vacations.

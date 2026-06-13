@@ -152,6 +152,9 @@
           "type": "string",
           "minLength": 1
         },
+        "include_in_balance": {
+          "type": "boolean"
+        },
         "preferences": {
           "type": "object",
           "additionalProperties": false,
