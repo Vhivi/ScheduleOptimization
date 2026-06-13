@@ -1,6 +1,6 @@
 from ortools.sat.python import cp_model
 
-from ..catalog import assignment_parent
+from ..catalog import assignment_parent, is_night_assignment
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import split_by_month_or_period
@@ -65,6 +65,7 @@ def register(registry: ConstraintRegistry) -> None:
     - balance_paid_hours: Balances paid hours across all agents in the week's schedule.
     - balance_paid_hours_by_period: Balances paid hours across all agents in each period of the week's schedule.
     - balance_full_weekends: Balances full weekends across all agents in the week's schedule.
+    - penalize_weekend_monday_nights: Penalizes Saturday/Sunday/Monday night sequences.
 
     :param registry: The constraint registry to which the constraints are registered.
     :type registry: ConstraintRegistry
@@ -72,6 +73,49 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_soft(balance_paid_hours)
     registry.register_soft(balance_paid_hours_by_period)
     registry.register_soft(balance_full_weekends)
+    registry.register_soft(penalize_weekend_monday_nights)
+
+
+def penalize_weekend_monday_nights(ctx: SolverContext) -> None:
+    """Build the objective term for Saturday/Sunday/Monday night sequences."""
+    night_assignments = [
+        assignment
+        for assignment in ctx.assignable_vacations
+        if is_night_assignment(ctx, assignment)
+    ]
+    if not night_assignments or ctx.weekend_monday_night_penalty == 0:
+        ctx.weekend_monday_night_objective = 0
+        return
+
+    sequence_terms = []
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        for day_idx, saturday in enumerate(ctx.week_schedule[:-2]):
+            sunday = ctx.week_schedule[day_idx + 1]
+            monday = ctx.week_schedule[day_idx + 2]
+            if not (
+                saturday.startswith("Sam")
+                and sunday.startswith("Dim")
+                and monday.startswith("Lun")
+            ):
+                continue
+
+            night_by_day = [
+                sum(
+                    ctx.planning[(agent_name, day, assignment)]
+                    for assignment in night_assignments
+                )
+                for day in (saturday, sunday, monday)
+            ]
+            sequence = ctx.model.NewBoolVar(
+                f"{agent_name}_weekend_monday_nights_{saturday}_{sunday}_{monday}"
+            )
+            for night_sum in night_by_day:
+                ctx.model.Add(sequence <= night_sum)
+            ctx.model.Add(sequence >= sum(night_by_day) - 2)
+            sequence_terms.append(sequence)
+
+    ctx.weekend_monday_night_objective = cp_model.LinearExpr.Sum(sequence_terms)
 
 
 def balance_paid_hours(ctx: SolverContext) -> None:
