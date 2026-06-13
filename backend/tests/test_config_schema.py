@@ -87,6 +87,31 @@ def test_schema_accepts_max_weekly_hours():
     assert errors == []
 
 
+def test_schema_accepts_agent_balance_opt_out():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["agents"][0]["include_in_balance"] = False
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
+def test_schema_rejects_non_boolean_agent_balance_opt_out():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["agents"][0]["include_in_balance"] = "false"
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors != []
+    assert any(
+        "include_in_balance" in "/".join(str(part) for part in error.path)
+        for error in errors
+    )
+
+
 def test_schema_accepts_temporal_vacation_metadata():
     schema = _load_json(SCHEMA_PATH)
     example = _load_json(EXAMPLE_PATH)
