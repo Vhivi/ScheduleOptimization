@@ -7,7 +7,207 @@ from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
 from solver.catalog import AssignmentMetadata
 from solver.constraints.mixed import limit_weekly_nights_and_hours
-from solver.constraints.soft import balance_paid_hours, balance_paid_hours_by_period
+from solver.constraints.soft import (
+    balance_paid_hours,
+    balance_paid_hours_by_period,
+    penalize_weekend_monday_nights,
+)
+
+
+def _weekend_monday_night_context(agent_names, night_assignments=None, penalty=500):
+    model = cp_model.CpModel()
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    assignments = night_assignments or ["Nuit"]
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for agent_name in agent_names
+        for day in days
+        for assignment in assignments
+    }
+    metadata = {
+        assignment: AssignmentMetadata(
+            name=assignment,
+            parent="Nuit",
+            duration=120,
+            is_night=True,
+        )
+        for assignment in assignments
+    }
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name} for agent_name in agent_names],
+        assignable_vacations=assignments,
+        assignment_metadata=metadata,
+        week_schedule=days,
+        planning=planning,
+        model=model,
+        weekend_monday_night_penalty=penalty,
+        weekend_monday_night_objective=0,
+    )
+    for agent_name in agent_names:
+        for day in days:
+            model.Add(
+                sum(planning[(agent_name, day, assignment)] for assignment in assignments)
+                <= 1
+            )
+    return ctx
+
+
+def test_weekend_monday_night_penalty_prefers_an_available_alternative():
+    ctx = _weekend_monday_night_context(["Weekend", "Monday"])
+    saturday, sunday, monday = ctx.week_schedule
+
+    ctx.model.Add(ctx.planning[("Weekend", saturday, "Nuit")] == 1)
+    ctx.model.Add(ctx.planning[("Weekend", sunday, "Nuit")] == 1)
+    ctx.model.Add(
+        ctx.planning[("Weekend", monday, "Nuit")]
+        + ctx.planning[("Monday", monday, "Nuit")]
+        == 1
+    )
+    penalize_weekend_monday_nights(ctx)
+    ctx.model.Minimize(
+        ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+    )
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.planning[("Weekend", monday, "Nuit")]) == 0
+    assert solver.Value(ctx.planning[("Monday", monday, "Nuit")]) == 1
+
+
+def test_weekend_monday_night_sequence_remains_feasible_when_required():
+    ctx = _weekend_monday_night_context(["Required"])
+    for day in ctx.week_schedule:
+        ctx.model.Add(ctx.planning[("Required", day, "Nuit")] == 1)
+
+    penalize_weekend_monday_nights(ctx)
+    ctx.model.Minimize(
+        ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+    )
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_monday_night_objective) == 1
+
+
+def test_generate_planning_accepts_required_weekend_monday_night_sequence():
+    agent = {
+        "name": "Only Night Agent",
+        "preferences": {"preferred": ["Nuit"], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    runtime_config = {
+        "vacations": ["Nuit"],
+        "vacation_durations": {"Nuit": 12, "Conge": 7},
+        "vacation_metadata": {
+            "Nuit": {"is_night": True, "requires_next_day_rest": True}
+        },
+        "staffing_requirements": {"Nuit": 1},
+        "holidays": [],
+        "solver": {
+            "max_time_seconds": 30,
+            "relative_gap_limit": 0.1,
+            "num_search_workers": 0,
+            "global_max_gap": 240,
+            "period_max_gap": 240,
+            "max_weekly_hours": 36,
+            "optimize_period_balance": False,
+            "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
+            "weekend_monday_night_penalty": 500,
+        },
+    }
+
+    result = generate_planning(
+        agents=[agent],
+        vacations=["Nuit"],
+        week_schedule=days,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-01-10",
+        runtime_config=runtime_config,
+    )
+
+    assert "info" not in result
+    assert result[agent["name"]] == [(day, "Nuit") for day in days]
+
+
+def test_generate_planning_uses_default_penalty_to_avoid_sequence():
+    weekend_agent = {
+        "name": "Weekend",
+        "preferences": {"preferred": ["Nuit"], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    alternative_agent = {
+        "name": "Alternative",
+        "preferences": {"preferred": [], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    runtime_config = {
+        "vacations": ["Nuit"],
+        "vacation_durations": {"Nuit": 12, "Conge": 7},
+        "vacation_metadata": {
+            "Nuit": {"is_night": True, "requires_next_day_rest": True}
+        },
+        "staffing_requirements": {"Nuit": 1},
+        "holidays": [],
+        "solver": {
+            "max_time_seconds": 30,
+            "relative_gap_limit": 0.1,
+            "num_search_workers": 0,
+            "global_max_gap": 360,
+            "period_max_gap": 360,
+            "max_weekly_hours": 36,
+            "optimize_period_balance": False,
+            "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
+        },
+    }
+
+    result = generate_planning(
+        agents=[weekend_agent, alternative_agent],
+        vacations=["Nuit"],
+        week_schedule=days,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={"Weekend": [(days[0], "Nuit"), (days[1], "Nuit")]},
+        planning_start_date="2026-01-10",
+        runtime_config=runtime_config,
+    )
+
+    assert "info" not in result
+    assert (days[2], "Nuit") not in result["Weekend"]
+    assert (days[2], "Nuit") in result["Alternative"]
+
+
+def test_weekend_monday_night_sequence_is_counted_once_with_night_segments():
+    assignments = ["Nuit debut", "Nuit fin"]
+    ctx = _weekend_monday_night_context(["Segmented"], assignments)
+    forced = zip(ctx.week_schedule, ["Nuit debut", "Nuit fin", "Nuit debut"])
+    for day, assignment in forced:
+        ctx.model.Add(ctx.planning[("Segmented", day, assignment)] == 1)
+
+    penalize_weekend_monday_nights(ctx)
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_monday_night_objective) == 1
 
 
 def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=True):
