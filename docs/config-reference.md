@@ -27,6 +27,10 @@ For machine validation, use:
 Agent object fields:
 
 - `name` (string, required): unique agent identifier.
+- `include_in_balance` (boolean, optional, default `true`): include the agent in
+  global and per-period paid-hour gap calculations. Set it to `false` for an
+  occasional agent whose workload must not affect team balance. This does not
+  disable coverage, availability, leave, restriction, rest, or weekly-hour rules.
 - `preferences` (object, required):
   - `preferred` (array of shifts)
   - `avoid` (array of shifts)
