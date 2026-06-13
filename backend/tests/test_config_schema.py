@@ -87,6 +87,32 @@ def test_schema_accepts_max_weekly_hours():
     assert errors == []
 
 
+@pytest.mark.parametrize("penalty", [0, 500])
+def test_schema_accepts_weekend_monday_night_penalty(penalty):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["solver"]["weekend_monday_night_penalty"] = penalty
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
+def test_schema_rejects_negative_weekend_monday_night_penalty():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["solver"]["weekend_monday_night_penalty"] = -1
+
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert errors != []
+    assert any(
+        "weekend_monday_night_penalty" in "/".join(str(part) for part in error.path)
+        for error in errors
+    )
+
+
 def test_schema_accepts_agent_balance_opt_out():
     schema = _load_json(SCHEMA_PATH)
     example = _load_json(EXAMPLE_PATH)
