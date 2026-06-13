@@ -103,6 +103,10 @@
         "min_free_weekends_per_horizon": {
           "type": "integer",
           "minimum": 0
+        },
+        "weekend_monday_night_penalty": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

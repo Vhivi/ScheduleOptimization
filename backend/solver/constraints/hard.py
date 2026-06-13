@@ -54,7 +54,6 @@ def register(registry: ConstraintRegistry) -> None:
     - Block night before training
     - Limit pre/post training
     - Block exclusion days
-    - Block Monday night after weekend nights
     - Apply agent restrictions
     """
     registry.register_hard(apply_initial_shifts)
@@ -71,7 +70,6 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(block_night_before_training)
     registry.register_hard(limit_pre_post_training)
     registry.register_hard(block_exclusion_days)
-    registry.register_hard(block_monday_night_after_weekend_nights)
     registry.register_hard(apply_agent_restrictions)
 
 
@@ -493,35 +491,6 @@ def block_exclusion_days(ctx: SolverContext) -> None:
                     for vacation in ctx.assignable_vacations:
                         ctx.model.Add(ctx.planning[(agent_name, day_str, vacation)] == 0)
 
-
-def block_monday_night_after_weekend_nights(ctx: SolverContext) -> None:
-    """Blocks Monday night assignments after weekend night assignments."""
-    night_assignments = [
-        assignment for assignment in ctx.assignable_vacations if is_night_assignment(ctx, assignment)
-    ]
-    if not night_assignments:
-        return
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        for day_idx, day in enumerate(ctx.week_schedule[:-2]):
-            if "Sam" in day:
-                sunday_idx = day_idx + 1
-                monday_idx = day_idx + 2
-                if sunday_idx < len(ctx.week_schedule) and monday_idx < len(ctx.week_schedule):
-                    sunday = ctx.week_schedule[sunday_idx]
-                    monday = ctx.week_schedule[monday_idx]
-                    for saturday_assignment in night_assignments:
-                        for sunday_assignment in night_assignments:
-                            for monday_assignment in night_assignments:
-                                ctx.model.Add(
-                                    ctx.planning[(agent_name, monday, monday_assignment)] == 0
-                                ).OnlyEnforceIf(
-                                    [
-                                        ctx.planning[(agent_name, day, saturday_assignment)],
-                                        ctx.planning[(agent_name, sunday, sunday_assignment)],
-                                    ]
-                                )
 
 def apply_agent_restrictions(ctx: SolverContext) -> None:
     """Applies agent-specific vacation/assignment restrictions."""

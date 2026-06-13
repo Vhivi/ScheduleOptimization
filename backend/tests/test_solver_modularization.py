@@ -124,6 +124,15 @@ def test_registry_contains_constraint_groups():
     assert len(registry.mixed) > 0
 
 
+def test_weekend_monday_nights_are_registered_as_soft_only():
+    registry = _build_registry()
+    hard_names = {constraint.__name__ for constraint in registry.hard}
+    soft_names = {constraint.__name__ for constraint in registry.soft}
+
+    assert "block_monday_night_after_weekend_nights" not in hard_names
+    assert "penalize_weekend_monday_nights" in soft_names
+
+
 def test_night_shift_blocks_next_day_jour_or_cdp():
     """
     Tests that night shifts block the next day from being assigned to

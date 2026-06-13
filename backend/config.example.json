@@ -109,7 +109,8 @@
     "max_weekly_hours": 36,
     "optimize_period_balance": false,
     "period_balance_weight": 2,
-    "min_free_weekends_per_horizon": 3
+    "min_free_weekends_per_horizon": 3,
+    "weekend_monday_night_penalty": 500
   },
   "half_vacations": {
     "Jour": {

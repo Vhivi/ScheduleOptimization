@@ -213,6 +213,9 @@ Supported keys:
   - Maximum paid-hour balance gap between agents inside each period, in tenths of hours.
 - `optimize_period_balance` (boolean, default `false`)
 - `period_balance_weight` (integer, default `2`)
+- `weekend_monday_night_penalty` (integer, default `500`)
+  - Objective penalty applied once per agent for each consecutive Saturday, Sunday, and Monday all worked on night assignments.
+  - Higher values make this sequence less desirable without making it infeasible; set to `0` to disable the preference.
 
 ## Common Mistakes
 
