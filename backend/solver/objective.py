@@ -106,6 +106,7 @@ def apply_objective(ctx: SolverContext) -> None:
         - half_vacation_penalties
         - cp_model.LinearExpr.Sum(change_existing_assignments)
         - ctx.weekend_balancing_objective
+        - ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
     )
     if ctx.optimize_period_balance:
         objective -= ctx.period_balance_weight * ctx.period_balancing_objective
