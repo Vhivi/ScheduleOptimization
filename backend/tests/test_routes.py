@@ -775,6 +775,12 @@ def test_relaxed_constraints_do_not_include_agent_minimum_assignment():
     assert "require_at_least_one_shift_per_agent" not in constraints
 
 
+def test_relaxed_constraints_do_not_include_soft_weekend_monday_nights():
+    constraints = [diagnostic["constraint"] for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS]
+
+    assert "block_monday_night_after_weekend_nights" not in constraints
+
+
 def test_probe_relaxed_hard_constraints_uses_generic_rest_wording():
     config = deepcopy(load_default_config())
 
