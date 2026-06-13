@@ -1197,11 +1197,6 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
         "detail": "Relâcher les jours d'exclusion rendrait le planning faisable.",
     },
     {
-        "constraint": "block_monday_night_after_weekend_nights",
-        "label": "affectation de nuit du lundi après week-end",
-        "detail": "La règle d'affectation de nuit du lundi après des affectations de nuit de week-end semble bloquer une solution.",
-    },
-    {
         "constraint": "apply_agent_restrictions",
         "label": "restrictions agent",
         "detail": "Relâcher les restrictions agent rendrait le planning faisable.",
