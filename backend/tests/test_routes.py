@@ -506,7 +506,7 @@ def test_optimize_existing_planning_unsat_returns_blocking_reasons_and_suggestio
     payload = response.get_json()
     assert payload["status"] == "unsat"
     assert payload["blocking_reasons"] != []
-    assert payload["suggestions"] != []
+    assert payload["suggestions"] == []
 
 
 def test_diagnose_manual_entry_conflicts_detects_unavailable_day():
@@ -841,7 +841,7 @@ def test_optimize_existing_planning_unsat_uses_relaxed_constraint_diagnostics(cl
     assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
 
 
-def test_optimize_existing_planning_unsat_returns_unknown_manual_impact_without_specific_diagnostic(client):
+def test_optimize_existing_planning_unsat_detects_global_unsat_without_manual_locks(client):
     config = deepcopy(load_default_config())
     agent = config["agents"][0]
     agent_name = agent["name"]
@@ -871,12 +871,13 @@ def test_optimize_existing_planning_unsat_returns_unknown_manual_impact_without_
     payload = response.get_json()
     reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
     assert "GLOBAL_UNSAT" in reason_codes
-    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" in reason_codes
-    assert "MANUAL_ASSIGNMENTS_CONFLICT_POSSIBLE" not in reason_codes
-    assert payload["suggestions"] != []
+    assert "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+    assert "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT" not in reason_codes
+    assert payload["suggestions"] == []
 
 
-def test_optimize_existing_planning_unsat_returns_generic_blocking_reasons(client):
+def test_optimize_existing_planning_unsat_detects_manual_lock_impact(client):
     config = deepcopy(load_default_config())
     agent_name = config["agents"][0]["name"]
     set_active_config(config)
@@ -893,7 +894,13 @@ def test_optimize_existing_planning_unsat_returns_generic_blocking_reasons(clien
             }
         ],
     }
-    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+
+    def planning_payload_side_effect(payload, runtime_config):
+        if payload.get("initial_shifts"):
+            return {"info": "No solution found."}, 400
+        return {"planning": {agent_name: []}, "week_schedule": ["Ven. 16-01"]}, 200
+
+    with patch("app._build_planning_payload", side_effect=planning_payload_side_effect):
         response = client.post(
             "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
         )
@@ -901,9 +908,70 @@ def test_optimize_existing_planning_unsat_returns_generic_blocking_reasons(clien
     payload = response.get_json()
     reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
     assert "GLOBAL_UNSAT" in reason_codes
-    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" in reason_codes
-    assert "MANUAL_ASSIGNMENTS_CONFLICT_POSSIBLE" not in reason_codes
-    assert payload["suggestions"] != []
+    assert "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+    assert payload["suggestions"][0]["reason_code"] == "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT"
+    assert payload["suggestions"][0]["agent"] == agent_name
+    assert payload["suggestions"][0]["date"] == "2026-01-16"
+
+
+def test_optimize_existing_planning_unsat_detects_manual_lock_date_group(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = config["agents"][:2]
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+    first_agent = config["agents"][0]["name"]
+    second_agent = config["agents"][1]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-16",
+        "end_date": "2026-01-16",
+        "manual_entries": [
+            {
+                "agent": first_agent,
+                "date": "2026-01-16",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            },
+            {
+                "agent": second_agent,
+                "date": "2026-01-16",
+                "slot": "night",
+                "type": "shift",
+                "value": config["vacations"][1],
+            },
+        ],
+    }
+
+    def planning_payload_side_effect(payload, runtime_config):
+        lock_count = sum(len(shifts) for shifts in payload.get("initial_shifts", {}).values())
+        if lock_count > 1:
+            return {"info": "No solution found."}, 400
+        return {"planning": {first_agent: [], second_agent: []}, "week_schedule": ["Ven. 16-01"]}, 200
+
+    with patch("app._build_planning_payload", side_effect=planning_payload_side_effect):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    lock_reason = next(
+        reason
+        for reason in payload["blocking_reasons"]
+        if reason["code"] == "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT"
+    )
+    assert lock_reason["count"] == 2
+    assert {suggestion["agent"] for suggestion in payload["suggestions"]} == {
+        first_agent,
+        second_agent,
+    }
 
 
 def test_optimize_existing_planning_unsat_omits_manual_reason_when_specific_diagnostic_exists(client):
@@ -937,7 +1005,10 @@ def test_optimize_existing_planning_unsat_omits_manual_reason_when_specific_diag
             },
         ],
     }
-    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+    with (
+        patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)),
+        patch("app._diagnose_manual_lock_impact") as diagnose_manual_lock_impact,
+    ):
         response = client.post(
             "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
         )
@@ -946,7 +1017,8 @@ def test_optimize_existing_planning_unsat_omits_manual_reason_when_specific_diag
     reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
     assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
     assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
-    assert payload["suggestions"][0]["reason_code"] == "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT"
+    assert payload["suggestions"] == []
+    diagnose_manual_lock_impact.assert_not_called()
 
 
 def test_optimize_existing_planning_suggests_actual_restricted_manual_cell(client):
