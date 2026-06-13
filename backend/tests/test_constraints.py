@@ -7,6 +7,40 @@ from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
 from solver.catalog import AssignmentMetadata
 from solver.constraints.mixed import limit_weekly_nights_and_hours
+from solver.constraints.soft import balance_paid_hours, balance_paid_hours_by_period
+
+
+def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=True):
+    model = cp_model.CpModel()
+    day = "Lun. 01-06"
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(
+            f"planning_{agent['name']}_{day}_Jour"
+        )
+        for agent in agents
+    }
+    ctx = SimpleNamespace(
+        agents=agents,
+        assignable_vacations=["Jour"],
+        week_schedule=[day],
+        planning=planning,
+        shift_durations={"Jour": 120},
+        leave_paid_hours_by_day={},
+        global_max_gap=0,
+        period_max_gap=0,
+        model=model,
+        period_balancing_objective=0,
+    )
+
+    if apply_global:
+        balance_paid_hours(ctx)
+    if apply_period:
+        balance_paid_hours_by_period(ctx)
+
+    for index, agent in enumerate(agents):
+        model.Add(planning[(agent["name"], day, "Jour")] == int(index < 2))
+
+    return cp_model.CpSolver().Solve(model)
 
 
 def _solve_forced_weekly_shifts(max_weekly_hours):
@@ -115,6 +149,135 @@ def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
+
+
+def test_paid_hours_balance_includes_agents_by_default():
+    agents = [{"name": "Agent1"}, {"name": "Agent2"}, {"name": "Agent3"}]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_paid_hours_balance_ignores_opted_out_agent_with_zero_hours():
+    agents = [
+        {"name": "Agent1"},
+        {"name": "Agent2"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_period_paid_hours_balance_ignores_opted_out_agent():
+    agents = [
+        {"name": "Agent1"},
+        {"name": "Agent2"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(
+        agents, apply_global=False, apply_period=True
+    )
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_paid_hours_balance_is_skipped_with_fewer_than_two_included_agents():
+    agents = [
+        {"name": "Permanent"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_opted_out_agent_remains_subject_to_weekly_hour_limit():
+    model = cp_model.CpModel()
+    agent = {"name": "Occasional", "include_in_balance": False}
+    week = ["Lun. 01-06", "Mar. 02-06"]
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(f"planning_{day}")
+        for day in week
+    }
+    ctx = SimpleNamespace(
+        agents=[agent],
+        vacations=["Jour"],
+        assignable_vacations=["Jour"],
+        weeks_split=[week],
+        week_schedule=week,
+        planning=planning,
+        day_dates={},
+        assignment_metadata={},
+        shift_durations={"Jour": 120},
+        max_weekly_hours=120,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+    for day in week:
+        model.Add(planning[(agent["name"], day, "Jour")] == 1)
+
+    assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
+
+
+def test_opted_out_agent_keeps_locked_manual_shift():
+    agents = [
+        {
+            "name": "Permanent",
+            "include_in_balance": True,
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Occasional",
+            "include_in_balance": False,
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    day = "Lun. 01-06"
+
+    result = generate_planning(
+        agents=agents,
+        vacations=["Jour"],
+        week_schedule=[day],
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={"Occasional": [(day, "Jour")]},
+        planning_start_date="2026-06-01",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 0,
+                "period_max_gap": 0,
+                "max_weekly_hours": 12,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert "info" not in result
+    assert result["Occasional"] == [(day, "Jour")]
 
 
 @pytest.fixture(autouse=True)

@@ -8,6 +8,11 @@ from ..utils import split_by_month_or_period
 CDP_SHIFT = "CDP"
 
 
+def _agents_in_paid_hours_balance(ctx: SolverContext) -> list[dict]:
+    """Return agents participating in paid-hours balance constraints."""
+    return [agent for agent in ctx.agents if agent.get("include_in_balance", True)]
+
+
 def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: list[str]) -> int:
     """
     Computes the sum of assignments for a given agent, day, and list of vacations.
@@ -79,8 +84,12 @@ def balance_paid_hours(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
+    balanced_agents = _agents_in_paid_hours_balance(ctx)
+    if len(balanced_agents) < 2:
+        return
+
     paid_hours = {}
-    for agent in ctx.agents:
+    for agent in balanced_agents:
         agent_name = agent["name"]
         paid_hours[agent_name] = cp_model.LinearExpr.Sum(
             list(
@@ -114,12 +123,17 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
+    balanced_agents = _agents_in_paid_hours_balance(ctx)
+    if len(balanced_agents) < 2:
+        ctx.period_balancing_objective = 0
+        return
+
     periods = split_by_month_or_period(ctx.week_schedule)
 
     period_balancing_terms = []
     for period_idx, period in enumerate(periods):
         period_total_hours = {}
-        for agent in ctx.agents:
+        for agent in balanced_agents:
             agent_name = agent["name"]
             period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
@@ -134,7 +148,7 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
 
         min_period_hours = ctx.model.NewIntVar(0, 100000, f"min_hours_period_{period_idx}")
         max_period_hours = ctx.model.NewIntVar(0, 100000, f"max_hours_period_{period_idx}")
-        for agent in ctx.agents:
+        for agent in balanced_agents:
             agent_name = agent["name"]
             ctx.model.Add(min_period_hours <= period_total_hours[agent_name])
             ctx.model.Add(period_total_hours[agent_name] <= max_period_hours)
