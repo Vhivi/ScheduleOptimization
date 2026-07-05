@@ -16,6 +16,10 @@ DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
 CDP_SHIFT = "CDP"
 FRENCH_WEEKDAY_ABBREVIATIONS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+DEFAULT_SHIFT_TIMES = {
+    DAY_SHIFT: ("07:00", "19:00"),
+    NIGHT_SHIFT: ("19:00", "07:00"),
+}
 
 
 def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
@@ -33,6 +37,7 @@ def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
 
 
 def _format_day_label(day_date: datetime) -> str:
+    """Formats a day label."""
     day_name = FRENCH_WEEKDAY_ABBREVIATIONS[day_date.weekday()]
     return f"{day_name}. {day_date.strftime('%d-%m')}"
 
@@ -236,26 +241,85 @@ def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
 
         ctx.model.Add(sum(worked_weekend_vars) <= max_worked_weekends)
 
+def _assignment_interval(ctx: SolverContext, day_dates: dict, day: str, assignment: str):
+    """Returns the start and end datetime of an assignment on a given day."""
+    day_date = day_dates.get(day)
+    if day_date is None:
+        return None
+
+    metadata = ctx.assignment_metadata.get(assignment)
+    parent = assignment_parent(ctx, assignment)
+    fallback_start, fallback_end = DEFAULT_SHIFT_TIMES.get(
+        parent,
+        DEFAULT_SHIFT_TIMES[NIGHT_SHIFT]
+        if is_night_assignment(ctx, assignment)
+        else DEFAULT_SHIFT_TIMES[DAY_SHIFT],
+    )
+    start_time = getattr(metadata, "start_time", None) or fallback_start
+    end_time = getattr(metadata, "end_time", None) or fallback_end
+    if not start_time or not end_time:
+        return None
+
+    start_at = datetime.combine(day_date.date(), datetime.strptime(start_time, "%H:%M").time())
+    end_at = datetime.combine(day_date.date(), datetime.strptime(end_time, "%H:%M").time())
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
 def avoid_day_after_night(ctx: SolverContext) -> None:
-    """Blocks assignments that require rest on the next day."""
-    rest_trigger_assignments = [
-        assignment for assignment in ctx.assignable_vacations if requires_next_day_rest(ctx, assignment)
+    """Enforces 24h day-to-night and 48h night-to-day rest between assignments."""
+    ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
+    day_dates = dict(ctx.day_dates) or {
+            day: datetime(2000, 1, 3) + timedelta(days=index)
+            for index, day in enumerate(ordered_days)
+        }
+
+    timed_assignments = [
+        assignment
+        for assignment in ctx.assignable_vacations
+        if any(_assignment_interval(ctx, day_dates, day, assignment) for day in ctx.week_schedule)
     ]
-    if not rest_trigger_assignments:
+    if not timed_assignments:
         return
 
     for agent in ctx.agents:
         agent_name = agent["name"]
-        for day_idx, day in enumerate(ctx.week_schedule[:-1]):
-            next_day = ctx.week_schedule[day_idx + 1]
-            for rest_assignment in rest_trigger_assignments:
-                rest_var = ctx.planning[(agent_name, day, rest_assignment)]
-                for assignment in ctx.assignable_vacations:
-                    if is_night_assignment(ctx, assignment):
-                        continue
-                    ctx.model.Add(ctx.planning[(agent_name, next_day, assignment)] == 0).OnlyEnforceIf(
-                        rest_var
-                    )
+        for previous_day in ordered_days:
+            for previous_assignment in timed_assignments:
+                previous_interval = _assignment_interval(
+                    ctx, day_dates, previous_day, previous_assignment
+                )
+                if previous_interval is None:
+                    continue
+                previous_start, previous_end = previous_interval
+                previous_is_night = is_night_assignment(ctx, previous_assignment)
+
+                for next_day in ctx.week_schedule:
+                    for next_assignment in timed_assignments:
+                        next_interval = _assignment_interval(
+                            ctx, day_dates, next_day, next_assignment
+                        )
+                        if next_interval is None:
+                            continue
+                        next_start, _ = next_interval
+                        if next_start <= previous_start:
+                            continue
+
+                        next_is_night = is_night_assignment(ctx, next_assignment)
+                        if previous_is_night and not next_is_night:
+                            required_rest = timedelta(hours=48)
+                        elif not previous_is_night and next_is_night:
+                            required_rest = timedelta(hours=24)
+                        else:
+                            continue
+
+                        if next_start - previous_end < required_rest:
+                            ctx.model.Add(
+                                ctx.planning[(agent_name, previous_day, previous_assignment)]
+                                + ctx.planning[(agent_name, next_day, next_assignment)]
+                                <= 1
+                            )
 
 def limit_cdp_per_week(ctx: SolverContext) -> None:
     """

@@ -168,6 +168,11 @@ Example:
 
 ```json
 "vacation_metadata": {
+  "Jour": {
+    "is_night": false,
+    "start_time": "07:00",
+    "end_time": "19:00"
+  },
   "Nuit": {
     "label": "N",
     "is_night": true,
@@ -182,10 +187,14 @@ Notes:
 
 - `is_night` marks an assignment as a night assignment for night-specific safety rules.
 - `requires_next_day_rest` blocks non-night work on the following day.
-- `start_time` and `end_time` are optional `HH:MM` values used only by `solver.max_weekly_hours`.
+- Day/non-night to night assignments require 24h rest; night to day/non-night
+  assignments require 48h rest, both computed from `start_time`/`end_time`.
+- If `Jour` or `Nuit` times are omitted, rest rules use `Jour` 07:00-19:00
+  and `Nuit` 19:00-07:00 as defaults.
+- `start_time` and `end_time` are optional `HH:MM` values used by rest rules and `solver.max_weekly_hours`.
 - If `end_time` is less than or equal to `start_time`, the shift is treated as ending the next day.
 - Example: a Sunday `Nuit` from `19:00` to `07:00` contributes 5h to the Sunday week and 7h to the next Monday week.
-- If either time is missing, the full `vacation_durations` value is counted on the assignment day, preserving legacy behavior.
+- For weekly-hour calculation, if either time is missing, the full `vacation_durations` value is counted on the assignment day, preserving legacy behavior.
 - Segment-level metadata in `half_vacations[].segments[]` overrides or inherits from the parent behavior.
 
 ### `holidays` (required)
