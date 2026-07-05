@@ -6,6 +6,7 @@ import pytest
 from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
 from solver.catalog import AssignmentMetadata
+from solver.constraints.hard import avoid_day_after_night
 from solver.constraints.mixed import limit_weekly_nights_and_hours
 from solver.constraints.soft import (
     balance_paid_hours,
@@ -349,6 +350,76 @@ def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
+
+
+def _solve_forced_rest_sequence(days, forced_shifts, metadata, previous_days=None):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    previous_days = previous_days or []
+    all_days = previous_days + days
+    assignments = list(metadata)
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for day in all_days
+        for assignment in assignments
+    }
+    start_date = datetime(2026, 1, 5) - timedelta(days=len(previous_days))
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        assignable_vacations=assignments,
+        week_schedule=days,
+        previous_week_schedule=previous_days,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(all_days)},
+        assignment_metadata=metadata,
+        planning=planning,
+        model=model,
+    )
+
+    avoid_day_after_night(ctx)
+
+    for day in all_days:
+        for assignment in assignments:
+            model.Add(
+                planning[(agent_name, day, assignment)]
+                == int((day, assignment) in forced_shifts)
+            )
+
+    return cp_model.CpSolver().Solve(model)
+
+
+def _rest_metadata(night_start="19:00", night_end="07:00", include_half_night=False):
+    metadata = {
+        "Jour": AssignmentMetadata(
+            name="Jour",
+            parent="Jour",
+            duration=120,
+            start_time="07:00",
+            end_time="19:00",
+        ),
+        "Nuit": AssignmentMetadata(
+            name="Nuit",
+            parent="Nuit",
+            duration=120,
+            is_night=True,
+            requires_next_day_rest=True,
+            start_time=night_start,
+            end_time=night_end,
+        ),
+    }
+    if include_half_night:
+        metadata["Nuit debut"] = AssignmentMetadata(
+            name="Nuit debut",
+            parent="Nuit",
+            duration=60,
+            is_half=True,
+            is_night=True,
+            requires_next_day_rest=True,
+            start_time="19:00",
+            end_time="01:00",
+        )
+    return metadata
 
 
 def test_paid_hours_balance_includes_agents_by_default():
@@ -1249,6 +1320,80 @@ def test_weekly_hours_limit_splits_sunday_overnight_shift():
     status = _solve_forced_temporal_weekly_shifts(max_weekly_hours=450)
 
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_day_to_night_rest_allows_exactly_24_hours():
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Jour"), ("Mar. 06-01", "Nuit")},
+        _rest_metadata(),
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_day_to_night_rest_blocks_less_than_24_hours():
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Jour"), ("Mar. 06-01", "Nuit")},
+        _rest_metadata(night_start="18:00", night_end="06:00"),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_day_rest_blocks_only_24_hours_after_night_end():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit"), ("Mer. 07-01", "Jour")},
+        _rest_metadata(),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_day_rest_allows_exactly_48_hours_after_night_end():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01", "Jeu. 08-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit"), ("Jeu. 08-01", "Jour")},
+        _rest_metadata(),
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_half_night_to_day_uses_night_rest_metadata():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit debut"), ("Mer. 07-01", "Jour")},
+        _rest_metadata(include_half_night=True),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_previous_week_shift_rest_blocks_current_week_assignment():
+    previous_days = ["Dim. 04-01"]
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Dim. 04-01", "Nuit"), ("Mar. 06-01", "Jour")},
+        _rest_metadata(),
+        previous_days=previous_days,
+    )
+
+    assert status == cp_model.INFEASIBLE
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)
