@@ -151,6 +151,11 @@
     }
   },
   "vacation_metadata": {
+    "Jour": {
+      "is_night": false,
+      "start_time": "07:00",
+      "end_time": "19:00"
+    },
     "Nuit": {
       "is_night": true,
       "requires_next_day_rest": true,
