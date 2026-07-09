@@ -39,8 +39,19 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                     days_to_count = week
                     week_key = None
                 else:
-                    days_to_count = ctx.week_schedule
                     week_key = week_day_dates[0].isocalendar()[:2]
+                    scheduled_days = list(
+                        dict.fromkeys(
+                            getattr(ctx, "previous_week_schedule", [])
+                            + getattr(ctx, "week_schedule", week)
+                        )
+                    )
+                    days_to_count = [
+                        day
+                        for day in scheduled_days
+                        if day_dates.get(day)
+                        and day_dates[day].isocalendar()[:2] == week_key
+                    ]
 
             total_hours = sum(
                 sum(
