@@ -352,6 +352,48 @@ def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
     return solver.Solve(model)
 
 
+def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    vacations = ["Jour"]
+    previous_week = ["Lun. 28-09", "Mar. 29-09"]
+    week = ["Mer. 30-09", "Jeu. 01-10", "Ven. 02-10"]
+    all_days = previous_week + week
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in all_days
+        for vacation in vacations
+    }
+    start_date = datetime(2026, 9, 28)
+
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        assignable_vacations=vacations,
+        weeks_split=[week],
+        week_schedule=week,
+        previous_week_schedule=previous_week,
+        planning=planning,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(all_days)},
+        assignment_metadata={
+            "Jour": AssignmentMetadata(name="Jour", parent="Jour", duration=120),
+        },
+        shift_durations={"Jour": 120},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+
+    for day in all_days:
+        model.Add(planning[(agent_name, day, "Jour")] == 1)
+
+    solver = cp_model.CpSolver()
+    return solver.Solve(model)
+
+
 def _solve_forced_rest_sequence(days, forced_shifts, metadata, previous_days=None):
     model = cp_model.CpModel()
     agent_name = "Agent1"
@@ -1320,6 +1362,16 @@ def test_weekly_hours_limit_splits_sunday_overnight_shift():
     status = _solve_forced_temporal_weekly_shifts(max_weekly_hours=450)
 
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_weekly_hours_limit_counts_continuity_shifts_in_same_iso_week():
+    """
+    Continuity shifts already worked in the same ISO week must count toward the cap.
+    """
+
+    status = _solve_forced_continuity_weekly_shifts(max_weekly_hours=480)
+
+    assert status == cp_model.INFEASIBLE
 
 
 def test_day_to_night_rest_allows_exactly_24_hours():
