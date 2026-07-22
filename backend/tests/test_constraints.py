@@ -6,13 +6,121 @@ import pytest
 from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
 from solver.catalog import AssignmentMetadata
-from solver.constraints.hard import avoid_day_after_night
+from solver.constraints.hard import (
+    avoid_day_after_night,
+    enforce_min_free_weekends_per_horizon,
+)
 from solver.constraints.mixed import limit_weekly_nights_and_hours
 from solver.constraints.soft import (
+    balance_full_weekends,
     balance_paid_hours,
     balance_paid_hours_by_period,
     penalize_weekend_monday_nights,
 )
+
+
+def _weekend_accounting_context(
+    forced_day,
+    assignment,
+    min_free_weekends=1,
+    agent_names=("Agent",),
+    previous_friday=False,
+    lock_previous=True,
+):
+    model = cp_model.CpModel()
+    days = ["Ven. 09-01", "Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    assignments = ["Jour", "Nuit"]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for agent_name in agent_names
+        for day in days
+        for vacation in assignments
+    }
+    for key, variable in planning.items():
+        model.Add(
+            variable
+            == (key[0] == "Agent" and key[1] == forced_day and key[2] == assignment)
+        )
+
+    return SimpleNamespace(
+        agents=[{"name": agent_name} for agent_name in agent_names],
+        assignable_vacations=assignments,
+        assignment_metadata={
+            "Jour": AssignmentMetadata(
+                "Jour", "Jour", 120, start_time="07:00", end_time="19:00"
+            ),
+            "Nuit": AssignmentMetadata(
+                "Nuit",
+                "Nuit",
+                120,
+                is_night=True,
+                start_time="19:00",
+                end_time="07:00",
+            ),
+        },
+        week_schedule=days[1:] if previous_friday else days,
+        previous_week_schedule=days[:1] if previous_friday else [],
+        initial_shifts=(
+            {"Agent": [[days[0], assignment]]}
+            if previous_friday and lock_previous
+            else {}
+        ),
+        day_dates={
+            day: datetime(2026, 1, 9) + timedelta(days=index)
+            for index, day in enumerate(days)
+        },
+        planning=planning,
+        model=model,
+        min_free_weekends_per_horizon=min_free_weekends,
+        weekend_balancing_objective=0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("day", "assignment", "is_weekend_work"),
+    [
+        ("Ven. 09-01", "Nuit", True),
+        ("Sam. 10-01", "Nuit", True),
+        ("Dim. 11-01", "Nuit", True),
+        ("Sam. 10-01", "Jour", True),
+        ("Dim. 11-01", "Jour", True),
+        ("Ven. 09-01", "Jour", False),
+        ("Lun. 12-01", "Jour", False),
+        ("Lun. 12-01", "Nuit", False),
+    ],
+)
+def test_min_free_weekend_uses_real_assignment_overlap(day, assignment, is_weekend_work):
+    ctx = _weekend_accounting_context(day, assignment)
+    enforce_min_free_weekends_per_horizon(ctx)
+
+    status = cp_model.CpSolver().Solve(ctx.model)
+
+    assert status == (cp_model.INFEASIBLE if is_weekend_work else cp_model.OPTIMAL)
+
+
+def test_weekend_balance_counts_friday_night():
+    ctx = _weekend_accounting_context(
+        "Ven. 09-01", "Nuit", min_free_weekends=0, agent_names=("Agent", "Free")
+    )
+    balance_full_weekends(ctx)
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_balancing_objective) == 1
+
+
+@pytest.mark.parametrize("locked", [True, False])
+def test_previous_friday_night_counts_only_when_locked(locked):
+    ctx = _weekend_accounting_context(
+        "Ven. 09-01", "Nuit", previous_friday=True, lock_previous=locked
+    )
+    enforce_min_free_weekends_per_horizon(ctx)
+
+    status = cp_model.CpSolver().Solve(ctx.model)
+
+    assert status == (cp_model.INFEASIBLE if locked else cp_model.OPTIMAL)
 
 
 def _weekend_monday_night_context(agent_names, night_assignments=None, penalty=500):
