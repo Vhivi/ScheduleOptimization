@@ -188,6 +188,42 @@ def enforce_full_weekend_composition(ctx: SolverContext) -> None:
             ctx.model.Add(saturday_work == sunday_work)
 
 
+def _weekend_pairs(ctx: SolverContext) -> list[tuple[str, str]]:
+    return [
+        (day, ctx.week_schedule[index + 1])
+        for index, day in enumerate(ctx.week_schedule[:-1])
+        if day.startswith("Sam") and ctx.week_schedule[index + 1].startswith("Dim")
+    ]
+
+
+def _weekend_work_sum(
+    ctx: SolverContext, agent_name: str, saturday: str, sunday: str
+):
+    """Return assignments overlapping Saturday 00:00 through Monday 00:00."""
+    ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
+    day_dates = dict(ctx.day_dates)
+    if not day_dates:
+        saturday_index = ordered_days.index(saturday)
+        weekend_start = datetime(2000, 1, 8)
+        day_dates = {
+            day: weekend_start + timedelta(days=index - saturday_index)
+            for index, day in enumerate(ordered_days)
+        }
+
+    weekend_start = day_dates[saturday]
+    weekend_end = day_dates[sunday] + timedelta(days=1)
+    locked_previous = {tuple(shift) for shift in ctx.initial_shifts.get(agent_name, [])}
+    terms = []
+    for day in ordered_days:
+        for assignment in ctx.assignable_vacations:
+            if day not in ctx.week_schedule and (day, assignment) not in locked_previous:
+                continue
+            interval = _assignment_interval(ctx, day_dates, day, assignment)
+            if interval and interval[0] < weekend_end and interval[1] > weekend_start:
+                terms.append(ctx.planning[(agent_name, day, assignment)])
+    return sum(terms)
+
+
 def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
     """
     Enforces a minimum number of fully free weekends per agent on the planning horizon.
@@ -202,11 +238,7 @@ def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
     if min_free_weekends == 0:
         return
 
-    weekend_pairs = []
-    for day_idx, day in enumerate(ctx.week_schedule[:-1]):
-        next_day = ctx.week_schedule[day_idx + 1]
-        if day.startswith("Sam") and next_day.startswith("Dim"):
-            weekend_pairs.append((day, next_day))
+    weekend_pairs = _weekend_pairs(ctx)
 
     total_weekends = len(weekend_pairs)
     if total_weekends == 0:
@@ -227,16 +259,9 @@ def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
             works_weekend = ctx.model.NewBoolVar(
                 f"{agent_name}_works_weekend_hard_{saturday}_{sunday}"
             )
-            saturday_work = sum(
-                ctx.planning[(agent_name, saturday, vacation)] for vacation in ctx.assignable_vacations
-            )
-            sunday_work = sum(
-                ctx.planning[(agent_name, sunday, vacation)] for vacation in ctx.assignable_vacations
-            )
-            ctx.model.Add(saturday_work == 1).OnlyEnforceIf(works_weekend)
-            ctx.model.Add(sunday_work == 1).OnlyEnforceIf(works_weekend)
-            ctx.model.Add(saturday_work == 0).OnlyEnforceIf(works_weekend.Not())
-            ctx.model.Add(sunday_work == 0).OnlyEnforceIf(works_weekend.Not())
+            weekend_work = _weekend_work_sum(ctx, agent_name, saturday, sunday)
+            ctx.model.Add(weekend_work > 0).OnlyEnforceIf(works_weekend)
+            ctx.model.Add(weekend_work == 0).OnlyEnforceIf(works_weekend.Not())
             worked_weekend_vars.append(works_weekend)
 
         ctx.model.Add(sum(worked_weekend_vars) <= max_worked_weekends)
