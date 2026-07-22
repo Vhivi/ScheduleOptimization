@@ -1,5 +1,6 @@
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
+from ..utils import weekly_hour_contribution_tenths
 
 DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
@@ -16,35 +17,62 @@ def register(registry: ConstraintRegistry) -> None:
     :param registry: The registry to which the constraints should be registered.
     :type registry: ConstraintRegistry
     """
-    registry.register_mixed(limit_weekly_nights_and_hours)
+    registry.register_mixed(limit_weekly_worked_hours)
 
 
-def limit_weekly_nights_and_hours(ctx: SolverContext) -> None:
-    """
-    Limits weekly night shifts and total worked hours.
+def limit_weekly_worked_hours(ctx: SolverContext) -> None:
+    """Caps weekly worked hours using solver.max_weekly_hours."""
+    assignable_vacations = getattr(ctx, "assignable_vacations", None) or ctx.vacations
+    day_dates = getattr(ctx, "day_dates", {}) or {}
+    assignment_metadata = getattr(ctx, "assignment_metadata", {}) or {}
 
-    This constraint is applied per agent and per week in the week's schedule.
-    For each agent, it allows at most 3 night shifts per week and caps worked
-    hours using solver.max_weekly_hours. The worked-hours cap counts all
-    configured vacations assigned by the solver and does not include paid leave.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
     for agent in ctx.agents:
         agent_name = agent["name"]
 
         for week in ctx.weeks_split:
-            if NIGHT_SHIFT in ctx.vacations:
-                ctx.model.Add(
-                    sum(ctx.planning[(agent_name, day, NIGHT_SHIFT)] for day in week) <= 3
-                )
+            if not day_dates:
+                days_to_count = week
+                week_key = None
+            else:
+                week_day_dates = [day_dates[day] for day in week if day in day_dates]
+                if not week_day_dates:
+                    days_to_count = week
+                    week_key = None
+                else:
+                    week_key = week_day_dates[0].isocalendar()[:2]
+                    scheduled_days = list(
+                        dict.fromkeys(
+                            getattr(ctx, "previous_week_schedule", [])
+                            + getattr(ctx, "week_schedule", week)
+                        )
+                    )
+                    days_to_count = [
+                        day
+                        for day in scheduled_days
+                        if day_dates.get(day)
+                        and day_dates[day].isocalendar()[:2] == week_key
+                    ]
 
             total_hours = sum(
                 sum(
-                    ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                    for vacation in ctx.vacations
+                    ctx.planning[(agent_name, day, vacation)]
+                    * (
+                        weekly_hour_contribution_tenths(
+                            day_dates.get(day),
+                            assignment_metadata.get(vacation),
+                            ctx.shift_durations[vacation],
+                            week_key,
+                        )
+                        if week_key is not None
+                        else ctx.shift_durations[vacation]
+                    )
+                    for vacation in assignable_vacations
                 )
-                for day in week
+                for day in days_to_count
             )
             ctx.model.Add(total_hours <= ctx.max_weekly_hours)
+
+
+def limit_weekly_nights_and_hours(ctx: SolverContext) -> None:
+    """Backward-compatible alias for the weekly worked-hours cap."""
+    limit_weekly_worked_hours(ctx)

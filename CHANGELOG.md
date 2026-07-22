@@ -7,6 +7,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-22
+
+### Added
+
+- Added an existing-schedule optimization mode with manual shifts and non-working statuses, strict or soft preservation, actionable suggestions, and structured blocking diagnostics.
+- Added configurable half-vacation support with assignable split segments, segment labels, colors, soft penalties, and night/rest metadata.
+- Added segment-based coverage so parent shifts can be covered by full assignments or matching half-vacation segments.
+- Added frontend configuration and planning display for half-vacations, assignment labels, colors, modified assignments, and diagnostic segments.
+- Added `agents[].include_in_balance` to exclude occasional agents from paid-hour balancing without disabling scheduling constraints.
+- Added configurable shift time windows and a soft penalty for consecutive Saturday, Sunday, and Monday night assignments.
+
+### Changed
+
+- Existing assignments are locked by default and can be switched to soft preservation with `existing_assignments_strict: false`.
+- Changed the historical minimum-assignment rule from a hard constraint to a weak objective bonus, allowing fully unavailable or on-leave agents to receive zero worked assignments.
+- Updated planning totals so `Total affectations` counts worked assignments only while `Total Heures` uses actual assignment durations.
+- Updated weekly-hour accounting to use configured shift time windows across week boundaries, including continuity assignments.
+- Expanded configuration documentation for optional half-vacations, colors, metadata, balance participation, and solver penalties.
+
+### Fixed
+
+- Prevented `CDP` from being configured as a split half-vacation.
+- Removed stale segment colors from frontend configuration payloads before saving.
+- Removed obsolete relaxed diagnostics for the former hard minimum-assignment rule.
+- Fixed manual-assignment diagnostics for restrictions, night sequences, staffing capacity, and lock impact.
+- Enforced configured 24-hour day-to-night and 48-hour night-to-day rest rules.
+- Fixed free-weekend accounting around leave, night assignments, and planning boundaries.
+
+Existing `0.9.3` configuration files remain valid: all configuration fields added in this release are optional and have runtime defaults.
+
 ## [0.9.3] - 2026-06-01
 
 ### Fixed

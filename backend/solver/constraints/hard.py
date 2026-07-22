@@ -1,6 +1,13 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from ..catalog import (
+    assignment_matches_choice,
+    assignment_parent,
+    is_half_assignment,
+    is_night_assignment,
+    requires_next_day_rest,
+)
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import day_token
@@ -8,6 +15,11 @@ from ..utils import day_token
 DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
 CDP_SHIFT = "CDP"
+FRENCH_WEEKDAY_ABBREVIATIONS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+DEFAULT_SHIFT_TIMES = {
+    DAY_SHIFT: ("07:00", "19:00"),
+    NIGHT_SHIFT: ("19:00", "07:00"),
+}
 
 
 def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
@@ -24,6 +36,12 @@ def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
     return shift_name in ctx.vacations
 
 
+def _format_day_label(day_date: datetime) -> str:
+    """Formats a day label."""
+    day_name = FRENCH_WEEKDAY_ABBREVIATIONS[day_date.weekday()]
+    return f"{day_name}. {day_date.strftime('%d-%m')}"
+
+
 def register(registry: ConstraintRegistry) -> None:
     """
     Registers all the hard constraints to the given registry.
@@ -31,24 +49,20 @@ def register(registry: ConstraintRegistry) -> None:
     The hard constraints are:
     - Apply initial shifts
     - Limit one shift per day
-    - Require at least one shift per agent
     - Cover daily shifts
     - Avoid day after night
-    - Limit CDP per week
+    - Limit CDP per week (historical hard business exception)
     - Block unavailable days
     - Block training days
     - Block leave and compute paid hours
-    - Limit day shifts per week
     - Block night before unavailable
     - Block night before training
     - Limit pre/post training
     - Block exclusion days
-    - Block Monday night after weekend nights
     - Apply agent restrictions
     """
     registry.register_hard(apply_initial_shifts)
     registry.register_hard(limit_one_shift_per_day)
-    registry.register_hard(require_at_least_one_shift_per_agent)
     registry.register_hard(cover_daily_shifts)
     registry.register_hard(enforce_full_weekend_composition)
     registry.register_hard(enforce_min_free_weekends_per_horizon)
@@ -57,12 +71,10 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(block_unavailable_days)
     registry.register_hard(block_training_days)
     registry.register_hard(block_leave_and_compute_paid_hours)
-    registry.register_hard(limit_day_shifts_per_week)
     registry.register_hard(block_night_before_unavailable)
     registry.register_hard(block_night_before_training)
     registry.register_hard(limit_pre_post_training)
     registry.register_hard(block_exclusion_days)
-    registry.register_hard(block_monday_night_after_weekend_nights)
     registry.register_hard(apply_agent_restrictions)
 
 
@@ -73,7 +85,9 @@ def apply_initial_shifts(ctx: SolverContext) -> None:
     The initial shifts are represented as a dictionary of agent names
     to lists of tuples, where each tuple contains a day and a vacation type.
     The function will only apply the shifts if the agent name is valid,
-    the vacation type is valid, and the day is in the previous week's schedule.
+    the vacation type is valid, and the day is either in the previous week's
+    schedule (continuity seed) or in the current optimization horizon
+    (manual existing-schedule optimization).
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
@@ -83,8 +97,8 @@ def apply_initial_shifts(ctx: SolverContext) -> None:
         for day, vacation in shifts:
             if (
                 agent_name in valid_agents
-                and vacation in ctx.vacations
-                and day in ctx.previous_week_schedule
+                and vacation in ctx.assignable_vacations
+                and (day in ctx.previous_week_schedule or day in ctx.week_schedule)
             ):
                 ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 1)
 
@@ -105,64 +119,45 @@ def limit_one_shift_per_day(ctx: SolverContext) -> None:
         agent_name = agent["name"]
         for day in ctx.week_schedule:
             ctx.model.Add(
-                sum(ctx.planning[(agent_name, day, vacation)] for vacation in ctx.vacations)
+                sum(ctx.planning[(agent_name, day, vacation)] for vacation in ctx.assignable_vacations)
                 <= 1
             )
 
 
-def require_at_least_one_shift_per_agent(ctx: SolverContext) -> None:
-    """
-    Requires each agent to have at least one shift per week.
-
-    This constraint is applied per agent and ensures that the sum of all shift variables
-    for that agent on all days in the week's schedule is greater than or equal to one.
-    This prevents the agent from being assigned no shifts at all.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        ctx.model.Add(
-            sum(
-                ctx.planning[(agent_name, day, vacation)]
-                for day in ctx.week_schedule
-                for vacation in ctx.vacations
-            )
-            >= 1
-        )
-
-
 def cover_daily_shifts(ctx: SolverContext) -> None:
-    """
-    Covers all daily shifts with configurable staffing per day.
-
-    This constraint is applied per day in the week's schedule.
-    For each day and each configured vacation, it ensures that the number of
-    assigned agents matches staffing_requirements[vacation].
-
-    For days that are part of a weekend or fall on a holiday, and for CDP shifts,
-    it ensures that the sum of all shift variables for all agents on that day is zero.
-    This prevents CDP shifts from being assigned on weekends or holidays.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
+    """Covers all parent vacation segments with assignable full/half vacations."""
     for day in ctx.week_schedule:
         day_date = day.split(" ")[1]
         day_is_weekend = day.startswith(("Sam", "Dim"))
-        for vacation in ctx.vacations:
-            required_agents = ctx.staffing_requirements.get(vacation, 1)
-            if vacation == CDP_SHIFT and (day_is_weekend or day_date in ctx.holidays):
+        day_is_holiday = day_date in ctx.holidays
+
+        for assignment in ctx.assignable_vacations:
+            parent = assignment_parent(ctx, assignment)
+            if is_half_assignment(ctx, assignment) and (day_is_weekend or day_is_holiday):
                 ctx.model.Add(
-                    sum(ctx.planning[(agent["name"], day, CDP_SHIFT)] for agent in ctx.agents)
+                    sum(ctx.planning[(agent["name"], day, assignment)] for agent in ctx.agents)
                     == 0
                 )
-            else:
+            if parent == CDP_SHIFT and (day_is_weekend or day_is_holiday):
+                ctx.model.Add(
+                    sum(ctx.planning[(agent["name"], day, assignment)] for agent in ctx.agents)
+                    == 0
+                )
+
+        for vacation in ctx.vacations:
+            required_agents = ctx.staffing_requirements.get(vacation, 1)
+            if vacation == CDP_SHIFT and (day_is_weekend or day_is_holiday):
+                required_agents = 0
+            for segment in ctx.coverage_segments.get(vacation, [vacation]):
+                covering_assignments = ctx.segment_covering_assignments.get(
+                    (vacation, segment), [vacation]
+                )
                 ctx.model.Add(
                     sum(
-                        ctx.planning[(agent["name"], day, vacation)]
+                        ctx.planning[(agent["name"], day, assignment)]
                         for agent in ctx.agents
+                        for assignment in covering_assignments
+                        if assignment in ctx.assignable_vacations
                     )
                     == required_agents
                 )
@@ -185,12 +180,48 @@ def enforce_full_weekend_composition(ctx: SolverContext) -> None:
         for agent in ctx.agents:
             agent_name = agent["name"]
             saturday_work = sum(
-                ctx.planning[(agent_name, day, vacation)] for vacation in ctx.vacations
+                ctx.planning[(agent_name, day, vacation)] for vacation in ctx.assignable_vacations
             )
             sunday_work = sum(
-                ctx.planning[(agent_name, next_day, vacation)] for vacation in ctx.vacations
+                ctx.planning[(agent_name, next_day, vacation)] for vacation in ctx.assignable_vacations
             )
             ctx.model.Add(saturday_work == sunday_work)
+
+
+def _weekend_pairs(ctx: SolverContext) -> list[tuple[str, str]]:
+    return [
+        (day, ctx.week_schedule[index + 1])
+        for index, day in enumerate(ctx.week_schedule[:-1])
+        if day.startswith("Sam") and ctx.week_schedule[index + 1].startswith("Dim")
+    ]
+
+
+def _weekend_work_sum(
+    ctx: SolverContext, agent_name: str, saturday: str, sunday: str
+):
+    """Return assignments overlapping Saturday 00:00 through Monday 00:00."""
+    ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
+    day_dates = dict(ctx.day_dates)
+    if not day_dates:
+        saturday_index = ordered_days.index(saturday)
+        weekend_start = datetime(2000, 1, 8)
+        day_dates = {
+            day: weekend_start + timedelta(days=index - saturday_index)
+            for index, day in enumerate(ordered_days)
+        }
+
+    weekend_start = day_dates[saturday]
+    weekend_end = day_dates[sunday] + timedelta(days=1)
+    locked_previous = {tuple(shift) for shift in ctx.initial_shifts.get(agent_name, [])}
+    terms = []
+    for day in ordered_days:
+        for assignment in ctx.assignable_vacations:
+            if day not in ctx.week_schedule and (day, assignment) not in locked_previous:
+                continue
+            interval = _assignment_interval(ctx, day_dates, day, assignment)
+            if interval and interval[0] < weekend_end and interval[1] > weekend_start:
+                terms.append(ctx.planning[(agent_name, day, assignment)])
+    return sum(terms)
 
 
 def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
@@ -207,11 +238,7 @@ def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
     if min_free_weekends == 0:
         return
 
-    weekend_pairs = []
-    for day_idx, day in enumerate(ctx.week_schedule[:-1]):
-        next_day = ctx.week_schedule[day_idx + 1]
-        if day.startswith("Sam") and next_day.startswith("Dim"):
-            weekend_pairs.append((day, next_day))
+    weekend_pairs = _weekend_pairs(ctx)
 
     total_weekends = len(weekend_pairs)
     if total_weekends == 0:
@@ -232,50 +259,99 @@ def enforce_min_free_weekends_per_horizon(ctx: SolverContext) -> None:
             works_weekend = ctx.model.NewBoolVar(
                 f"{agent_name}_works_weekend_hard_{saturday}_{sunday}"
             )
-            saturday_work = sum(
-                ctx.planning[(agent_name, saturday, vacation)] for vacation in ctx.vacations
-            )
-            sunday_work = sum(
-                ctx.planning[(agent_name, sunday, vacation)] for vacation in ctx.vacations
-            )
-            ctx.model.Add(saturday_work == 1).OnlyEnforceIf(works_weekend)
-            ctx.model.Add(sunday_work == 1).OnlyEnforceIf(works_weekend)
-            ctx.model.Add(saturday_work == 0).OnlyEnforceIf(works_weekend.Not())
-            ctx.model.Add(sunday_work == 0).OnlyEnforceIf(works_weekend.Not())
+            weekend_work = _weekend_work_sum(ctx, agent_name, saturday, sunday)
+            ctx.model.Add(weekend_work > 0).OnlyEnforceIf(works_weekend)
+            ctx.model.Add(weekend_work == 0).OnlyEnforceIf(works_weekend.Not())
             worked_weekend_vars.append(works_weekend)
 
         ctx.model.Add(sum(worked_weekend_vars) <= max_worked_weekends)
 
+def _assignment_interval(ctx: SolverContext, day_dates: dict, day: str, assignment: str):
+    """Returns the start and end datetime of an assignment on a given day."""
+    day_date = day_dates.get(day)
+    if day_date is None:
+        return None
+
+    metadata = ctx.assignment_metadata.get(assignment)
+    parent = assignment_parent(ctx, assignment)
+    fallback_start, fallback_end = DEFAULT_SHIFT_TIMES.get(
+        parent,
+        DEFAULT_SHIFT_TIMES[NIGHT_SHIFT]
+        if is_night_assignment(ctx, assignment)
+        else DEFAULT_SHIFT_TIMES[DAY_SHIFT],
+    )
+    start_time = getattr(metadata, "start_time", None) or fallback_start
+    end_time = getattr(metadata, "end_time", None) or fallback_end
+    if not start_time or not end_time:
+        return None
+
+    start_at = datetime.combine(day_date.date(), datetime.strptime(start_time, "%H:%M").time())
+    end_at = datetime.combine(day_date.date(), datetime.strptime(end_time, "%H:%M").time())
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
 def avoid_day_after_night(ctx: SolverContext) -> None:
-    """
-    Avoids assigning a day shift after a night shift.
+    """Enforces 24h day-to-night and 48h night-to-day rest between assignments."""
+    ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
+    day_dates = dict(ctx.day_dates) or {
+            day: datetime(2000, 1, 3) + timedelta(days=index)
+            for index, day in enumerate(ordered_days)
+        }
 
-    This constraint is applied per agent and per day in the week's schedule.
-    For each agent, it ensures that if the agent is assigned a night shift on a given day,
-    the agent is not assigned a day shift on the next day.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    if not _has_shift(ctx, NIGHT_SHIFT):
+    timed_assignments = [
+        assignment
+        for assignment in ctx.assignable_vacations
+        if any(_assignment_interval(ctx, day_dates, day, assignment) for day in ctx.week_schedule)
+    ]
+    if not timed_assignments:
         return
 
     for agent in ctx.agents:
         agent_name = agent["name"]
-        for day_idx, day in enumerate(ctx.week_schedule[:-1]):
-            next_day = ctx.week_schedule[day_idx + 1]
-            night_var = ctx.planning[(agent_name, day, NIGHT_SHIFT)]
-            for vacation in ctx.vacations:
-                if vacation == NIGHT_SHIFT:
-                    continue
-                ctx.model.Add(ctx.planning[(agent_name, next_day, vacation)] == 0).OnlyEnforceIf(
-                    night_var
+        for previous_day in ordered_days:
+            for previous_assignment in timed_assignments:
+                previous_interval = _assignment_interval(
+                    ctx, day_dates, previous_day, previous_assignment
                 )
+                if previous_interval is None:
+                    continue
+                previous_start, previous_end = previous_interval
+                previous_is_night = is_night_assignment(ctx, previous_assignment)
 
+                for next_day in ctx.week_schedule:
+                    for next_assignment in timed_assignments:
+                        next_interval = _assignment_interval(
+                            ctx, day_dates, next_day, next_assignment
+                        )
+                        if next_interval is None:
+                            continue
+                        next_start, _ = next_interval
+                        if next_start <= previous_start:
+                            continue
+
+                        next_is_night = is_night_assignment(ctx, next_assignment)
+                        if previous_is_night and not next_is_night:
+                            required_rest = timedelta(hours=48)
+                        elif not previous_is_night and next_is_night:
+                            required_rest = timedelta(hours=24)
+                        else:
+                            continue
+
+                        if next_start - previous_end < required_rest:
+                            ctx.model.Add(
+                                ctx.planning[(agent_name, previous_day, previous_assignment)]
+                                + ctx.planning[(agent_name, next_day, next_assignment)]
+                                <= 1
+                            )
 
 def limit_cdp_per_week(ctx: SolverContext) -> None:
     """
     Limits the number of CDP shifts per week to two.
+
+    CDP keeps this hard historical business exception even though the general
+    workload rule is hour-based through solver.max_weekly_hours.
 
     This constraint is applied per agent and per week in the week's schedule.
     For each agent, it ensures that the sum of all CDP shift variables for that agent
@@ -312,7 +388,7 @@ def block_unavailable_days(ctx: SolverContext) -> None:
         for unavailable_day in unavailable_days:
             for day in ctx.week_schedule:
                 if unavailable_day in day:
-                    for vacation in ctx.vacations:
+                    for vacation in ctx.assignable_vacations:
                         ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 0)
 
 
@@ -334,7 +410,7 @@ def block_training_days(ctx: SolverContext) -> None:
         for training_day in training_days:
             for day in ctx.week_schedule:
                 if training_day in day:
-                    for vacation in ctx.vacations:
+                    for vacation in ctx.assignable_vacations:
                         ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 0)
 
 
@@ -383,7 +459,7 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
                         continue
 
                 if vacation_start <= day_date <= vacation_end:
-                    for vacation in ctx.vacations:
+                    for vacation in ctx.assignable_vacations:
                         ctx.model.Add(ctx.planning[(agent_name, day_str, vacation)] == 0)
                     if day_date.weekday() < 6:
                         leave_paid_hours_by_day[(agent_name, day_str)] = ctx.conge_duration
@@ -392,45 +468,15 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
                 previous_saturday = vacation_start - timedelta(days=2)
                 previous_sunday = vacation_start - timedelta(days=1)
                 for weekend_day in [previous_saturday, previous_sunday]:
-                    weekend_str = weekend_day.strftime("%a %d-%m").capitalize()
+                    weekend_str = _format_day_label(weekend_day)
                     if (
                         weekend_str in ctx.week_schedule
                         or weekend_str in ctx.previous_week_schedule
                     ):
-                        for vacation in ctx.vacations:
+                        for vacation in ctx.assignable_vacations:
                             ctx.model.Add(ctx.planning[(agent_name, weekend_str, vacation)] == 0)
 
     ctx.leave_paid_hours_by_day = leave_paid_hours_by_day
-
-
-def limit_day_shifts_per_week(ctx: SolverContext) -> None:
-    """
-    Limits the number of day shifts per week to three.
-
-    This constraint is applied per agent and per week in the week's schedule.
-    For each agent, it ensures that the sum of all day shift variables for that agent
-    on that week is less than or equal to three. This prevents the agent from being
-    assigned more than three day shifts per week.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    if not _has_shift(ctx, DAY_SHIFT):
-        return
-
-    week_days = [
-        (day, datetime.strptime(day.split(" ")[1], "%d-%m")) for day in ctx.week_schedule
-    ]
-    weeks_dict = defaultdict(list)
-    for day_str, day_date in week_days:
-        week_number = day_date.isocalendar()[:2]
-        weeks_dict[week_number].append(day_str)
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        for days in weeks_dict.values():
-            ctx.model.Add(sum(ctx.planning[(agent_name, day, DAY_SHIFT)] for day in days) <= 3)
-
 
 def block_night_before_unavailable(ctx: SolverContext) -> None:
     """
@@ -443,7 +489,10 @@ def block_night_before_unavailable(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
-    if not _has_shift(ctx, NIGHT_SHIFT):
+    rest_trigger_assignments = [
+        assignment for assignment in ctx.assignable_vacations if requires_next_day_rest(ctx, assignment)
+    ]
+    if not rest_trigger_assignments:
         return
 
     for agent in ctx.agents:
@@ -452,7 +501,8 @@ def block_night_before_unavailable(ctx: SolverContext) -> None:
         for day_idx, day in enumerate(ctx.week_schedule[:-1]):
             next_day = ctx.week_schedule[day_idx + 1]
             if any(unavailable_day in next_day for unavailable_day in unavailable_days):
-                ctx.model.Add(ctx.planning[(agent_name, day, NIGHT_SHIFT)] == 0)
+                for assignment in rest_trigger_assignments:
+                    ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
 
 
 def block_night_before_training(ctx: SolverContext) -> None:
@@ -466,7 +516,10 @@ def block_night_before_training(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
-    if not _has_shift(ctx, NIGHT_SHIFT):
+    rest_trigger_assignments = [
+        assignment for assignment in ctx.assignable_vacations if requires_next_day_rest(ctx, assignment)
+    ]
+    if not rest_trigger_assignments:
         return
 
     for agent in ctx.agents:
@@ -475,21 +528,12 @@ def block_night_before_training(ctx: SolverContext) -> None:
         for day_idx, day in enumerate(ctx.week_schedule[:-1]):
             next_day = ctx.week_schedule[day_idx + 1]
             if any(training_day in next_day for training_day in training_days):
-                ctx.model.Add(ctx.planning[(agent_name, day, NIGHT_SHIFT)] == 0)
+                for assignment in rest_trigger_assignments:
+                    ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
 
 
 def limit_pre_post_training(ctx: SolverContext) -> None:
-    """
-    Limits vacation types before and after training days.
-
-    This constraint is applied per agent and per day in the week's schedule.
-    For each agent, it ensures that the agent is not assigned any vacation type
-    except for CDP and night shifts on the day after a training day, and that the agent
-    is not assigned any vacation type except for CDP on the day before a training day.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
+    """Limits assignment types before and after training days."""
     if not _has_shift(ctx, CDP_SHIFT):
         return
 
@@ -503,19 +547,16 @@ def limit_pre_post_training(ctx: SolverContext) -> None:
 
             if day_idx > 0:
                 previous_day = ctx.week_schedule[day_idx - 1]
-                for vacation in ctx.vacations:
-                    if vacation != CDP_SHIFT:
-                        ctx.model.Add(ctx.planning[(agent_name, previous_day, vacation)] == 0)
+                for assignment in ctx.assignable_vacations:
+                    if assignment_parent(ctx, assignment) != CDP_SHIFT:
+                        ctx.model.Add(ctx.planning[(agent_name, previous_day, assignment)] == 0)
 
             if day_idx < len(ctx.week_schedule) - 1:
                 next_day = ctx.week_schedule[day_idx + 1]
-                allowed_vacations = [CDP_SHIFT]
-                if _has_shift(ctx, NIGHT_SHIFT):
-                    allowed_vacations.append(NIGHT_SHIFT)
-                for vacation in ctx.vacations:
-                    if vacation not in allowed_vacations:
-                        ctx.model.Add(ctx.planning[(agent_name, next_day, vacation)] == 0)
-
+                for assignment in ctx.assignable_vacations:
+                    if assignment_parent(ctx, assignment) == CDP_SHIFT or is_night_assignment(ctx, assignment):
+                        continue
+                    ctx.model.Add(ctx.planning[(agent_name, next_day, assignment)] == 0)
 
 def block_exclusion_days(ctx: SolverContext) -> None:
     """
@@ -536,56 +577,16 @@ def block_exclusion_days(ctx: SolverContext) -> None:
             for day_str in ctx.week_schedule:
                 day_date = day_str.split(" ")[1]
                 if exclusion_day == day_date:
-                    for vacation in ctx.vacations:
+                    for vacation in ctx.assignable_vacations:
                         ctx.model.Add(ctx.planning[(agent_name, day_str, vacation)] == 0)
 
 
-def block_monday_night_after_weekend_nights(ctx: SolverContext) -> None:
-    """
-    Blocks Monday night shifts after weekend night shifts.
-
-    This constraint is applied per agent and per day in the week's schedule.
-    For each agent, it ensures that if the agent is assigned a night shift on a Saturday,
-    the agent is not assigned a night shift on the following Monday.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    if not _has_shift(ctx, NIGHT_SHIFT):
-        return
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        for day_idx, day in enumerate(ctx.week_schedule[:-2]):
-            if "Sam" in day:
-                sunday_idx = day_idx + 1
-                monday_idx = day_idx + 2
-                if sunday_idx < len(ctx.week_schedule) and monday_idx < len(ctx.week_schedule):
-                    sunday = ctx.week_schedule[sunday_idx]
-                    monday = ctx.week_schedule[monday_idx]
-                    saturday_night = ctx.planning[(agent_name, day, NIGHT_SHIFT)]
-                    sunday_night = ctx.planning[(agent_name, sunday, NIGHT_SHIFT)]
-                    ctx.model.Add(
-                        ctx.planning[(agent_name, monday, NIGHT_SHIFT)] == 0
-                    ).OnlyEnforceIf(
-                        [saturday_night, sunday_night]
-                    )
-
-
 def apply_agent_restrictions(ctx: SolverContext) -> None:
-    """
-    Applies agent-specific vacation restrictions.
-
-    This constraint is applied per agent and per day in the week's schedule.
-    For each agent, it ensures that the agent is not assigned any restricted vacation type
-    on any day of the week.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
+    """Applies agent-specific vacation/assignment restrictions."""
     for agent in ctx.agents:
         agent_name = agent["name"]
-        restricted_vacations = agent.get("restriction", [])
+        restricted_vacations = set(agent.get("restriction", []))
         for day in ctx.week_schedule:
-            for restricted_vacation in restricted_vacations:
-                ctx.model.Add(ctx.planning[(agent_name, day, restricted_vacation)] == 0)
+            for assignment in ctx.assignable_vacations:
+                if assignment_matches_choice(ctx, assignment, restricted_vacations):
+                    ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)

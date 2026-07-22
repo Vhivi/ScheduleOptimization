@@ -27,6 +27,10 @@ For machine validation, use:
 Agent object fields:
 
 - `name` (string, required): unique agent identifier.
+- `include_in_balance` (boolean, optional, default `true`): include the agent in
+  global and per-period paid-hour gap calculations. Set it to `false` for an
+  occasional agent whose workload must not affect team balance. This does not
+  disable coverage, availability, leave, restriction, rest, or weekly-hour rules.
 - `preferences` (object, required):
   - `preferred` (array of shifts)
   - `avoid` (array of shifts)
@@ -51,6 +55,8 @@ Allowed shift names:
 - Notes:
   - Shift names are now dynamic (`"Soutien"`, `"Renfort"`, etc. are allowed).
   - The solver uses this list as the source of truth for generated shift types.
+  - `CDP` keeps a historical hard limit of 2 assignments per agent and per week.
+    Other workload limits are hour-based through `solver.max_weekly_hours`.
 
 ### `staffing_requirements` (optional)
 
@@ -68,6 +74,128 @@ Allowed shift names:
 - Required for each configured vacation:
   - Every value in `vacations` must have a matching key in `vacation_durations`.
 - Purpose: paid-hour durations used by balancing constraints.
+
+### `half_vacations` (optional)
+
+- Type: object keyed by parent vacation name.
+- Purpose: define assignable segments that can cover a parent vacation segment by segment.
+- A parent vacation remains assignable as a full vacation.
+- Each segment is also assignable when its parent is enabled.
+- Daily coverage is checked segment by segment:
+  - a full parent assignment covers every segment;
+  - a segment assignment covers only its matching segment.
+- `staffing_requirements[parent] = N` means each segment of that parent must be covered `N` times.
+- Half-vacations are rejected on weekends and recurring holidays.
+- `CDP` is intentionally not splittable; `half_vacations.CDP` is rejected at runtime.
+
+Example:
+
+```json
+"half_vacations": {
+  "Jour": {
+    "enabled": true,
+    "penalty": 500,
+    "segments": [
+      {
+        "name": "Jour matin",
+        "label": "J matin",
+        "duration": 6
+      },
+      {
+        "name": "Jour apres-midi",
+        "label": "J aprem",
+        "duration": 6
+      }
+    ]
+  },
+  "Nuit": {
+    "enabled": true,
+    "penalty": 700,
+    "segments": [
+      {
+        "name": "Nuit debut",
+        "label": "N debut",
+        "duration": 6,
+        "is_night": true,
+        "requires_next_day_rest": true
+      },
+      {
+        "name": "Nuit fin",
+        "label": "N fin",
+        "duration": 6,
+        "is_night": true,
+        "requires_next_day_rest": true
+      }
+    ]
+  }
+}
+```
+
+Validation rules:
+
+- `segments` must contain at least two valid entries.
+- segment names must be unique across all assignable vacations.
+- each segment duration must be positive.
+- segment durations must sum to the parent duration in `vacation_durations`.
+- `penalty` is a soft objective penalty: higher values make half-vacations less preferred without making them impossible.
+
+### `vacation_colors` (optional)
+
+- Type: object of `{ "<assignable_vacation_name>": "#RRGGBB" }`
+- Purpose: frontend display colors for full vacations and half-vacation segments.
+- Colors must be six-digit hex values.
+- Parent vacation colors are recommended.
+- Segment colors are optional but recommended for readability.
+- The frontend configuration editor saves colors only for active vacations and saved segments.
+
+Example:
+
+```json
+"vacation_colors": {
+  "Jour": "#75FA79",
+  "Jour matin": "#B9F6CA",
+  "Jour apres-midi": "#00C853",
+  "Nuit": "#9175FA"
+}
+```
+
+### `vacation_metadata` (optional)
+
+- Type: object keyed by parent vacation name.
+- Purpose: override labels and night/rest behavior for full parent vacations.
+
+Example:
+
+```json
+"vacation_metadata": {
+  "Jour": {
+    "is_night": false,
+    "start_time": "07:00",
+    "end_time": "19:00"
+  },
+  "Nuit": {
+    "label": "N",
+    "is_night": true,
+    "requires_next_day_rest": true,
+    "start_time": "19:00",
+    "end_time": "07:00"
+  }
+}
+```
+
+Notes:
+
+- `is_night` marks an assignment as a night assignment for night-specific safety rules.
+- `requires_next_day_rest` blocks non-night work on the following day.
+- Day/non-night to night assignments require 24h rest; night to day/non-night
+  assignments require 48h rest, both computed from `start_time`/`end_time`.
+- If `Jour` or `Nuit` times are omitted, rest rules use `Jour` 07:00-19:00
+  and `Nuit` 19:00-07:00 as defaults.
+- `start_time` and `end_time` are optional `HH:MM` values used by rest rules and `solver.max_weekly_hours`.
+- If `end_time` is less than or equal to `start_time`, the shift is treated as ending the next day.
+- Example: a Sunday `Nuit` from `19:00` to `07:00` contributes 5h to the Sunday week and 7h to the next Monday week.
+- For weekly-hour calculation, if either time is missing, the full `vacation_durations` value is counted on the assignment day, preserving legacy behavior.
+- Segment-level metadata in `half_vacations[].segments[]` overrides or inherits from the parent behavior.
 
 ### `holidays` (required)
 
@@ -94,12 +222,19 @@ Supported keys:
   - Maximum paid-hour balance gap between agents inside each period, in tenths of hours.
 - `optimize_period_balance` (boolean, default `false`)
 - `period_balance_weight` (integer, default `2`)
+- `weekend_monday_night_penalty` (integer, default `500`)
+  - Objective penalty applied once per agent for each consecutive Saturday, Sunday, and Monday all worked on night assignments.
+  - Higher values make this sequence less desirable without making it infeasible; set to `0` to disable the preference.
 
 ## Common Mistakes
 
 - Using `YYYY-mm-dd` instead of `dd-mm-YYYY` in agent dates.
 - Adding comments inside JSON (JSON does not support comments).
 - Defining a shift in `vacations` without matching duration in `vacation_durations`.
+- Defining `half_vacations.CDP` (CDP is not splittable).
+- Defining half-vacation segment durations that do not sum to the parent duration.
+- Reusing a segment name that already exists as another vacation or segment.
+- Forgetting colors for newly added segments, making the planning harder to read.
 - Setting a negative staffing value (must be integer `>= 0`).
 - Forgetting required agent keys (all agent fields are expected, use empty arrays if needed).
 - Setting solver keys with wrong types (for example `"0.1"` as a string).

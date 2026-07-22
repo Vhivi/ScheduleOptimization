@@ -1,10 +1,355 @@
 from copy import deepcopy
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from ortools.sat.python import cp_model
 from app import generate_planning, get_active_config, load_default_config, set_active_config
+from solver.catalog import AssignmentMetadata
+from solver.constraints.hard import (
+    avoid_day_after_night,
+    enforce_min_free_weekends_per_horizon,
+)
 from solver.constraints.mixed import limit_weekly_nights_and_hours
+from solver.constraints.soft import (
+    balance_full_weekends,
+    balance_paid_hours,
+    balance_paid_hours_by_period,
+    penalize_weekend_monday_nights,
+)
+
+
+def _weekend_accounting_context(
+    forced_day,
+    assignment,
+    min_free_weekends=1,
+    agent_names=("Agent",),
+    previous_friday=False,
+    lock_previous=True,
+):
+    model = cp_model.CpModel()
+    days = ["Ven. 09-01", "Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    assignments = ["Jour", "Nuit"]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for agent_name in agent_names
+        for day in days
+        for vacation in assignments
+    }
+    for key, variable in planning.items():
+        model.Add(
+            variable
+            == (key[0] == "Agent" and key[1] == forced_day and key[2] == assignment)
+        )
+
+    return SimpleNamespace(
+        agents=[{"name": agent_name} for agent_name in agent_names],
+        assignable_vacations=assignments,
+        assignment_metadata={
+            "Jour": AssignmentMetadata(
+                "Jour", "Jour", 120, start_time="07:00", end_time="19:00"
+            ),
+            "Nuit": AssignmentMetadata(
+                "Nuit",
+                "Nuit",
+                120,
+                is_night=True,
+                start_time="19:00",
+                end_time="07:00",
+            ),
+        },
+        week_schedule=days[1:] if previous_friday else days,
+        previous_week_schedule=days[:1] if previous_friday else [],
+        initial_shifts=(
+            {"Agent": [[days[0], assignment]]}
+            if previous_friday and lock_previous
+            else {}
+        ),
+        day_dates={
+            day: datetime(2026, 1, 9) + timedelta(days=index)
+            for index, day in enumerate(days)
+        },
+        planning=planning,
+        model=model,
+        min_free_weekends_per_horizon=min_free_weekends,
+        weekend_balancing_objective=0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("day", "assignment", "is_weekend_work"),
+    [
+        ("Ven. 09-01", "Nuit", True),
+        ("Sam. 10-01", "Nuit", True),
+        ("Dim. 11-01", "Nuit", True),
+        ("Sam. 10-01", "Jour", True),
+        ("Dim. 11-01", "Jour", True),
+        ("Ven. 09-01", "Jour", False),
+        ("Lun. 12-01", "Jour", False),
+        ("Lun. 12-01", "Nuit", False),
+    ],
+)
+def test_min_free_weekend_uses_real_assignment_overlap(day, assignment, is_weekend_work):
+    ctx = _weekend_accounting_context(day, assignment)
+    enforce_min_free_weekends_per_horizon(ctx)
+
+    status = cp_model.CpSolver().Solve(ctx.model)
+
+    assert status == (cp_model.INFEASIBLE if is_weekend_work else cp_model.OPTIMAL)
+
+
+def test_weekend_balance_counts_friday_night():
+    ctx = _weekend_accounting_context(
+        "Ven. 09-01", "Nuit", min_free_weekends=0, agent_names=("Agent", "Free")
+    )
+    balance_full_weekends(ctx)
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_balancing_objective) == 1
+
+
+@pytest.mark.parametrize("locked", [True, False])
+def test_previous_friday_night_counts_only_when_locked(locked):
+    ctx = _weekend_accounting_context(
+        "Ven. 09-01", "Nuit", previous_friday=True, lock_previous=locked
+    )
+    enforce_min_free_weekends_per_horizon(ctx)
+
+    status = cp_model.CpSolver().Solve(ctx.model)
+
+    assert status == (cp_model.INFEASIBLE if locked else cp_model.OPTIMAL)
+
+
+def _weekend_monday_night_context(agent_names, night_assignments=None, penalty=500):
+    model = cp_model.CpModel()
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    assignments = night_assignments or ["Nuit"]
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for agent_name in agent_names
+        for day in days
+        for assignment in assignments
+    }
+    metadata = {
+        assignment: AssignmentMetadata(
+            name=assignment,
+            parent="Nuit",
+            duration=120,
+            is_night=True,
+        )
+        for assignment in assignments
+    }
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name} for agent_name in agent_names],
+        assignable_vacations=assignments,
+        assignment_metadata=metadata,
+        week_schedule=days,
+        planning=planning,
+        model=model,
+        weekend_monday_night_penalty=penalty,
+        weekend_monday_night_objective=0,
+    )
+    for agent_name in agent_names:
+        for day in days:
+            model.Add(
+                sum(planning[(agent_name, day, assignment)] for assignment in assignments)
+                <= 1
+            )
+    return ctx
+
+
+def test_weekend_monday_night_penalty_prefers_an_available_alternative():
+    ctx = _weekend_monday_night_context(["Weekend", "Monday"])
+    saturday, sunday, monday = ctx.week_schedule
+
+    ctx.model.Add(ctx.planning[("Weekend", saturday, "Nuit")] == 1)
+    ctx.model.Add(ctx.planning[("Weekend", sunday, "Nuit")] == 1)
+    ctx.model.Add(
+        ctx.planning[("Weekend", monday, "Nuit")]
+        + ctx.planning[("Monday", monday, "Nuit")]
+        == 1
+    )
+    penalize_weekend_monday_nights(ctx)
+    ctx.model.Minimize(
+        ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+    )
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.planning[("Weekend", monday, "Nuit")]) == 0
+    assert solver.Value(ctx.planning[("Monday", monday, "Nuit")]) == 1
+
+
+def test_weekend_monday_night_sequence_remains_feasible_when_required():
+    ctx = _weekend_monday_night_context(["Required"])
+    for day in ctx.week_schedule:
+        ctx.model.Add(ctx.planning[("Required", day, "Nuit")] == 1)
+
+    penalize_weekend_monday_nights(ctx)
+    ctx.model.Minimize(
+        ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+    )
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_monday_night_objective) == 1
+
+
+def test_generate_planning_accepts_required_weekend_monday_night_sequence():
+    agent = {
+        "name": "Only Night Agent",
+        "preferences": {"preferred": ["Nuit"], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    runtime_config = {
+        "vacations": ["Nuit"],
+        "vacation_durations": {"Nuit": 12, "Conge": 7},
+        "vacation_metadata": {
+            "Nuit": {"is_night": True, "requires_next_day_rest": True}
+        },
+        "staffing_requirements": {"Nuit": 1},
+        "holidays": [],
+        "solver": {
+            "max_time_seconds": 30,
+            "relative_gap_limit": 0.1,
+            "num_search_workers": 0,
+            "global_max_gap": 240,
+            "period_max_gap": 240,
+            "max_weekly_hours": 36,
+            "optimize_period_balance": False,
+            "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
+            "weekend_monday_night_penalty": 500,
+        },
+    }
+
+    result = generate_planning(
+        agents=[agent],
+        vacations=["Nuit"],
+        week_schedule=days,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-01-10",
+        runtime_config=runtime_config,
+    )
+
+    assert "info" not in result
+    assert result[agent["name"]] == [(day, "Nuit") for day in days]
+
+
+def test_generate_planning_uses_default_penalty_to_avoid_sequence():
+    weekend_agent = {
+        "name": "Weekend",
+        "preferences": {"preferred": ["Nuit"], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    alternative_agent = {
+        "name": "Alternative",
+        "preferences": {"preferred": [], "avoid": []},
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    days = ["Sam. 10-01", "Dim. 11-01", "Lun. 12-01"]
+    runtime_config = {
+        "vacations": ["Nuit"],
+        "vacation_durations": {"Nuit": 12, "Conge": 7},
+        "vacation_metadata": {
+            "Nuit": {"is_night": True, "requires_next_day_rest": True}
+        },
+        "staffing_requirements": {"Nuit": 1},
+        "holidays": [],
+        "solver": {
+            "max_time_seconds": 30,
+            "relative_gap_limit": 0.1,
+            "num_search_workers": 0,
+            "global_max_gap": 360,
+            "period_max_gap": 360,
+            "max_weekly_hours": 36,
+            "optimize_period_balance": False,
+            "period_balance_weight": 2,
+            "min_free_weekends_per_horizon": 0,
+        },
+    }
+
+    result = generate_planning(
+        agents=[weekend_agent, alternative_agent],
+        vacations=["Nuit"],
+        week_schedule=days,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={"Weekend": [(days[0], "Nuit"), (days[1], "Nuit")]},
+        planning_start_date="2026-01-10",
+        runtime_config=runtime_config,
+    )
+
+    assert "info" not in result
+    assert (days[2], "Nuit") not in result["Weekend"]
+    assert (days[2], "Nuit") in result["Alternative"]
+
+
+def test_weekend_monday_night_sequence_is_counted_once_with_night_segments():
+    assignments = ["Nuit debut", "Nuit fin"]
+    ctx = _weekend_monday_night_context(["Segmented"], assignments)
+    forced = zip(ctx.week_schedule, ["Nuit debut", "Nuit fin", "Nuit debut"])
+    for day, assignment in forced:
+        ctx.model.Add(ctx.planning[("Segmented", day, assignment)] == 1)
+
+    penalize_weekend_monday_nights(ctx)
+
+    solver = cp_model.CpSolver()
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.weekend_monday_night_objective) == 1
+
+
+def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=True):
+    model = cp_model.CpModel()
+    day = "Lun. 01-06"
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(
+            f"planning_{agent['name']}_{day}_Jour"
+        )
+        for agent in agents
+    }
+    ctx = SimpleNamespace(
+        agents=agents,
+        assignable_vacations=["Jour"],
+        week_schedule=[day],
+        planning=planning,
+        shift_durations={"Jour": 120},
+        leave_paid_hours_by_day={},
+        global_max_gap=0,
+        period_max_gap=0,
+        model=model,
+        period_balancing_objective=0,
+    )
+
+    if apply_global:
+        balance_paid_hours(ctx)
+    if apply_period:
+        balance_paid_hours_by_period(ctx)
+
+    for index, agent in enumerate(agents):
+        model.Add(planning[(agent["name"], day, "Jour")] == int(index < 2))
+
+    return cp_model.CpSolver().Solve(model)
 
 
 def _solve_forced_weekly_shifts(max_weekly_hours):
@@ -47,6 +392,313 @@ def _solve_forced_weekly_shifts(max_weekly_hours):
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
+
+
+def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    vacations = ["Jour", "Nuit"]
+    week = [
+        "Lun. 05-01",
+        "Mar. 06-01",
+        "Mer. 07-01",
+        "Jeu. 08-01",
+        "Ven. 09-01",
+        "Sam. 10-01",
+        "Dim. 11-01",
+    ]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in week
+        for vacation in vacations
+    }
+    start_date = datetime(2026, 1, 5)
+
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        assignable_vacations=vacations,
+        weeks_split=[week],
+        week_schedule=week,
+        planning=planning,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(week)},
+        assignment_metadata={
+            "Jour": AssignmentMetadata(name="Jour", parent="Jour", duration=120),
+            "Nuit": AssignmentMetadata(
+                name="Nuit",
+                parent="Nuit",
+                duration=120,
+                is_night=True,
+                requires_next_day_rest=True,
+                start_time="19:00",
+                end_time="07:00",
+            ),
+        },
+        shift_durations={"Jour": 120, "Nuit": 120},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+
+    forced_shifts = {
+        ("Mar. 06-01", "Jour"),
+        ("Ven. 09-01", "Nuit"),
+        ("Sam. 10-01", "Nuit"),
+        ("Dim. 11-01", "Nuit"),
+    }
+    for day in week:
+        for vacation in vacations:
+            model.Add(
+                planning[(agent_name, day, vacation)]
+                == int((day, vacation) in forced_shifts)
+            )
+
+    solver = cp_model.CpSolver()
+    return solver.Solve(model)
+
+
+def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    vacations = ["Jour"]
+    previous_week = ["Lun. 28-09", "Mar. 29-09"]
+    week = ["Mer. 30-09", "Jeu. 01-10", "Ven. 02-10"]
+    all_days = previous_week + week
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in all_days
+        for vacation in vacations
+    }
+    start_date = datetime(2026, 9, 28)
+
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        assignable_vacations=vacations,
+        weeks_split=[week],
+        week_schedule=week,
+        previous_week_schedule=previous_week,
+        planning=planning,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(all_days)},
+        assignment_metadata={
+            "Jour": AssignmentMetadata(name="Jour", parent="Jour", duration=120),
+        },
+        shift_durations={"Jour": 120},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+
+    for day in all_days:
+        model.Add(planning[(agent_name, day, "Jour")] == 1)
+
+    solver = cp_model.CpSolver()
+    return solver.Solve(model)
+
+
+def _solve_forced_rest_sequence(days, forced_shifts, metadata, previous_days=None):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    previous_days = previous_days or []
+    all_days = previous_days + days
+    assignments = list(metadata)
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for day in all_days
+        for assignment in assignments
+    }
+    start_date = datetime(2026, 1, 5) - timedelta(days=len(previous_days))
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        assignable_vacations=assignments,
+        week_schedule=days,
+        previous_week_schedule=previous_days,
+        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(all_days)},
+        assignment_metadata=metadata,
+        planning=planning,
+        model=model,
+    )
+
+    avoid_day_after_night(ctx)
+
+    for day in all_days:
+        for assignment in assignments:
+            model.Add(
+                planning[(agent_name, day, assignment)]
+                == int((day, assignment) in forced_shifts)
+            )
+
+    return cp_model.CpSolver().Solve(model)
+
+
+def _rest_metadata(night_start="19:00", night_end="07:00", include_half_night=False):
+    metadata = {
+        "Jour": AssignmentMetadata(
+            name="Jour",
+            parent="Jour",
+            duration=120,
+            start_time="07:00",
+            end_time="19:00",
+        ),
+        "Nuit": AssignmentMetadata(
+            name="Nuit",
+            parent="Nuit",
+            duration=120,
+            is_night=True,
+            requires_next_day_rest=True,
+            start_time=night_start,
+            end_time=night_end,
+        ),
+    }
+    if include_half_night:
+        metadata["Nuit debut"] = AssignmentMetadata(
+            name="Nuit debut",
+            parent="Nuit",
+            duration=60,
+            is_half=True,
+            is_night=True,
+            requires_next_day_rest=True,
+            start_time="19:00",
+            end_time="01:00",
+        )
+    return metadata
+
+
+def test_paid_hours_balance_includes_agents_by_default():
+    agents = [{"name": "Agent1"}, {"name": "Agent2"}, {"name": "Agent3"}]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_paid_hours_balance_ignores_opted_out_agent_with_zero_hours():
+    agents = [
+        {"name": "Agent1"},
+        {"name": "Agent2"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_period_paid_hours_balance_ignores_opted_out_agent():
+    agents = [
+        {"name": "Agent1"},
+        {"name": "Agent2"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(
+        agents, apply_global=False, apply_period=True
+    )
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_paid_hours_balance_is_skipped_with_fewer_than_two_included_agents():
+    agents = [
+        {"name": "Permanent"},
+        {"name": "Occasional", "include_in_balance": False},
+    ]
+
+    status = _solve_forced_paid_hours_balance(agents)
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def test_opted_out_agent_remains_subject_to_weekly_hour_limit():
+    model = cp_model.CpModel()
+    agent = {"name": "Occasional", "include_in_balance": False}
+    week = ["Lun. 01-06", "Mar. 02-06"]
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(f"planning_{day}")
+        for day in week
+    }
+    ctx = SimpleNamespace(
+        agents=[agent],
+        vacations=["Jour"],
+        assignable_vacations=["Jour"],
+        weeks_split=[week],
+        week_schedule=week,
+        planning=planning,
+        day_dates={},
+        assignment_metadata={},
+        shift_durations={"Jour": 120},
+        max_weekly_hours=120,
+        model=model,
+    )
+
+    limit_weekly_nights_and_hours(ctx)
+    for day in week:
+        model.Add(planning[(agent["name"], day, "Jour")] == 1)
+
+    assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
+
+
+def test_opted_out_agent_keeps_locked_manual_shift():
+    agents = [
+        {
+            "name": "Permanent",
+            "include_in_balance": True,
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Occasional",
+            "include_in_balance": False,
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    day = "Lun. 01-06"
+
+    result = generate_planning(
+        agents=agents,
+        vacations=["Jour"],
+        week_schedule=[day],
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={"Occasional": [(day, "Jour")]},
+        planning_start_date="2026-06-01",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 0,
+                "period_max_gap": 0,
+                "max_weekly_hours": 12,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert "info" not in result
+    assert result["Occasional"] == [(day, "Jour")]
 
 
 @pytest.fixture(autouse=True)
@@ -597,6 +1249,72 @@ def test_generate_planning_paid_leave_hours_balancing_regression():
     assert "info" not in result
 
 
+def test_generate_planning_allows_agent_with_full_period_leave_to_have_no_shift():
+    """
+    Agents fully blocked by leave should not make the model infeasible merely
+    because they receive no worked assignment on the generated period.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [{"start": "05-01-2026", "end": "09-01-2026"}],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    vacations = ["Jour"]
+    week_schedule = [
+        "Lun. 05-01",
+        "Mar. 06-01",
+        "Mer. 07-01",
+        "Jeu. 08-01",
+        "Ven. 09-01",
+    ]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-01-05",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 600,
+                "period_max_gap": 600,
+                "max_weekly_hours": 60,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert "info" not in result
+    assert result["Agent1"] == []
+    assert len(result["Agent2"]) == len(week_schedule)
+
+
 def test_generate_planning_ignores_leave_periods_from_other_years():
     """
     Regression test: leave periods from another year must not block a target planning year.
@@ -651,6 +1369,75 @@ def test_generate_planning_ignores_leave_periods_from_other_years():
     assert "info" not in result
 
 
+def test_monday_leave_blocks_previous_weekend_with_french_day_labels():
+    """
+    Regression test: leave starting on Monday must block the preceding Saturday/Sunday.
+
+    The weekend labels must use the same French format as week_schedule; otherwise
+    the constraint silently misses the generated days.
+    """
+
+    agents = [
+        {
+            "name": "Agent1",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [{"start": "06-01-2025", "end": "10-01-2025"}],
+            "restriction": [],
+            "exclusion": [],
+        },
+        {
+            "name": "Agent2",
+            "unavailable": [],
+            "training": [],
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "vacations": [],
+            "restriction": [],
+            "exclusion": [],
+        },
+    ]
+    vacations = ["Jour"]
+    week_schedule = [
+        "Sam. 04-01",
+        "Dim. 05-01",
+        "Lun. 06-01",
+    ]
+
+    result = generate_planning(
+        agents,
+        vacations,
+        week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={
+            "Agent1": [
+                ("Sam. 04-01", "Jour"),
+                ("Dim. 05-01", "Jour"),
+            ]
+        },
+        planning_start_date="2025-01-04",
+        runtime_config={
+            "vacation_durations": {"Jour": 12, "Conge": 7},
+            "staffing_requirements": {"Jour": 1},
+            "holidays": [],
+            "solver": {
+                "max_time_seconds": 30,
+                "relative_gap_limit": 0.1,
+                "num_search_workers": 0,
+                "global_max_gap": 600,
+                "period_max_gap": 600,
+                "max_weekly_hours": 60,
+                "optimize_period_balance": False,
+                "period_balance_weight": 2,
+                "min_free_weekends_per_horizon": 0,
+            },
+        },
+    )
+
+    assert result == {"info": "No solution found."}
+
+
 def test_weekly_hours_limit_counts_night_shifts_with_default_cap():
     """
     Regression test: weekly hour cap must count night shifts, not only day/CDP.
@@ -672,6 +1459,101 @@ def test_weekly_hours_limit_uses_configured_cap():
     status = _solve_forced_weekly_shifts(max_weekly_hours=480)
 
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_weekly_hours_limit_splits_sunday_overnight_shift():
+    """
+    Tuesday day + Friday/Saturday nights + Sunday night is 41h in the current
+    week when Sunday 19:00-07:00 contributes only 5h before Monday.
+    """
+
+    status = _solve_forced_temporal_weekly_shifts(max_weekly_hours=450)
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_weekly_hours_limit_counts_continuity_shifts_in_same_iso_week():
+    """
+    Continuity shifts already worked in the same ISO week must count toward the cap.
+    """
+
+    status = _solve_forced_continuity_weekly_shifts(max_weekly_hours=480)
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_day_to_night_rest_allows_exactly_24_hours():
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Jour"), ("Mar. 06-01", "Nuit")},
+        _rest_metadata(),
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_day_to_night_rest_blocks_less_than_24_hours():
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Jour"), ("Mar. 06-01", "Nuit")},
+        _rest_metadata(night_start="18:00", night_end="06:00"),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_day_rest_blocks_only_24_hours_after_night_end():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit"), ("Mer. 07-01", "Jour")},
+        _rest_metadata(),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_day_rest_allows_exactly_48_hours_after_night_end():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01", "Jeu. 08-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit"), ("Jeu. 08-01", "Jour")},
+        _rest_metadata(),
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_half_night_to_day_uses_night_rest_metadata():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit debut"), ("Mer. 07-01", "Jour")},
+        _rest_metadata(include_half_night=True),
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_previous_week_shift_rest_blocks_current_week_assignment():
+    previous_days = ["Dim. 04-01"]
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Dim. 04-01", "Nuit"), ("Mar. 06-01", "Jour")},
+        _rest_metadata(),
+        previous_days=previous_days,
+    )
+
+    assert status == cp_model.INFEASIBLE
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)

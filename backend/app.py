@@ -1,10 +1,17 @@
 import json
 import os
 from datetime import datetime, timedelta
+from copy import deepcopy
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from jsonschema import Draft202012Validator
+from solver.catalog import (
+    assignment_matches_choice,
+    build_vacation_catalog,
+    is_night_assignment,
+    requires_next_day_rest,
+)
 from solver.engine import generate_planning as generate_planning_engine
 
 app = Flask(__name__)
@@ -58,6 +65,30 @@ def validate_runtime_config(candidate_config):
                         "message": (
                             f"Missing duration for configured vacation '{vacation}'."
                         ),
+                    }
+                )
+
+    if not errors:
+        try:
+            build_vacation_catalog(candidate_config)
+        except ValueError as exc:
+            errors.append({"path": "half_vacations", "message": str(exc)})
+
+    half_vacations = candidate_config.get("half_vacations", {})
+    if isinstance(vacations, list) and isinstance(half_vacations, dict):
+        for parent in half_vacations:
+            if parent not in vacations:
+                errors.append(
+                    {
+                        "path": f"half_vacations/{parent}",
+                        "message": f"Unknown parent vacation '{parent}'.",
+                    }
+                )
+            elif parent == "CDP":
+                errors.append(
+                    {
+                        "path": "half_vacations/CDP",
+                        "message": "CDP ne peut pas être découpé en demi-vacations.",
                     }
                 )
 
@@ -135,30 +166,41 @@ def generate_planning_route():
     payload, payload_error = parse_json_object_payload()
     if payload_error is not None:
         return payload_error
+    planning_or_error, status_code = _build_planning_payload(
+        payload=payload, runtime_config=get_active_config()
+    )
+    if status_code != 200:
+        return jsonify(planning_or_error), status_code
+    return jsonify(planning_or_error)
 
-    runtime_config = get_active_config()
 
+def _build_planning_payload(payload, runtime_config):
     # Retrieving data from the JSON file
     agents = runtime_config["agents"]
     vacations = runtime_config["vacations"]
-    vacation_durations = runtime_config["vacation_durations"]
+    catalog = build_vacation_catalog(runtime_config)
+    assignable_vacations = catalog["assignable_vacations"]
+    assignment_labels = {
+        assignment: metadata.label or assignment
+        for assignment, metadata in catalog["assignment_metadata"].items()
+    }
+    vacation_durations = dict(runtime_config["vacation_durations"])
+    for assignment, metadata in catalog["assignment_metadata"].items():
+        vacation_durations[assignment] = metadata.duration / 10
     holidays = runtime_config["holidays"]
     unavailable = {}
     dayOff = {}
     training = {}
+    restrictions = {}
+    restriction_types_durations = runtime_config.get("restriction_types_durations", {})
 
     # Retrieve agent training days and store them in a dictionary {agent: [days]}.
     for agent in agents:
         if "training" in agent:
             training[agent["name"]] = agent["training"]
-
     # Retrieve agent unavailability days and store them in a dictionary {agent: [days]}.
-    for agent in agents:
         if "unavailable" in agent:
             unavailable[agent["name"]] = agent["unavailable"]
-
-    # Recovering employees' leave days
-    for agent in agents:
         # Check if the agent has leave days
         if "vacations" in agent:
             dayOff[agent["name"]] = []
@@ -168,46 +210,31 @@ def generate_planning_route():
                 if isinstance(vac, dict) and "start" in vac and "end" in vac:
                     # Store leave days in a dictionary {agent: [start, end]}
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
+        # Retrieve agent restrictions and store them in a dictionary {agent: [days]}.
+        if "restrictions" in agent:
+            restrictions[agent["name"]] = agent["restrictions"]
 
-    # Retrieve start and end dates
-    # Check whether the dates are present in the payload
-    if "start_date" not in payload or "end_date" not in payload:
-        return jsonify({"error": "Missing start_date or end_date"}), 400
-    
-    # Check that the dates are valid
-    if not is_valid_date(payload["start_date"]) or not is_valid_date(payload["end_date"]):
-        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
-
-    # Retrieve the complete schedule in several periods
-    start_date = datetime.strptime(
-        payload["start_date"], "%Y-%m-%d"
-    )  # Format date / ISO 8601
-    end_date = datetime.strptime(
-        payload["end_date"], "%Y-%m-%d"
-    )  # Format date / ISO 8601
-    if end_date < start_date:
-        return jsonify({"error": "end_date must be greater than or equal to start_date"}), 400
+    start_date, end_date, date_error = _validate_date_range_payload(payload)
+    if date_error is not None:
+        return date_error[0].get_json(), date_error[1]
 
     periods = split_date_range_by_month(start_date, end_date)
-
-    full_planning = {}
-    for agent in agents:
-        agent_name = agent["name"]
-        full_planning[agent_name] = []
-
-    # Retrieve initial shifts, if supplied otherwise default to an empty dictionary
+    full_planning = {agent["name"]: [] for agent in agents}
     initial_shifts = payload.get("initial_shifts", {})
     if not isinstance(initial_shifts, dict):
-        return jsonify({"error": "initial_shifts must be an object"}), 400
+        return {"error": "initial_shifts must be an object"}, 400
+    existing_assignments = payload.get("existing_assignments", {})
+    if not isinstance(existing_assignments, dict):
+        return {"error": "existing_assignments must be an object"}, 400
 
     # Validate initial shifts
     valid_agents = [agent["name"] for agent in agents]
-    valid_vacations = vacations
+    valid_vacations = assignable_vacations
     for agent_name, shifts in initial_shifts.items():
         if not isinstance(shifts, list):
-            return jsonify({"error": f"initial_shifts for {agent_name} must be a list"}), 400
+            return {"error": f"initial_shifts for {agent_name} must be a list"}, 400
         if agent_name not in valid_agents:
-            return jsonify({"error": f"Invalid agent: {agent_name}"}), 400
+            return {"error": f"Invalid agent: {agent_name}"}, 400
         for shift in shifts:
             if (
                 not isinstance(shift, (list, tuple))
@@ -215,21 +242,37 @@ def generate_planning_route():
                 or not isinstance(shift[0], str)
                 or not isinstance(shift[1], str)
             ):
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "Each initial shift must be [day, vacation] with string values"
-                            )
-                        }
-                    ),
-                    400,
-                )
+                return {
+                    "error": "Each initial shift must be [day, vacation] with string values"
+                }, 400
             _, vacation = shift
             if vacation not in valid_vacations:
-                return jsonify({"error": f"Invalid vacation: {vacation}"}), 400
+                return {"error": f"Invalid vacation: {vacation}"}, 400
 
-    for chunk_start, chunk_end in periods:
+    validated_existing_assignments = {}
+    for agent_name, assignments in existing_assignments.items():
+        if agent_name not in valid_agents:
+            return {"error": f"Invalid agent: {agent_name}"}, 400
+        if not isinstance(assignments, list):
+            return {"error": f"existing_assignments for {agent_name} must be a list"}, 400
+        for assignment in assignments:
+            if (
+                not isinstance(assignment, (list, tuple))
+                or len(assignment) != 2
+                or not isinstance(assignment[0], str)
+                or not isinstance(assignment[1], str)
+            ):
+                return {
+                    "error": "Each existing assignment must be [day, vacation] with string values"
+                }, 400
+            day, vacation = assignment
+            if vacation not in valid_vacations:
+                return {"error": f"Invalid vacation: {vacation}"}, 400
+            validated_existing_assignments[(agent_name, day)] = vacation
+
+    locked_initial_shifts = deepcopy(initial_shifts)
+
+    for chunk_index, (chunk_start, chunk_end) in enumerate(periods):
         # Convert the start and end dates into strings
         start_date_str = chunk_start.strftime("%Y-%m-%d")
         end_date_str = chunk_end.strftime("%Y-%m-%d")
@@ -240,22 +283,28 @@ def generate_planning_route():
 
         # Calling up the schedule generation function
         try:
+            chunk_initial_shifts = deepcopy(initial_shifts)
+            if chunk_index > 0:
+                for agent_name, shifts in locked_initial_shifts.items():
+                    chunk_initial_shifts.setdefault(agent_name, []).extend(shifts)
+
             result = generate_planning(
                 agents,
                 vacations,
                 week_schedule,
                 dayOff,
                 previous_week_schedule,
-                initial_shifts,
+                chunk_initial_shifts,
                 planning_start_date=start_date_str,
                 runtime_config=runtime_config,
+                existing_assignments=validated_existing_assignments,
             )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return {"error": str(exc)}, 400
 
         # If the result is a dict with an info key, return a 400 error.
         if "info" in result:
-            return jsonify(result), 400
+            return result, 400
 
         # Accumulate the results of each period in the full planning
         for name, shifts in result.items():
@@ -285,17 +334,20 @@ def generate_planning_route():
     original_week_schedule = get_week_schedule(
         payload["start_date"], payload["end_date"]
     )
-    return jsonify(
-        {
-            "planning": full_planning,
-            "vacation_durations": vacation_durations,
-            "week_schedule": original_week_schedule,
-            "holidays": holidays,
-            "unavailable": unavailable,
-            "dayOff": dayOff,
-            "training": training,
-        }
-    )
+    return {
+        "planning": full_planning,
+        "vacation_durations": vacation_durations,
+        "vacation_colors": runtime_config.get("vacation_colors", {}),
+        "assignable_vacations": assignable_vacations,
+        "assignment_labels": assignment_labels,
+        "week_schedule": original_week_schedule,
+        "holidays": holidays,
+        "unavailable": unavailable,
+        "dayOff": dayOff,
+        "training": training,
+        "restrictions": restrictions,
+        "restriction_types_durations": restriction_types_durations,
+    }, 200
 
 
 def is_valid_date(date_str):
@@ -335,6 +387,988 @@ def parse_json_object_payload():
     return payload, None
 
 
+def _validate_date_range_payload(payload):
+    if "start_date" not in payload or "end_date" not in payload:
+        return None, None, (jsonify({"error": "Missing start_date or end_date"}), 400)
+    if not is_valid_date(payload["start_date"]) or not is_valid_date(payload["end_date"]):
+        return None, None, (jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400)
+    start_date = datetime.strptime(payload["start_date"], "%Y-%m-%d")
+    end_date = datetime.strptime(payload["end_date"], "%Y-%m-%d")
+    if end_date < start_date:
+        return None, None, (
+            jsonify({"error": "end_date must be greater than or equal to start_date"}),
+            400,
+        )
+    return start_date, end_date, None
+
+
+def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
+    if not isinstance(manual_entries, list):
+        return None, None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
+
+    valid_agents = {agent["name"] for agent in runtime_config["agents"]}
+    valid_vacations = set(build_vacation_catalog(runtime_config)["assignable_vacations"])
+    valid_restriction_types = set(
+        (runtime_config.get("restriction_types_durations") or {}).keys()
+    )
+
+    existing_assignments = {}
+    status_entries = []
+    warnings = []
+    for entry in manual_entries:
+        if not isinstance(entry, dict):
+            return None, None, None, (jsonify({"error": "Each manual entry must be an object"}), 400)
+        for field in ["agent", "date", "slot", "type", "value"]:
+            if field not in entry:
+                return None, None, None, (jsonify({"error": f"manual entry missing field '{field}'"}), 400)
+        agent = entry["agent"]
+        date = entry["date"]
+        slot = entry["slot"]
+        entry_type = entry["type"]
+        value = entry["value"]
+        if agent not in valid_agents:
+            return None, None, None, (jsonify({"error": f"Invalid agent: {agent}"}), 400)
+        if not is_valid_date(date):
+            return None, None, None, (jsonify({"error": f"Invalid manual entry date: {date}"}), 400)
+        entry_date = datetime.strptime(date, "%Y-%m-%d")
+        if entry_date < start_date or entry_date > end_date:
+            return None, None, None, (jsonify({"error": f"Manual entry date out of range: {date}"}), 400)
+        if slot not in {"day", "night", "cdp"}:
+            return None, None, None, (jsonify({"error": f"Invalid slot: {slot}"}), 400)
+        if entry_type == "shift":
+            if value not in valid_vacations:
+                return None, None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
+            day_label = format_day_label(entry_date)
+            existing_assignments.setdefault(agent, []).append((day_label, value))
+        elif entry_type == "status":
+            if value in {"unavailable", "training", "vacations"}:
+                pass  # These are valid status types
+            elif value.startswith("restrictions:"):
+                restriction_type = value.split(":", 1)[1]
+                if restriction_type not in valid_restriction_types:
+                    return None, None, None, (
+                        jsonify({"error": f"Unkown restriction type: {restriction_type}"}),
+                        400,
+                    )
+            elif value == "restriction":
+                # kept for backward compatibility, warning emitted later
+                pass
+            else:
+                return None, None, None, (jsonify({"error": f"Invalid status value: {value}"}), 400)
+            status_entries.append(
+                {
+                    "agent": agent,
+                    "date": date,
+                    "slot": slot,
+                    "value": value,
+                }
+            )
+        else:
+            return None, None, None, (jsonify({"error": f"Invalid entry type: {entry_type}"}), 400)
+
+    return existing_assignments, status_entries, warnings, None
+
+
+def _inject_manual_status_entries(runtime_config, status_entries):
+    injected_config = deepcopy(runtime_config)
+    agent_by_name = {agent["name"]: agent for agent in injected_config["agents"]}
+    warnings = []
+    for entry in status_entries:
+        agent_name = entry["agent"]
+        date = entry["date"]
+        status_value = entry["value"]
+        day_str = datetime.strptime(date, "%Y-%m-%d").strftime("%d-%m-%Y")
+        target = agent_by_name[agent_name]
+        if status_value in {"unavailable", "training"}:
+            target.setdefault(status_value, [])
+            if day_str not in target[status_value]:
+                target[status_value].append(day_str)
+        elif status_value == "vacations":
+            target.setdefault("vacations", [])
+            target["vacations"].append({"start": day_str, "end": day_str})
+        elif status_value == "restriction":
+            warnings.append(
+                {
+                    "code": "STATUS_RESTRICTION_REQUIRES_SHIFT",
+                    "agent": agent_name,
+                    "date": date,
+                    "slot": entry["slot"],
+                    "message": "Restriction requires a shift name and was ignored.",
+                    "source": "api_validation",
+                }
+            )
+        elif status_value.startswith("restrictions:"):
+            restriction_type = status_value.split(":", 1)[1]
+            target.setdefault("restrictions", [])
+            target["restrictions"].append({"date": day_str, "type": restriction_type})
+    return injected_config, warnings
+
+
+def _build_day_label_iso_lookup(start_date_str, end_date_str):
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+    lookup = {}
+    current = start_date
+    while current <= end_date:
+        lookup[format_day_label(current)] = current.strftime("%Y-%m-%d")
+        current += timedelta(days=1)
+    return lookup
+
+
+def _detect_modified_existing_assignments(result, existing_assignments, runtime_config, start_date_str, end_date_str):
+    catalog = build_vacation_catalog(runtime_config)
+    metadata_by_assignment = catalog["assignment_metadata"]
+    day_to_iso = _build_day_label_iso_lookup(start_date_str, end_date_str)
+    final_by_agent_day = {}
+    for agent_name, shifts in (result.get("planning") or {}).items():
+        for day, vacation in shifts:
+            final_by_agent_day[(agent_name, day)] = vacation
+
+    modifications = []
+    for agent_name, assignments in (existing_assignments or {}).items():
+        for day, initial_vacation in assignments:
+            final_vacation = final_by_agent_day.get((agent_name, day))
+            if final_vacation == initial_vacation:
+                continue
+
+            if final_vacation is None:
+                change_type = "cleared"
+            elif metadata_by_assignment.get(final_vacation) and metadata_by_assignment[final_vacation].is_half:
+                change_type = "changed_to_half"
+            else:
+                change_type = "changed_to_full"
+
+            modifications.append(
+                {
+                    "agent": agent_name,
+                    "date": day_to_iso.get(day),
+                    "day": day,
+                    "initial_value": initial_vacation,
+                    "final_value": final_vacation,
+                    "change_type": change_type,
+                }
+            )
+    return modifications
+
+
+def _build_suggestions_from_context(manual_entries, warnings, unsat_reason=None, blocking_reasons=None):
+    suggestions = []
+    for warning in warnings:
+        suggestion = {
+            "agent": warning.get("agent"),
+            "date": warning.get("date"),
+            "slot": warning.get("slot", "day"),
+            "reason_code": warning.get("code", "MANUAL_CONFLICT"),
+            "message": warning.get("message", "Manual entry conflict."),
+            "proposals": [{"action": "clear_cell"}],
+        }
+        suggestions.append(suggestion)
+
+    if suggestions:
+        return suggestions
+
+    non_actionable_reason_codes = {
+        "GLOBAL_UNSAT",
+        "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS",
+        "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN",
+        "PREVALIDATION_WARNINGS_PRESENT",
+    }
+    actionable_reasons = [
+        reason
+        for reason in (blocking_reasons or [])
+        if reason.get("code") not in non_actionable_reason_codes
+    ]
+    if unsat_reason is not None and manual_entries and actionable_reasons:
+        first_reason = actionable_reasons[0]
+        actionable_segments = [
+            segment
+            for segment in first_reason.get("segments", [])
+            if "clear_cell" in (segment.get("actions") or [])
+            and segment.get("agent")
+            and segment.get("date")
+        ]
+        if actionable_segments:
+            for segment in actionable_segments:
+                suggestions.append(
+                    {
+                        "agent": segment.get("agent"),
+                        "date": segment.get("date"),
+                        "slot": segment.get("slot", "day"),
+                        "reason_code": first_reason.get("code", "GLOBAL_UNSAT"),
+                        "message": first_reason.get("message", unsat_reason),
+                        "proposals": [{"action": "clear_cell"}],
+                    }
+                )
+            return suggestions
+    return suggestions
+
+
+def _build_blocking_reasons_from_context(manual_entries, warnings, unsat_reason):
+    reasons = [
+        {"code": "GLOBAL_UNSAT", "message": unsat_reason, "count": 1}
+    ]
+    if warnings:
+        reasons.append(
+            {
+                "code": "PREVALIDATION_WARNINGS_PRESENT",
+                "message": "Des warnings de prévalidation ont été détectés.",
+                "count": len(warnings),
+            }
+        )
+    return reasons
+
+
+def _manual_entries_to_initial_shifts(manual_entries):
+    initial_shifts = {}
+    for entry in manual_entries:
+        if entry.get("type") != "shift" or not is_valid_date(entry.get("date")):
+            continue
+        agent = entry.get("agent")
+        value = entry.get("value")
+        if not agent or not value:
+            continue
+        entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
+        initial_shifts.setdefault(agent, []).append((format_day_label(entry_date), value))
+    return initial_shifts
+
+
+def _manual_lock_segment(entry, label):
+    return {
+        "agent": entry.get("agent"),
+        "date": entry.get("date"),
+        "slot": entry.get("slot", "day"),
+        "value": entry.get("value"),
+        "vacation": entry.get("value"),
+        "segment": label,
+        "actions": ["clear_cell"],
+    }
+
+
+def _diagnose_manual_lock_impact(planning_payload, manual_entries, runtime_config):
+    manual_shift_entries = [
+        entry
+        for entry in manual_entries
+        if entry.get("type") == "shift" and is_valid_date(entry.get("date"))
+    ]
+    if not manual_shift_entries:
+        return []
+
+    unlocked_payload = deepcopy(planning_payload)
+    unlocked_payload["initial_shifts"] = {}
+    _, unlocked_status_code = _build_planning_payload(
+        payload=unlocked_payload,
+        runtime_config=runtime_config,
+    )
+    if unlocked_status_code != 200:
+        return [
+            {
+                "code": "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS",
+                "message": (
+                    "Le planning reste infaisable meme sans verrouiller les cellules "
+                    "manuelles. Le blocage ne vient donc pas uniquement de ces verrous."
+                ),
+                "count": 1,
+            }
+        ]
+
+    isolated_segments = []
+    for entry in manual_shift_entries:
+        single_payload = deepcopy(planning_payload)
+        single_payload["initial_shifts"] = _manual_entries_to_initial_shifts([entry])
+        _, single_status_code = _build_planning_payload(
+            payload=single_payload,
+            runtime_config=runtime_config,
+        )
+        if single_status_code != 200:
+            isolated_segments.append(_manual_lock_segment(entry, "cellule manuelle"))
+
+    if isolated_segments:
+        return [
+            {
+                "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+                "message": (
+                    "Une ou plusieurs cellules manuelles, sans contradiction directe "
+                    "apparente, rendent le planning infaisable lorsqu'elles sont verrouillees."
+                ),
+                "count": len(isolated_segments),
+                "details": [
+                    f"{segment['agent']} - {segment['date']} - {segment['value']}"
+                    for segment in isolated_segments[:5]
+                ],
+                "segments": isolated_segments[:5],
+            }
+        ]
+
+    entries_by_date = {}
+    for entry in manual_shift_entries:
+        entries_by_date.setdefault(entry.get("date"), []).append(entry)
+
+    date_segments = []
+    for iso_date, entries in sorted(entries_by_date.items()):
+        if len(entries) <= 1:
+            continue
+        date_payload = deepcopy(planning_payload)
+        date_payload["initial_shifts"] = _manual_entries_to_initial_shifts(entries)
+        _, date_status_code = _build_planning_payload(
+            payload=date_payload,
+            runtime_config=runtime_config,
+        )
+        if date_status_code != 200:
+            date_segments.extend(
+                _manual_lock_segment(entry, f"combinaison du {iso_date}")
+                for entry in entries
+            )
+
+    if date_segments:
+        return [
+            {
+                "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+                "message": (
+                    "Les cellules manuelles d'une meme date ne violent pas directement "
+                    "une regle, mais leur verrouillage rend le planning infaisable."
+                ),
+                "count": len(date_segments),
+                "details": [
+                    f"{segment['agent']} - {segment['date']} - {segment['value']}"
+                    for segment in date_segments[:5]
+                ],
+                "segments": date_segments[:5],
+            }
+        ]
+
+    return [
+        {
+            "code": "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT",
+            "message": (
+                "Aucune contradiction directe n'a ete detectee sur les cellules "
+                "manuelles. Le planning est faisable sans les verrouiller, mais "
+                "leur combinaison complete rend le modele infaisable."
+            ),
+            "count": len(manual_shift_entries),
+        }
+    ]
+
+
+def _date_matches_vacation_period(iso_date, vacation_periods):
+    if not is_valid_date(iso_date):
+        return False
+
+    day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+    for period in vacation_periods or []:
+        if not isinstance(period, dict):
+            continue
+        start = period.get("start")
+        end = period.get("end")
+        if not start or not end:
+            continue
+        try:
+            start_dt = datetime.strptime(start, "%d-%m-%Y")
+            end_dt = datetime.strptime(end, "%d-%m-%Y")
+        except ValueError:
+            continue
+        if start_dt <= day_dt <= end_dt:
+            return True
+    return False
+
+
+def _manual_conflict_segment(entry, blocker, label, extra=None):
+    segment = {
+        "agent": entry.get("agent"),
+        "date": entry.get("date"),
+        "slot": entry.get("slot", "day"),
+        "value": entry.get("value"),
+        "vacation": entry.get("value"),
+        "segment": label,
+        "blockers": {blocker: 1},
+        "actions": ["clear_cell"],
+    }
+    if extra:
+        segment.update(extra)
+    return segment
+
+
+def _manual_conflict_details(segments):
+    return [
+        (
+            f"{segment.get('agent')} - {segment.get('date')} - "
+            f"{segment.get('value')}: {segment.get('segment')}"
+        )
+        for segment in segments
+    ]
+
+
+def _agent_has_status_on_day(agent, iso_date):
+    if not is_valid_date(iso_date):
+        return False
+
+    day_str = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+    if day_str in (agent.get("unavailable") or []):
+        return True
+    if day_str in (agent.get("training") or []):
+        return True
+    if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
+        return True
+    for restriction in agent.get("restrictions") or []:
+        if isinstance(restriction, dict) and restriction.get("date") == day_str:
+            return True
+    return False
+
+
+def _build_manual_shift_indexes(manual_entries):
+    manual_shifts_by_agent_day = {}
+    manual_counts_by_day_shift = {}
+    dates_to_check = set()
+
+    for entry in manual_entries:
+        if entry.get("type") != "shift":
+            continue
+        iso_date = entry.get("date")
+        agent_name = entry.get("agent")
+        shift_value = entry.get("value")
+        if not agent_name or not shift_value or not is_valid_date(iso_date):
+            continue
+
+        dates_to_check.add(iso_date)
+        manual_shifts_by_agent_day.setdefault((agent_name, iso_date), []).append(shift_value)
+        manual_counts_by_day_shift[(iso_date, shift_value)] = (
+            manual_counts_by_day_shift.get((iso_date, shift_value), 0) + 1
+        )
+
+    return manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
+
+
+def _agent_cover_blockers(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config, catalog):
+    blockers = []
+    agent_name = agent["name"]
+    locked_shifts = manual_shifts_by_agent_day.get((agent_name, iso_date), [])
+    if locked_shifts and vacation not in locked_shifts:
+        blockers.append("existing_assignment")
+
+    if _agent_has_status_on_day(agent, iso_date):
+        blockers.append("status")
+    restricted = set(agent.get("restriction") or [])
+    if vacation in restricted:
+        blockers.append("restriction")
+    metadata = catalog["assignment_metadata"].get(vacation)
+    if metadata and metadata.parent in restricted:
+        blockers.append("parent_restriction")
+    if metadata and metadata.is_half and is_valid_date(iso_date):
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        day_token = day_dt.strftime("%d-%m")
+        if day_dt.weekday() >= 5:
+            blockers.append("half_weekend")
+        if day_token in set(runtime_config.get("holidays", [])):
+            blockers.append("half_holiday")
+    return blockers
+
+
+def _agent_can_cover_shift(agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config):
+    catalog = build_vacation_catalog(runtime_config)
+    return not _agent_cover_blockers(
+        agent, iso_date, vacation, manual_shifts_by_agent_day, runtime_config, catalog
+    )
+
+
+def _format_blocker_summary(blocker_counts):
+    labels = {
+        "existing_assignment": "affectation existante différente",
+        "status": "statut bloquant",
+        "restriction": "restriction directe",
+        "parent_restriction": "restriction parent",
+        "half_weekend": "demi-vacation interdite week-end",
+        "half_holiday": "demi-vacation interdite jour férié",
+    }
+    return [
+        f"{labels.get(code, code)}: {count}"
+        for code, count in sorted(blocker_counts.items())
+        if count
+    ]
+
+def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config):
+    reasons = []
+    by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
+    details_by_code = {
+        "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": [],
+        "MANUAL_SHIFT_AFTER_NIGHT": [],
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": [],
+        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": [],
+        "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": [],
+    }
+    counts_by_code = {code: 0 for code in details_by_code}
+    catalog = build_vacation_catalog(runtime_config)
+
+    weekly_counts = {}
+    for (agent_name, iso_date), shifts in manual_shifts_by_agent_day.items():
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        week_key = (agent_name, datetime.strptime(iso_date, "%Y-%m-%d").isocalendar()[:2])
+        weekly_counts.setdefault(week_key, {"CDP": 0})
+        weekly_counts[week_key]["CDP"] += shifts.count("CDP")
+
+    for (agent_name, week), counts in weekly_counts.items():
+        if counts["CDP"] > 2:
+            counts_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"] += 1
+            details_by_code["MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED"].append(
+                f"{agent_name} / semaine {week[1]}: {counts['CDP']} vacations CDP manuelles pour 2 maximum"
+            )
+
+    for (agent_name, iso_date), shifts in manual_shifts_by_agent_day.items():
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        agent = by_agent[agent_name]
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        previous_iso = (day_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_iso = (day_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        next_day_str = (day_dt + timedelta(days=1)).strftime("%d-%m-%Y")
+
+        rest_triggering_shifts = [
+            shift for shift in shifts if requires_next_day_rest(catalog, shift)
+        ]
+        if rest_triggering_shifts:
+            next_manual_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
+            forbidden_next_manual_shifts = [
+                shift for shift in next_manual_shifts if not is_night_assignment(catalog, shift)
+            ]
+            if forbidden_next_manual_shifts:
+                counts_by_code["MANUAL_SHIFT_AFTER_NIGHT"] += 1
+                details_by_code["MANUAL_SHIFT_AFTER_NIGHT"].append(
+                    f"{agent_name} / {iso_date}: {', '.join(rest_triggering_shifts)} "
+                    f"suivie de {', '.join(forbidden_next_manual_shifts)} le {next_iso}"
+                )
+            if next_day_str in (agent.get("unavailable") or []) or next_day_str in (agent.get("training") or []):
+                counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
+                details_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"].append(
+                    f"{agent_name} / {iso_date}: affectation de nuit avant indisponibilité ou formation le {next_iso}"
+                )
+
+        if day_dt.weekday() == 5 and _agent_has_status_on_day(agent, next_iso):
+            counts_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"] += 1
+            details_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"].append(
+                f"{agent_name}: vacation manuelle le samedi {iso_date}, mais dimanche {next_iso} bloqué"
+            )
+        if day_dt.weekday() == 6 and _agent_has_status_on_day(agent, previous_iso):
+            counts_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"] += 1
+            details_by_code["MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT"].append(
+                f"{agent_name}: vacation manuelle le dimanche {iso_date}, mais samedi {previous_iso} bloqué"
+            )
+
+        if day_dt.strftime("%d-%m-%Y") in (agent.get("training") or []):
+            previous_shifts = manual_shifts_by_agent_day.get((agent_name, previous_iso), [])
+            next_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
+            forbidden_previous = [shift for shift in previous_shifts if shift != "CDP"]
+            forbidden_next = [
+                shift
+                for shift in next_shifts
+                if shift != "CDP" and not is_night_assignment(catalog, shift)
+            ]
+            if forbidden_previous or forbidden_next:
+                counts_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"] += 1
+                details_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"].append(
+                    f"{agent_name} / formation {iso_date}: vacations incompatibles autour de la formation"
+                )
+
+    reason_messages = {
+        "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
+        "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle non-nuit est posée le lendemain d'une affectation nécessitant un repos.",
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation nécessitant un repos est posée avant une indisponibilité ou une formation.",
+        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": "Une vacation manuelle ne respecte pas les règles de veille/lendemain de formation.",
+        "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",
+    }
+    for code, count in counts_by_code.items():
+        if count:
+            reasons.append(
+                {
+                    "code": code,
+                    "message": reason_messages[code],
+                    "count": count,
+                    "details": details_by_code[code][:5],
+                }
+            )
+
+    return reasons
+
+
+def _diagnose_staffing_capacity_conflicts(
+    runtime_config, manual_shifts_by_agent_day, manual_counts_by_day_shift, dates_to_check
+):
+    reasons = []
+    agents = runtime_config.get("agents", [])
+    staffing_requirements = runtime_config.get("staffing_requirements", {})
+    holidays = set(runtime_config.get("holidays", []))
+    catalog = build_vacation_catalog(runtime_config)
+
+    understaffed_shift_days = 0
+    overstaffed_manual_shift_days = 0
+    understaffed_details = []
+    overstaffed_details = []
+    understaffed_segments = []
+    overstaffed_segments = []
+
+    for iso_date in sorted(dates_to_check):
+        day_dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        day_token = day_dt.strftime("%d-%m")
+        is_weekend = day_dt.weekday() >= 5
+        for vacation in catalog["coverage_vacations"]:
+            required_agents = staffing_requirements.get(vacation, 1)
+            if vacation == "CDP" and (is_weekend or day_token in holidays):
+                required_agents = 0
+
+            for segment in catalog["coverage_segments"].get(vacation, [vacation]):
+                covering_assignments = catalog["segment_covering_assignments"].get(
+                    (vacation, segment), [vacation]
+                )
+                manual_count = sum(
+                    manual_counts_by_day_shift.get((iso_date, assignment), 0)
+                    for assignment in covering_assignments
+                )
+                if manual_count > required_agents:
+                    overstaffed_manual_shift_days += 1
+                    overstaffed_details.append(
+                        f"{iso_date} / {vacation} / {segment}: "
+                        f"{manual_count} manuel(s) pour {required_agents} requis"
+                    )
+                    overstaffed_segments.append(
+                        {
+                            "date": iso_date,
+                            "vacation": vacation,
+                            "segment": segment,
+                            "required_agents": required_agents,
+                            "manual_count": manual_count,
+                            "actions": ["clear_cell", "reduce_existing_assignment_count"],
+                        }
+                    )
+                    continue
+
+                eligible_count = 0
+                blocker_counts = {}
+                sample_blocked_agents = []
+                for agent in agents:
+                    assignment_blockers = [
+                        _agent_cover_blockers(
+                            agent,
+                            iso_date,
+                            assignment,
+                            manual_shifts_by_agent_day,
+                            runtime_config,
+                            catalog,
+                        )
+                        for assignment in covering_assignments
+                    ]
+                    if any(not blockers for blockers in assignment_blockers):
+                        eligible_count += 1
+                        continue
+                    flattened_blockers = sorted(
+                        {blocker for blockers in assignment_blockers for blocker in blockers}
+                    )
+                    for blocker in flattened_blockers:
+                        blocker_counts[blocker] = blocker_counts.get(blocker, 0) + 1
+                    if len(sample_blocked_agents) < 5:
+                        sample_blocked_agents.append(
+                            {
+                                "agent": agent.get("name"),
+                                "reasons": flattened_blockers,
+                            }
+                        )
+                if eligible_count < required_agents:
+                    understaffed_shift_days += 1
+                    blocker_summary = _format_blocker_summary(blocker_counts)
+                    actions = [
+                        "free_agent",
+                        "increase_max_weekly_hours",
+                        "reduce_staffing_requirement",
+                    ]
+                    if is_weekend or day_token in holidays:
+                        actions.append("use_full_vacation")
+                    else:
+                        actions.append("allow_or_assign_half_vacations")
+                    understaffed_details.append(
+                        f"{iso_date} / {vacation} / {segment}: "
+                        f"{eligible_count} agent(s) possible(s) pour {required_agents} requis. "
+                        f"Blocages: {', '.join(blocker_summary) if blocker_summary else 'non identifiés'}. "
+                        f"Actions possibles: {', '.join(actions)}."
+                    )
+                    understaffed_segments.append(
+                        {
+                            "date": iso_date,
+                            "vacation": vacation,
+                            "segment": segment,
+                            "required_agents": required_agents,
+                            "eligible_agents": eligible_count,
+                            "blockers": blocker_counts,
+                            "sample_blocked_agents": sample_blocked_agents,
+                            "actions": actions,
+                        }
+                    )
+
+    if overstaffed_manual_shift_days:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT",
+                "message": (
+                    "Trop d'affectations manuelles sont posées sur au moins un "
+                    "segment par rapport au besoin configuré."
+                ),
+                "count": overstaffed_manual_shift_days,
+                "details": overstaffed_details[:5],
+                "segments": overstaffed_segments[:5],
+            }
+        )
+    if understaffed_shift_days:
+        reasons.append(
+            {
+                "code": "STAFFING_REQUIREMENT_UNMET",
+                "message": (
+                    "Le besoin de couverture ne peut pas être atteint pour au moins "
+                    "un segment avec les agents encore disponibles."
+                ),
+                "count": understaffed_shift_days,
+                "details": understaffed_details[:5],
+                "segments": understaffed_segments[:5],
+            }
+        )
+
+    return reasons
+
+
+RELAXED_CONSTRAINT_DIAGNOSTICS = [
+    {
+        "constraint": "limit_one_shift_per_day",
+        "label": "une seule vacation par agent et par jour",
+        "detail": "Un agent aurait probablement besoin de couvrir plusieurs vacations le même jour.",
+    },
+    {
+        "constraint": "cover_daily_shifts",
+        "label": "couverture quotidienne des besoins",
+        "detail": "Le nombre d'agents requis par date/vacation semble incompatible avec les disponibilités restantes.",
+    },
+    {
+        "constraint": "enforce_full_weekend_composition",
+        "label": "week-end complet",
+        "detail": "La règle samedi/dimanche travaillés ensemble semble bloquer une combinaison possible.",
+    },
+    {
+        "constraint": "enforce_min_free_weekends_per_horizon",
+        "label": "minimum de week-ends libres",
+        "detail": "Le minimum de week-ends libres demandé semble trop contraignant sur cette période.",
+    },
+    {
+        "constraint": "avoid_day_after_night",
+        "label": "repos après affectation de nuit",
+        "detail": "Une affectation le lendemain d'une vacation nécessitant un repos semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "limit_cdp_per_week",
+        "label": "limite CDP hebdomadaire",
+        "detail": "La limite de vacations CDP par semaine semble bloquer la couverture.",
+    },
+    {
+        "constraint": "block_unavailable_days",
+        "label": "indisponibilités",
+        "detail": "Relâcher les indisponibilités rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "block_training_days",
+        "label": "formations",
+        "detail": "Relâcher les jours de formation rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "block_leave_and_compute_paid_hours",
+        "label": "congés",
+        "detail": "Relâcher les congés rendrait le planning faisable, ce qui indique un manque de capacité disponible.",
+    },
+    {
+        "constraint": "block_night_before_unavailable",
+        "label": "affectation repos avant indisponibilité",
+        "detail": "Une affectation nécessitant un repos avant une indisponibilité semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "block_night_before_training",
+        "label": "affectation repos avant formation",
+        "detail": "Une affectation nécessitant un repos avant une formation semble nécessaire pour trouver une solution.",
+    },
+    {
+        "constraint": "limit_pre_post_training",
+        "label": "veille/lendemain de formation",
+        "detail": "Les règles autour des formations semblent empêcher une solution.",
+    },
+    {
+        "constraint": "block_exclusion_days",
+        "label": "jours d'exclusion",
+        "detail": "Relâcher les jours d'exclusion rendrait le planning faisable.",
+    },
+    {
+        "constraint": "apply_agent_restrictions",
+        "label": "restrictions agent",
+        "detail": "Relâcher les restrictions agent rendrait le planning faisable.",
+    },
+]
+
+
+def _probe_relaxed_hard_constraints(planning_payload, runtime_config):
+    reasons = []
+
+    for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS:
+        probe_config = deepcopy(runtime_config)
+        probe_config["_disabled_hard_constraints_for_diagnostics"] = [diagnostic["constraint"]]
+        solver_config = probe_config.setdefault("solver", {})
+        try:
+            current_timeout = int(solver_config.get("max_time_seconds", 3))
+        except (TypeError, ValueError):
+            current_timeout = 3
+        solver_config["max_time_seconds"] = max(1, min(current_timeout, 3))
+
+        _, probe_status = _build_planning_payload(
+            payload=planning_payload,
+            runtime_config=probe_config,
+        )
+        if probe_status == 200:
+            reasons.append(
+                {
+                    "code": "RELAXED_CONSTRAINT_MAKES_FEASIBLE",
+                    "message": (
+                        "Une solution devient possible si la contrainte "
+                        f"« {diagnostic['label']} » est relâchée. "
+                        "C'est donc une piste de blocage prioritaire."
+                    ),
+                    "count": 1,
+                    "details": [diagnostic["detail"]],
+                }
+            )
+
+    return reasons[:5]
+
+
+def _diagnose_manual_entry_conflicts(manual_entries, runtime_config):
+    reasons = []
+    by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
+    catalog = build_vacation_catalog(runtime_config)
+    (
+        manual_shifts_by_agent_day,
+        manual_counts_by_day_shift,
+        dates_to_check,
+    ) = _build_manual_shift_indexes(manual_entries)
+
+    seen_agent_day = set()
+    duplicate_count = 0
+    unavailable_conflicts = 0
+    training_conflicts = 0
+    restriction_conflicts = 0
+    vacation_conflicts = 0
+    unavailable_segments = []
+    training_segments = []
+    restriction_segments = []
+    vacation_segments = []
+
+    for entry in manual_entries:
+        if entry.get("type") != "shift":
+            continue
+        agent_name = entry.get("agent")
+        iso_date = entry.get("date")
+        shift_value = entry.get("value")
+        if agent_name not in by_agent or not is_valid_date(iso_date):
+            continue
+        agent = by_agent[agent_name]
+        day_str = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+
+        key = (agent_name, iso_date)
+        if key in seen_agent_day:
+            duplicate_count += 1
+        else:
+            seen_agent_day.add(key)
+
+        if day_str in (agent.get("unavailable") or []):
+            unavailable_conflicts += 1
+            unavailable_segments.append(
+                _manual_conflict_segment(entry, "status", "indisponibilité")
+            )
+        if day_str in (agent.get("training") or []):
+            training_conflicts += 1
+            training_segments.append(
+                _manual_conflict_segment(entry, "status", "formation")
+            )
+        matching_restrictions = [
+            restriction
+            for restriction in (agent.get("restriction") or [])
+            if assignment_matches_choice(catalog, shift_value, {restriction})
+        ]
+        if matching_restrictions:
+            restriction_conflicts += 1
+            restriction_segments.append(
+                _manual_conflict_segment(
+                    entry,
+                    "restriction",
+                    ", ".join(matching_restrictions),
+                    {"restriction": matching_restrictions[0]},
+                )
+            )
+        if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
+            vacation_conflicts += 1
+            vacation_segments.append(
+                _manual_conflict_segment(entry, "status", "congés")
+            )
+
+    if duplicate_count:
+        reasons.append(
+            {
+                "code": "MULTIPLE_MANUAL_SHIFTS_SAME_DAY",
+                "message": "Plusieurs vacations manuelles ont été saisies pour un même agent et un même jour.",
+                "count": duplicate_count,
+            }
+        )
+    if unavailable_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_ON_UNAVAILABLE_DAY",
+                "message": "Une vacation manuelle a été posée sur un jour d'indisponibilité.",
+                "count": unavailable_conflicts,
+                "details": _manual_conflict_details(unavailable_segments),
+                "segments": unavailable_segments,
+            }
+        )
+    if training_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_ON_TRAINING_DAY",
+                "message": "Une vacation manuelle a été posée sur un jour de formation.",
+                "count": training_conflicts,
+                "details": _manual_conflict_details(training_segments),
+                "segments": training_segments,
+            }
+        )
+    if vacation_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_DURING_VACATION",
+                "message": "Une vacation manuelle a été posée pendant une période de congé.",
+                "count": vacation_conflicts,
+                "details": _manual_conflict_details(vacation_segments),
+                "segments": vacation_segments,
+            }
+        )
+    if restriction_conflicts:
+        reasons.append(
+            {
+                "code": "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION",
+                "message": "Une vacation manuelle correspond à une restriction agent.",
+                "count": restriction_conflicts,
+                "details": _manual_conflict_details(restriction_segments),
+                "segments": restriction_segments,
+            }
+        )
+
+    reasons.extend(_diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config))
+    reasons.extend(
+        _diagnose_staffing_capacity_conflicts(
+            runtime_config,
+            manual_shifts_by_agent_day,
+            manual_counts_by_day_shift,
+            dates_to_check,
+        )
+    )
+
+    return reasons
+
+
 @app.route("/previous-week-schedule", methods=["POST"])
 def compute_previous_week_schedule():
     payload, payload_error = parse_json_object_payload()
@@ -351,8 +1385,151 @@ def compute_previous_week_schedule():
     start_date = payload["start_date"]
     previous_week_schedule = get_previous_week_schedule(start_date)
 
-    agents = get_active_config()["agents"]
-    return jsonify({"previous_week_schedule": previous_week_schedule, "agents": agents})
+    runtime_config = get_active_config()
+    agents = runtime_config["agents"]
+    assignable_vacations = build_vacation_catalog(runtime_config)["assignable_vacations"]
+    return jsonify({
+        "previous_week_schedule": previous_week_schedule,
+        "agents": agents,
+        "assignable_vacations": assignable_vacations,
+    })
+
+
+@app.route("/optimize-existing-planning", methods=["POST"])
+def optimize_existing_planning_route():
+    payload, payload_error = parse_json_object_payload()
+    if payload_error is not None:
+        return payload_error
+
+    runtime_config = get_active_config()
+    start_date, end_date, date_error = _validate_date_range_payload(payload)
+    if date_error is not None:
+        return date_error
+
+    existing_assignments, status_entries, warnings, entries_error = _parse_manual_entries(
+        payload.get("manual_entries", []), runtime_config, start_date, end_date
+    )
+    if entries_error is not None:
+        return entries_error
+    effective_runtime_config, status_warnings = _inject_manual_status_entries(
+        runtime_config, status_entries
+    )
+    warnings.extend(status_warnings)
+    existing_assignments_strict = bool(payload.get("existing_assignments_strict", True))
+
+    result, status_code = _build_planning_payload(
+        payload={
+            "start_date": payload["start_date"],
+            "end_date": payload["end_date"],
+            "initial_shifts": existing_assignments if existing_assignments_strict else {},
+            "existing_assignments": existing_assignments,
+        },
+        runtime_config=effective_runtime_config,
+    )
+    manual_entries = payload.get("manual_entries", [])
+    if status_code != 200:
+        unsat_reason = result.get("info") or result.get("error") or "No solution found."
+        blocking_reasons = _build_blocking_reasons_from_context(
+            manual_entries=manual_entries,
+            warnings=warnings,
+            unsat_reason=unsat_reason,
+        )
+        diagnostic_reasons = _diagnose_manual_entry_conflicts(
+            manual_entries=manual_entries,
+            runtime_config=effective_runtime_config,
+        )
+        if diagnostic_reasons:
+            blocking_reasons.extend(diagnostic_reasons)
+        else:
+            relaxed_constraint_reasons = _probe_relaxed_hard_constraints(
+                planning_payload={
+                    "start_date": payload["start_date"],
+                    "end_date": payload["end_date"],
+                    "initial_shifts": existing_assignments if existing_assignments_strict else {},
+                    "existing_assignments": existing_assignments,
+                },
+                runtime_config=effective_runtime_config,
+            )
+            if relaxed_constraint_reasons:
+                blocking_reasons.extend(relaxed_constraint_reasons)
+            elif manual_entries and existing_assignments_strict:
+                manual_lock_reasons = _diagnose_manual_lock_impact(
+                    planning_payload={
+                        "start_date": payload["start_date"],
+                        "end_date": payload["end_date"],
+                        "initial_shifts": existing_assignments,
+                        "existing_assignments": existing_assignments,
+                    },
+                    manual_entries=manual_entries,
+                    runtime_config=effective_runtime_config,
+                )
+                if manual_lock_reasons:
+                    blocking_reasons.extend(manual_lock_reasons)
+            elif manual_entries:
+                blocking_reasons.append(
+                    {
+                        "code": "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN",
+                        "message": (
+                            "Aucune contradiction directe n'a été détectée sur les cellules manuelles. "
+                            "Le blocage vient probablement d'une combinaison de contraintes globales."
+                        ),
+                        "count": len(manual_entries),
+                    }
+                )
+        suggestions = _build_suggestions_from_context(
+            manual_entries=manual_entries,
+            warnings=warnings,
+            unsat_reason=unsat_reason,
+            blocking_reasons=blocking_reasons,
+        )
+        impacted_cells = [
+            {
+                "agent": entry.get("agent"),
+                "date": entry.get("date"),
+                "slot": entry.get("slot", "day"),
+                "value": entry.get("value"),
+            }
+            for entry in manual_entries
+        ]
+        return (
+            jsonify(
+                {
+                    "status": "unsat",
+                    "error": unsat_reason,
+                    "warnings": warnings,
+                    "blocking_reasons": blocking_reasons,
+                    "impacted_cells": impacted_cells,
+                    "suggestions": suggestions,
+                    "meta": {
+                        "manual_cell_count": len(manual_entries),
+                        "conflict_count": len(warnings),
+                        "existing_assignments_strict": existing_assignments_strict,
+                    },
+                }
+            ),
+            status_code,
+        )
+    status = "warning" if warnings else "ok"
+    suggestions = _build_suggestions_from_context(
+        manual_entries=manual_entries,
+        warnings=warnings,
+    )
+    result["status"] = status
+    result["warnings"] = warnings
+    result["suggestions"] = suggestions
+    result["modified_existing_assignments"] = _detect_modified_existing_assignments(
+        result,
+        existing_assignments,
+        effective_runtime_config,
+        payload["start_date"],
+        payload["end_date"],
+    )
+    result["meta"] = {
+        "manual_cell_count": len(manual_entries),
+        "conflict_count": len(warnings),
+        "existing_assignments_strict": existing_assignments_strict,
+    }
+    return jsonify(result)
 
 
 def get_previous_week_schedule(start_date_str):
@@ -534,6 +1711,7 @@ def generate_planning(
     initial_shifts,
     planning_start_date=None,
     runtime_config=None,
+    existing_assignments=None,
 ):
     # Public facade kept stable for existing route and tests.
     effective_runtime_config = runtime_config or get_active_config()
@@ -546,6 +1724,7 @@ def generate_planning(
         initial_shifts=initial_shifts,
         runtime_config=effective_runtime_config,
         planning_start_date=planning_start_date,
+        existing_assignments=existing_assignments,
     )
 
 set_active_config(get_active_config())

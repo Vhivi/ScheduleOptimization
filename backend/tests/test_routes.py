@@ -4,11 +4,16 @@ from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
+    RELAXED_CONSTRAINT_DIAGNOSTICS,
+    _diagnose_manual_entry_conflicts,
+    _probe_relaxed_hard_constraints,
+    _inject_manual_status_entries,
     app,
     get_active_config,
     load_config,
     load_default_config,
     set_active_config,
+    validate_runtime_config,
 )
 
 
@@ -131,6 +136,22 @@ def test_config_default_route(client):
     payload = response.get_json()
     assert "agents" in payload
     assert "vacations" in payload
+
+
+def test_runtime_config_accepts_0_9_3_shape():
+    legacy_config = deepcopy(load_default_config())
+    for key in (
+        "half_vacations",
+        "restriction_types_durations",
+        "vacation_colors",
+        "vacation_metadata",
+    ):
+        legacy_config.pop(key, None)
+    legacy_config["solver"].pop("weekend_monday_night_penalty", None)
+    for agent in legacy_config["agents"]:
+        agent.pop("include_in_balance", None)
+
+    assert validate_runtime_config(legacy_config) == []
 
 
 def test_put_config_route_updates_active_config(client):
@@ -259,7 +280,943 @@ def test_generate_planning_route_valid_data(client):
     assert response.status_code == 200
     result = response.get_json()
     assert "planning" in result
-    assert len(result["week_schedule"]) == 2  # Checks that 2 days have been generated
+    assert result["assignment_labels"]["Jour"] == "Jour"
+    assert len(result["week_schedule"]) == 2
+
+
+
+def test_optimize_existing_planning_requires_valid_manual_entries(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [{"agent": "Unknown", "date": "2026-01-05", "slot": "day", "type": "shift", "value": "M"}],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid agent: Unknown"
+
+
+def test_optimize_existing_planning_accepts_manual_shift_and_returns_ok_status(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    forced_day = "2026-01-05"
+    forced_vacation = load_default_config()["vacations"][0]
+    data = {
+        "start_date": forced_day,
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": forced_day,
+                "slot": "day",
+                "type": "shift",
+                "value": forced_vacation,
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["meta"]["manual_cell_count"] == 1
+    assert payload["warnings"] == []
+    forced_day_label = "Lun. 05-01"
+    assert [forced_day_label, forced_vacation] in payload["planning"][agent_name]
+
+
+def test_optimize_existing_planning_locks_manual_shifts_by_default(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Jour"]]},
+        "vacation_durations": {"Jour": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour"],
+        "assignment_labels": {"Jour": "Jour"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 200
+    planning_payload = build_payload.call_args.kwargs["payload"]
+    assert planning_payload["initial_shifts"] == {agent_name: [("Lun. 05-01", "Jour")]}
+    assert response.get_json()["meta"]["existing_assignments_strict"] is True
+
+
+def test_optimize_existing_planning_accepts_locked_consecutive_manual_nights(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = [
+        {
+            "name": "Agent Nuit",
+            "preferences": {"preferred": ["Nuit"], "avoid": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+        {
+            "name": "Agent Jour",
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+    ]
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {}
+    config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    set_active_config(config)
+
+    data = {
+        "start_date": "2026-01-12",
+        "end_date": "2026-01-13",
+        "manual_entries": [
+            {
+                "agent": "Agent Nuit",
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+            {
+                "agent": "Agent Nuit",
+                "date": "2026-01-13",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+        ],
+    }
+
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["warnings"] == []
+    assert payload["meta"]["existing_assignments_strict"] is True
+    assert ["Lun. 12-01", "Nuit"] in payload["planning"]["Agent Nuit"]
+    assert ["Mar. 13-01", "Nuit"] in payload["planning"]["Agent Nuit"]
+
+
+def test_optimize_existing_planning_can_keep_manual_shifts_soft(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "existing_assignments_strict": False,
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Jour"]]},
+        "vacation_durations": {"Jour": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour"],
+        "assignment_labels": {"Jour": "Jour"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 200
+    planning_payload = build_payload.call_args.kwargs["payload"]
+    assert planning_payload["initial_shifts"] == {}
+    assert planning_payload["existing_assignments"] == {agent_name: [("Lun. 05-01", "Jour")]}
+    assert response.get_json()["meta"]["existing_assignments_strict"] is False
+
+
+def test_optimize_existing_planning_returns_warning_for_status_entries(client):
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": load_default_config()["agents"][0]["name"],
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "status",
+                "value": "restriction",
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "warning"
+    assert payload["warnings"][0]["code"] == "STATUS_RESTRICTION_REQUIRES_SHIFT"
+    assert payload["suggestions"] != []
+    assert "planning" in payload
+    assert len(payload["week_schedule"]) == 2
+
+
+def test_optimize_existing_planning_unsat_returns_blocking_reasons_and_suggestions(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": load_default_config()["vacations"][0],
+            }
+        ],
+    }
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["status"] == "unsat"
+    assert payload["blocking_reasons"] != []
+    assert payload["suggestions"] == []
+
+
+def test_diagnose_manual_entry_conflicts_detects_unavailable_day():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    day_str = "15-01-2026"
+    agent["unavailable"] = [day_str]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_ON_UNAVAILABLE_DAY" in reason_codes
+
+
+def test_diagnose_manual_entry_conflicts_detects_understaffed_shift_capacity():
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour"]
+    config["staffing_requirements"] = {"Jour": 2}
+    config["agents"] = config["agents"][:2]
+    config["agents"][0]["unavailable"] = ["15-01-2026"]
+    config["agents"][1]["unavailable"] = ["15-01-2026"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": config["agents"][0]["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+        config,
+    )
+
+    staffing_reason = next(
+        reason for reason in reasons if reason["code"] == "STAFFING_REQUIREMENT_UNMET"
+    )
+    assert staffing_reason["count"] == 2
+    assert "2026-01-15 / Jour" in staffing_reason["details"][0]
+    assert staffing_reason["segments"][0]["date"] == "2026-01-15"
+    assert staffing_reason["segments"][0]["vacation"] == "Jour"
+    assert staffing_reason["segments"][0]["required_agents"] == 2
+    assert staffing_reason["segments"][0]["eligible_agents"] == 0
+    assert "status" in staffing_reason["segments"][0]["blockers"]
+    assert "free_agent" in staffing_reason["segments"][0]["actions"]
+
+
+def test_diagnose_manual_entry_conflicts_detects_manual_overstaffing():
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour"]
+    config["staffing_requirements"] = {"Jour": 1}
+    config["agents"] = config["agents"][:2]
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": config["agents"][0]["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+            {
+                "agent": config["agents"][1]["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
+
+
+def test_diagnose_manual_entry_conflicts_reports_restricted_manual_cell():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent["restriction"] = ["Jour"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+        config,
+    )
+
+    restriction_reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    )
+    assert restriction_reason["count"] == 1
+    assert restriction_reason["segments"] == [
+        {
+            "agent": agent["name"],
+            "date": "2026-01-15",
+            "slot": "day",
+            "value": "Jour",
+            "vacation": "Jour",
+            "segment": "Jour",
+            "blockers": {"restriction": 1},
+            "actions": ["clear_cell"],
+            "restriction": "Jour",
+        }
+    ]
+
+
+def test_diagnose_manual_entry_conflicts_detects_parent_restriction_for_half_shift():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent["restriction"] = ["Jour"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour après-midi",
+            }
+        ],
+        config,
+    )
+
+    restriction_reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    )
+    assert restriction_reason["count"] == 1
+    assert restriction_reason["segments"][0]["agent"] == agent["name"]
+    assert restriction_reason["segments"][0]["date"] == "2026-01-15"
+    assert restriction_reason["segments"][0]["value"] == "Jour après-midi"
+    assert restriction_reason["segments"][0]["restriction"] == "Jour"
+
+
+def test_diagnose_manual_entry_conflicts_does_not_emit_day_shift_weekly_quota():
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+    config["solver"]["max_weekly_hours"] = 48
+    entries = [
+        {
+            "agent": agent_name,
+            "date": f"2026-01-{day:02d}",
+            "slot": "day",
+            "type": "shift",
+            "value": "Jour",
+        }
+        for day in range(12, 16)
+    ]
+
+    reasons = _diagnose_manual_entry_conflicts(entries, config)
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_DAY_SHIFT_WEEKLY_LIMIT_EXCEEDED" not in reason_codes
+
+def test_diagnose_manual_entry_conflicts_detects_shift_after_night():
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+            {
+                "agent": agent_name,
+                "date": "2026-01-13",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_AFTER_NIGHT" in reason_codes
+
+
+def test_diagnose_manual_entry_conflicts_allows_consecutive_manual_nights():
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+            {
+                "agent": agent_name,
+                "date": "2026-01-13",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            },
+        ],
+        config,
+    )
+
+    reason_codes = [reason["code"] for reason in reasons]
+    assert "MANUAL_SHIFT_AFTER_NIGHT" not in reason_codes
+
+
+def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
+    config = deepcopy(load_default_config())
+
+    def fake_build(payload, runtime_config):
+        disabled = runtime_config.get("_disabled_hard_constraints_for_diagnostics", [])
+        if disabled == ["cover_daily_shifts"]:
+            return {"planning": {}}, 200
+        return {"info": "No solution found."}, 400
+
+    with patch("app._build_planning_payload", side_effect=fake_build):
+        reasons = _probe_relaxed_hard_constraints(
+            {
+                "start_date": "2026-01-15",
+                "end_date": "2026-01-15",
+                "initial_shifts": {},
+            },
+            config,
+        )
+
+    assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
+    assert "couverture quotidienne" in reasons[0]["message"]
+
+
+def test_relaxed_constraints_do_not_include_agent_minimum_assignment():
+    constraints = [diagnostic["constraint"] for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS]
+
+    assert "require_at_least_one_shift_per_agent" not in constraints
+
+
+def test_relaxed_constraints_do_not_include_soft_weekend_monday_nights():
+    constraints = [diagnostic["constraint"] for diagnostic in RELAXED_CONSTRAINT_DIAGNOSTICS]
+
+    assert "block_monday_night_after_weekend_nights" not in constraints
+
+
+def test_probe_relaxed_hard_constraints_uses_generic_rest_wording():
+    config = deepcopy(load_default_config())
+
+    def fake_build(payload, runtime_config):
+        disabled = runtime_config.get("_disabled_hard_constraints_for_diagnostics", [])
+        if disabled == ["avoid_day_after_night"]:
+            return {"planning": {}}, 200
+        return {"info": "No solution found."}, 400
+
+    with patch("app._build_planning_payload", side_effect=fake_build):
+        reasons = _probe_relaxed_hard_constraints(
+            {
+                "start_date": "2026-01-15",
+                "end_date": "2026-01-15",
+                "initial_shifts": {},
+            },
+            config,
+        )
+
+    assert reasons[0]["code"] == "RELAXED_CONSTRAINT_MAKES_FEASIBLE"
+    assert "repos après affectation de nuit" in reasons[0]["message"]
+    assert "Nuit" not in reasons[0]["message"]
+
+
+def test_optimize_existing_planning_unsat_uses_relaxed_constraint_diagnostics(client):
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent_name = agent["name"]
+    agent["unavailable"] = []
+    agent["training"] = []
+    agent["vacations"] = []
+    agent["restriction"] = []
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+    }
+    relaxed_reason = {
+        "code": "RELAXED_CONSTRAINT_MAKES_FEASIBLE",
+        "message": "Une solution devient possible si la contrainte « couverture quotidienne des besoins » est relâchée.",
+        "count": 1,
+        "details": ["Le besoin configuré semble trop fort."],
+    }
+    with (
+        patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)),
+        patch("app._probe_relaxed_hard_constraints", return_value=[relaxed_reason]),
+    ):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
+    assert "RELAXED_CONSTRAINT_MAKES_FEASIBLE" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+
+
+def test_optimize_existing_planning_unsat_detects_global_unsat_without_manual_locks(client):
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent_name = agent["name"]
+    agent["unavailable"] = []
+    agent["training"] = []
+    agent["vacations"] = []
+    agent["restriction"] = []
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+    }
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+    assert response.status_code == 400
+    payload = response.get_json()
+    reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
+    assert "GLOBAL_UNSAT" in reason_codes
+    assert "GLOBAL_UNSAT_WITHOUT_MANUAL_LOCKS" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+    assert "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT" not in reason_codes
+    assert payload["suggestions"] == []
+
+
+def test_optimize_existing_planning_unsat_detects_manual_lock_impact(client):
+    config = deepcopy(load_default_config())
+    agent_name = config["agents"][0]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-16",
+        "end_date": "2026-01-16",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-16",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            }
+        ],
+    }
+
+    def planning_payload_side_effect(payload, runtime_config):
+        if payload.get("initial_shifts"):
+            return {"info": "No solution found."}, 400
+        return {"planning": {agent_name: []}, "week_schedule": ["Ven. 16-01"]}, 200
+
+    with patch("app._build_planning_payload", side_effect=planning_payload_side_effect):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+    assert response.status_code == 400
+    payload = response.get_json()
+    reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
+    assert "GLOBAL_UNSAT" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+    assert payload["suggestions"][0]["reason_code"] == "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT"
+    assert payload["suggestions"][0]["agent"] == agent_name
+    assert payload["suggestions"][0]["date"] == "2026-01-16"
+
+
+def test_optimize_existing_planning_unsat_detects_manual_lock_date_group(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = config["agents"][:2]
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+    first_agent = config["agents"][0]["name"]
+    second_agent = config["agents"][1]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-16",
+        "end_date": "2026-01-16",
+        "manual_entries": [
+            {
+                "agent": first_agent,
+                "date": "2026-01-16",
+                "slot": "day",
+                "type": "shift",
+                "value": config["vacations"][0],
+            },
+            {
+                "agent": second_agent,
+                "date": "2026-01-16",
+                "slot": "night",
+                "type": "shift",
+                "value": config["vacations"][1],
+            },
+        ],
+    }
+
+    def planning_payload_side_effect(payload, runtime_config):
+        lock_count = sum(len(shifts) for shifts in payload.get("initial_shifts", {}).values())
+        if lock_count > 1:
+            return {"info": "No solution found."}, 400
+        return {"planning": {first_agent: [], second_agent: []}, "week_schedule": ["Ven. 16-01"]}, 200
+
+    with patch("app._build_planning_payload", side_effect=planning_payload_side_effect):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    lock_reason = next(
+        reason
+        for reason in payload["blocking_reasons"]
+        if reason["code"] == "MANUAL_ASSIGNMENTS_LOCK_COMBINATION_UNSAT"
+    )
+    assert lock_reason["count"] == 2
+    assert {suggestion["agent"] for suggestion in payload["suggestions"]} == {
+        first_agent,
+        second_agent,
+    }
+
+
+def test_optimize_existing_planning_unsat_omits_manual_reason_when_specific_diagnostic_exists(client):
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour"]
+    config["staffing_requirements"] = {"Jour": 1}
+    config["agents"] = config["agents"][:2]
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": config["agents"][0]["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+            {
+                "agent": config["agents"][1]["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+        ],
+    }
+    with (
+        patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)),
+        patch("app._diagnose_manual_lock_impact") as diagnose_manual_lock_impact,
+    ):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    reason_codes = [reason["code"] for reason in payload["blocking_reasons"]]
+    assert "MANUAL_SHIFT_EXCEEDS_STAFFING_REQUIREMENT" in reason_codes
+    assert "MANUAL_ASSIGNMENTS_IMPACT_UNKNOWN" not in reason_codes
+    assert payload["suggestions"] == []
+    diagnose_manual_lock_impact.assert_not_called()
+
+
+def test_optimize_existing_planning_suggests_actual_restricted_manual_cell(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = config["agents"][:2]
+    first_agent = config["agents"][0]
+    restricted_agent = config["agents"][1]
+    for agent in config["agents"]:
+        agent["unavailable"] = []
+        agent["training"] = []
+        agent["vacations"] = []
+        agent["restriction"] = []
+    restricted_agent["restriction"] = ["Jour"]
+    set_active_config(config)
+
+    data = {
+        "start_date": "2026-01-15",
+        "end_date": "2026-01-15",
+        "manual_entries": [
+            {
+                "agent": first_agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+            {
+                "agent": restricted_agent["name"],
+                "date": "2026-01-15",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            },
+        ],
+    }
+
+    with patch("app._build_planning_payload", return_value=({"info": "No solution found."}, 400)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    assert payload["suggestions"][0]["reason_code"] == "MANUAL_SHIFT_MATCHES_AGENT_RESTRICTION"
+    assert payload["suggestions"][0]["agent"] == restricted_agent["name"]
+    assert payload["suggestions"][0]["date"] == "2026-01-15"
+    assert payload["suggestions"][0]["agent"] != first_agent["name"]
+
+
+def test_optimize_existing_planning_rejects_unknown_status_value(client):
+    agent_name = load_default_config()["agents"][0]["name"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-06",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "status",
+                "value": "other_status",
+            }
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid status value: other_status"
+
+
+def test_optimize_existing_planning_keeps_multiple_manual_shifts(client):
+    config = load_default_config()
+    agent_a = config["agents"][0]["name"]
+    agent_b = config["agents"][1]["name"]
+    vacations = config["vacations"]
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_a,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": vacations[0],
+            },
+            {
+                "agent": agent_b,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": vacations[1],
+            },
+        ],
+    }
+    response = client.post(
+        "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert ["Lun. 05-01", vacations[0]] in payload["planning"][agent_a]
+    assert ["Lun. 05-01", vacations[1]] in payload["planning"][agent_b]
+    assert payload["meta"]["manual_cell_count"] == 2
+
+
+def test_optimize_existing_planning_reports_modified_existing_assignment(client):
+    config = deepcopy(load_default_config())
+    config["vacations"] = ["Jour", "Nuit"]
+    config["staffing_requirements"] = {"Jour": 1, "Nuit": 1}
+    config["vacation_durations"] = {"Jour": 12, "Nuit": 12, "Conge": 7}
+    config["half_vacations"] = {}
+    agent_name = config["agents"][0]["name"]
+    set_active_config(config)
+    data = {
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-05",
+        "manual_entries": [
+            {
+                "agent": agent_name,
+                "date": "2026-01-05",
+                "slot": "day",
+                "type": "shift",
+                "value": "Jour",
+            }
+        ],
+    }
+    fake_result = {
+        "planning": {agent_name: [["Lun. 05-01", "Nuit"]]},
+        "vacation_durations": {"Jour": 12, "Nuit": 12, "Conge": 7},
+        "vacation_colors": {},
+        "assignable_vacations": ["Jour", "Nuit"],
+        "assignment_labels": {"Jour": "Jour", "Nuit": "Nuit"},
+        "week_schedule": ["Lun. 05-01"],
+        "holidays": [],
+        "unavailable": {},
+        "dayOff": {},
+        "training": {},
+        "restrictions": {},
+        "restriction_types_durations": {},
+    }
+    with patch("app._build_planning_payload", return_value=(fake_result, 200)):
+        response = client.post(
+            "/optimize-existing-planning", data=json.dumps(data), content_type="application/json"
+        )
+
+    payload = response.get_json()
+    assert payload["modified_existing_assignments"] == [
+        {
+            "agent": agent_name,
+            "date": "2026-01-05",
+            "day": "Lun. 05-01",
+            "initial_value": "Jour",
+            "final_value": "Nuit",
+            "change_type": "changed_to_full",
+        }
+    ]
+
+
+def test_inject_manual_status_entries_adds_unavailable_day():
+    runtime_config = load_default_config()
+    agent_name = runtime_config["agents"][0]["name"]
+    updated_config, warnings = _inject_manual_status_entries(
+        runtime_config,
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-06",
+                "slot": "day",
+                "value": "unavailable",
+            }
+        ],
+    )
+    assert warnings == []
+    target_agent = next(agent for agent in updated_config["agents"] if agent["name"] == agent_name)
+    assert "06-01-2026" in target_agent["unavailable"]
 
 
 def test_generate_planning_route_invalid_date(client):

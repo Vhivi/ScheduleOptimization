@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from app import (
@@ -12,6 +13,7 @@ from app import (
     split_date_range_by_month,
     split_into_weeks,
 )
+from solver.utils import weekly_hour_contribution_tenths
 
 
 def test_is_valid_date_valid():
@@ -131,6 +133,40 @@ def test_format_day_label_is_locale_independent():
     assert format_day_label(datetime(2026, 1, 5)) == "Lun. 05-01"
     assert format_day_label(datetime(2026, 1, 6)) == "Mar. 06-01"
     assert format_day_label(datetime(2026, 1, 11)) == "Dim. 11-01"
+
+
+def test_weekly_hour_contribution_uses_nominal_day_without_temporal_metadata():
+    day_date = datetime(2026, 1, 11)
+
+    current_week = weekly_hour_contribution_tenths(
+        day_date, SimpleNamespace(start_time=None, end_time=None), 120, (2026, 2)
+    )
+    next_week = weekly_hour_contribution_tenths(
+        day_date, SimpleNamespace(start_time=None, end_time=None), 120, (2026, 3)
+    )
+
+    assert current_week == 120
+    assert next_week == 0
+
+
+def test_weekly_hour_contribution_counts_same_day_shift_fully():
+    day_date = datetime(2026, 1, 6)
+    metadata = SimpleNamespace(start_time="07:00", end_time="19:00")
+
+    contribution = weekly_hour_contribution_tenths(day_date, metadata, 120, (2026, 2))
+
+    assert contribution == 120
+
+
+def test_weekly_hour_contribution_splits_sunday_overnight_shift():
+    day_date = datetime(2026, 1, 11)
+    metadata = SimpleNamespace(start_time="19:00", end_time="07:00")
+
+    current_week = weekly_hour_contribution_tenths(day_date, metadata, 120, (2026, 2))
+    next_week = weekly_hour_contribution_tenths(day_date, metadata, 120, (2026, 3))
+
+    assert current_week == 50
+    assert next_week == 70
 
 
 def test_get_week_schedule_single_day():

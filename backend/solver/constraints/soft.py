@@ -1,46 +1,18 @@
 from ortools.sat.python import cp_model
 
+from ..catalog import is_night_assignment
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import split_by_month_or_period
+from .hard import _weekend_pairs, _weekend_work_sum
 
-CDP_SHIFT = "CDP"
-
-
-def _assignment_sum(ctx: SolverContext, agent_name: str, day: str, vacations: list[str]) -> int:
-    """
-    Computes the sum of assignments for a given agent, day, and list of vacations.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    :param agent_name: The name of the agent.
-    :type agent_name: str
-    :param day: The day of the week.
-    :type day: str
-    :param vacations: A list of vacations.
-    :type vacations: list[str]
-    :return: The sum of assignments for the given agent, day, and list of vacations.
-    :rtype: int
-    """
-    relevant = [vacation for vacation in vacations if vacation in ctx.vacations]
-    if not relevant:
-        return 0
-    return sum(ctx.planning[(agent_name, day, vacation)] for vacation in relevant)
+def _agents_in_paid_hours_balance(ctx: SolverContext) -> list[dict]:
+    """Return agents participating in paid-hours balance constraints."""
+    return [agent for agent in ctx.agents if agent.get("include_in_balance", True)]
 
 
-def _working_vacations(ctx: SolverContext) -> list[str]:
-    """
-    Returns a list of working vacations, excluding the CDP shift if it is present in the context.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    :return: A list of working vacations.
-    :rtype: list[str]
-    """
-    vacations = [vacation for vacation in ctx.vacations if vacation != CDP_SHIFT]
-    if vacations:
-        return vacations
-    return list(ctx.vacations)
+def _leave_paid_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
+    return ctx.leave_paid_hours_by_day.get((agent_name, day), 0)
 
 
 def register(registry: ConstraintRegistry) -> None:
@@ -51,6 +23,7 @@ def register(registry: ConstraintRegistry) -> None:
     - balance_paid_hours: Balances paid hours across all agents in the week's schedule.
     - balance_paid_hours_by_period: Balances paid hours across all agents in each period of the week's schedule.
     - balance_full_weekends: Balances full weekends across all agents in the week's schedule.
+    - penalize_weekend_monday_nights: Penalizes Saturday/Sunday/Monday night sequences.
 
     :param registry: The constraint registry to which the constraints are registered.
     :type registry: ConstraintRegistry
@@ -58,6 +31,49 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_soft(balance_paid_hours)
     registry.register_soft(balance_paid_hours_by_period)
     registry.register_soft(balance_full_weekends)
+    registry.register_soft(penalize_weekend_monday_nights)
+
+
+def penalize_weekend_monday_nights(ctx: SolverContext) -> None:
+    """Build the objective term for Saturday/Sunday/Monday night sequences."""
+    night_assignments = [
+        assignment
+        for assignment in ctx.assignable_vacations
+        if is_night_assignment(ctx, assignment)
+    ]
+    if not night_assignments or ctx.weekend_monday_night_penalty == 0:
+        ctx.weekend_monday_night_objective = 0
+        return
+
+    sequence_terms = []
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        for day_idx, saturday in enumerate(ctx.week_schedule[:-2]):
+            sunday = ctx.week_schedule[day_idx + 1]
+            monday = ctx.week_schedule[day_idx + 2]
+            if not (
+                saturday.startswith("Sam")
+                and sunday.startswith("Dim")
+                and monday.startswith("Lun")
+            ):
+                continue
+
+            night_by_day = [
+                sum(
+                    ctx.planning[(agent_name, day, assignment)]
+                    for assignment in night_assignments
+                )
+                for day in (saturday, sunday, monday)
+            ]
+            sequence = ctx.model.NewBoolVar(
+                f"{agent_name}_weekend_monday_nights_{saturday}_{sunday}_{monday}"
+            )
+            for night_sum in night_by_day:
+                ctx.model.Add(sequence <= night_sum)
+            ctx.model.Add(sequence >= sum(night_by_day) - 2)
+            sequence_terms.append(sequence)
+
+    ctx.weekend_monday_night_objective = cp_model.LinearExpr.Sum(sequence_terms)
 
 
 def balance_paid_hours(ctx: SolverContext) -> None:
@@ -70,16 +86,20 @@ def balance_paid_hours(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
+    balanced_agents = _agents_in_paid_hours_balance(ctx)
+    if len(balanced_agents) < 2:
+        return
+
     paid_hours = {}
-    for agent in ctx.agents:
+    for agent in balanced_agents:
         agent_name = agent["name"]
         paid_hours[agent_name] = cp_model.LinearExpr.Sum(
             list(
                 sum(
                     ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                    for vacation in ctx.vacations
+                    for vacation in ctx.assignable_vacations
                 )
-                + ctx.leave_paid_hours_by_day[(agent_name, day)]
+                + _leave_paid_hours(ctx, agent_name, day)
                 for day in ctx.week_schedule
             )
         )
@@ -105,27 +125,32 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
+    balanced_agents = _agents_in_paid_hours_balance(ctx)
+    if len(balanced_agents) < 2:
+        ctx.period_balancing_objective = 0
+        return
+
     periods = split_by_month_or_period(ctx.week_schedule)
 
     period_balancing_terms = []
     for period_idx, period in enumerate(periods):
         period_total_hours = {}
-        for agent in ctx.agents:
+        for agent in balanced_agents:
             agent_name = agent["name"]
             period_total_hours[agent_name] = cp_model.LinearExpr.Sum(
                 list(
                     sum(
                         ctx.planning[(agent_name, day, vacation)] * ctx.shift_durations[vacation]
-                        for vacation in ctx.vacations
+                        for vacation in ctx.assignable_vacations
                     )
-                    + ctx.leave_paid_hours_by_day[(agent_name, day)]
+                    + _leave_paid_hours(ctx, agent_name, day)
                     for day in period
                 )
             )
 
         min_period_hours = ctx.model.NewIntVar(0, 100000, f"min_hours_period_{period_idx}")
         max_period_hours = ctx.model.NewIntVar(0, 100000, f"max_hours_period_{period_idx}")
-        for agent in ctx.agents:
+        for agent in balanced_agents:
             agent_name = agent["name"]
             ctx.model.Add(min_period_hours <= period_total_hours[agent_name])
             ctx.model.Add(period_total_hours[agent_name] <= max_period_hours)
@@ -140,11 +165,9 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
 
 def balance_full_weekends(ctx: SolverContext) -> None:
     """
-    Balances full weekends (Saturday and Sunday) among agents.
+    Balances worked weekends among agents.
 
-    For each pair of Saturday and Sunday, adds a boolean variable to indicate if the
-    agent works on that weekend. Adds constraints to ensure that the variable is
-    only true if the agent works on both Saturday and Sunday.
+    A weekend is worked when an assignment overlaps any part of Saturday or Sunday.
 
     For each agent, adds a integer variable to count the number of weekends the agent
     works. Adds constraints to ensure that the variable is equal to the sum of the
@@ -158,9 +181,9 @@ def balance_full_weekends(ctx: SolverContext) -> None:
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
     """
-    total_weekends = sum(1 for day in ctx.week_schedule if "Sam" in day)
+    weekend_pairs = _weekend_pairs(ctx)
+    total_weekends = len(weekend_pairs)
     target_weekends_per_agent = total_weekends // len(ctx.agents)
-    working_vacations = _working_vacations(ctx)
 
     weekends_worked = {}
     for agent in ctx.agents:
@@ -170,40 +193,14 @@ def balance_full_weekends(ctx: SolverContext) -> None:
         )
 
         weekend_count = []
-        for day_idx, day in enumerate(ctx.week_schedule):
-            if (
-                "Sam" in day
-                and day_idx + 1 < len(ctx.week_schedule)
-                and "Dim" in ctx.week_schedule[day_idx + 1]
-            ):
-                saturday = day
-                sunday = ctx.week_schedule[day_idx + 1]
-
-                saturday_work = ctx.model.NewBoolVar(f"{agent_name}_works_saturday_{saturday}")
-                sunday_work = ctx.model.NewBoolVar(f"{agent_name}_works_sunday_{sunday}")
-
-                ctx.model.Add(
-                    _assignment_sum(ctx, agent_name, saturday, working_vacations) > 0
-                ).OnlyEnforceIf(saturday_work)
-                ctx.model.Add(
-                    _assignment_sum(ctx, agent_name, saturday, working_vacations) == 0
-                ).OnlyEnforceIf(saturday_work.Not())
-
-                ctx.model.Add(
-                    _assignment_sum(ctx, agent_name, sunday, working_vacations) > 0
-                ).OnlyEnforceIf(sunday_work)
-                ctx.model.Add(
-                    _assignment_sum(ctx, agent_name, sunday, working_vacations) == 0
-                ).OnlyEnforceIf(sunday_work.Not())
-
-                works_weekend = ctx.model.NewBoolVar(
-                    f"{agent_name}_works_weekend_{saturday}_{sunday}"
-                )
-                ctx.model.AddBoolAnd([saturday_work, sunday_work]).OnlyEnforceIf(works_weekend)
-                ctx.model.AddBoolOr([saturday_work.Not(), sunday_work.Not()]).OnlyEnforceIf(
-                    works_weekend.Not()
-                )
-                weekend_count.append(works_weekend)
+        for saturday, sunday in weekend_pairs:
+            works_weekend = ctx.model.NewBoolVar(
+                f"{agent_name}_works_weekend_{saturday}_{sunday}"
+            )
+            weekend_work = _weekend_work_sum(ctx, agent_name, saturday, sunday)
+            ctx.model.Add(weekend_work > 0).OnlyEnforceIf(works_weekend)
+            ctx.model.Add(weekend_work == 0).OnlyEnforceIf(works_weekend.Not())
+            weekend_count.append(works_weekend)
 
         ctx.model.Add(weekends_worked[agent_name] == sum(weekend_count))
 

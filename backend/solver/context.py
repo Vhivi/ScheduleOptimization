@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+from .catalog import AssignmentMetadata
+
 from ortools.sat.python import cp_model
 
 
@@ -43,9 +45,11 @@ class SolverContext:
         num_search_workers (int): Number of parallel search workers for the solver. Default: 0.
         optimize_period_balance (bool): Flag to enable period balancing optimization. Default: False.
         period_balance_weight (int): Weight factor for period balancing objectives. Default: 2.
+        weekend_monday_night_penalty (int): Penalty for Saturday/Sunday/Monday night sequences. Default: 500.
         
         period_balancing_objective (cp_model.LinearExpr | int): Objective expression for balancing workload across periods.
         weekend_balancing_objective (cp_model.LinearExpr | int): Objective expression for balancing weekend assignments.
+        weekend_monday_night_objective (cp_model.LinearExpr | int): Count of penalized night sequences.
     """
     model: cp_model.CpModel
     config: dict
@@ -55,6 +59,7 @@ class SolverContext:
     day_off: dict
     previous_week_schedule: List[str]
     initial_shifts: dict
+    existing_assignments: dict
     holidays: List[str]
     planning_start_date: datetime | None = None
 
@@ -62,6 +67,11 @@ class SolverContext:
     planning: Dict[Tuple[str, str, str], cp_model.IntVar] = field(default_factory=dict)
     leave_paid_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
     day_dates: Dict[str, datetime] = field(default_factory=dict)
+    assignable_vacations: List[str] = field(default_factory=list)
+    assignment_metadata: Dict[str, AssignmentMetadata] = field(default_factory=dict)
+    coverage_segments: Dict[str, List[str]] = field(default_factory=dict)
+    segment_covering_assignments: Dict[Tuple[str, str], List[str]] = field(default_factory=dict)
+    half_vacation_names: set[str] = field(default_factory=set)
 
     shift_durations: Dict[str, int] = field(default_factory=dict)
     staffing_requirements: Dict[str, int] = field(default_factory=dict)
@@ -76,6 +86,8 @@ class SolverContext:
     optimize_period_balance: bool = False
     period_balance_weight: int = 2
     min_free_weekends_per_horizon: int = 0
+    weekend_monday_night_penalty: int = 500
 
     period_balancing_objective: cp_model.LinearExpr | int = 0
     weekend_balancing_objective: cp_model.LinearExpr | int = 0
+    weekend_monday_night_objective: cp_model.LinearExpr | int = 0

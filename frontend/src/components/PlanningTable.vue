@@ -13,15 +13,20 @@
           <tr>
             <th>Agent</th>
             <th v-for="day in monthDays" :key="day">{{ day }}</th>
-            <th>Total Vacations</th>
+            <th>Total affectations</th>
             <th>Total Heures</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(agent, index) in Object.keys(planning)" :key="index">
             <td>{{ agent }}</td>
-            <td v-for="day in monthDays" :key="day" :style="{ backgroundColor: getColumnColor(agent, day) }">
-              {{ getVacationForAgent(agent, day) || '//' }}
+            <td
+              v-for="day in monthDays"
+              :key="day"
+              :style="{ backgroundColor: getColumnColor(agent, day) }"
+              :title="getCellTitle(agent, day)"
+            >
+              {{ getDisplayValueForAgent(agent, day) || '//' }}
             </td>
             <td>{{ calculateNumberShifts(agent, monthDays) }}</td>
             <td>{{ calculateTotalHours(agent, monthDays) }} h</td>
@@ -66,6 +71,21 @@ export default {
     training: {
       type: Object,
       required: true
+    },
+    restrictions: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    restrictionDurations: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    assignmentLabels: {
+      type: Object,
+      required: false,
+      default: () => ({})
     },
     planningStartDate: {
       type: String,
@@ -207,6 +227,9 @@ export default {
       );
     },
     getVacationForAgent(agent, day) {
+      if (this.isRestrictionDay(agent, day)) {
+        return 'Res.';
+      }
       if (this.isTrainingDay(agent, day)) {
         return 'For.';
       }
@@ -217,6 +240,30 @@ export default {
         return 'Ind.';
       }
       return this.planningLookup?.[agent]?.[day] || null;
+    },
+    getWorkedAssignmentForAgent(agent, day) {
+      return this.planningLookup?.[agent]?.[day] || null;
+    },
+    getAssignmentLabel(assignment) {
+      return this.assignmentLabels?.[assignment] || assignment;
+    },
+    getDisplayValueForAgent(agent, day) {
+      const statusOrVacation = this.getVacationForAgent(agent, day);
+      if (!statusOrVacation) {
+        return null;
+      }
+      const workedAssignment = this.getWorkedAssignmentForAgent(agent, day);
+      if (workedAssignment && statusOrVacation === workedAssignment) {
+        return this.getAssignmentLabel(workedAssignment);
+      }
+      return statusOrVacation;
+    },
+    getCellTitle(agent, day) {
+      const workedAssignment = this.getWorkedAssignmentForAgent(agent, day);
+      if (workedAssignment && this.assignmentLabels?.[workedAssignment]) {
+        return workedAssignment;
+      }
+      return this.getVacationForAgent(agent, day) || '';
     },
     isVacationDay(agent, day) {
       const vacations = this.dayOff?.[agent] || [];
@@ -273,6 +320,15 @@ export default {
       const dayFull = this.formatConfigDate(dayDate);
       return trainingDays.includes(dayFull);
     },
+    isRestrictionDay(agent, day) {
+      const restrictions = this.restrictions?.[agent] || [];
+      const dayDate = this.resolveDayDate(day);
+      if (!dayDate) {
+        return false;
+      }
+      const dayFull = this.formatConfigDate(dayDate);
+      return restrictions.some((item) => item?.date === dayFull);
+    },
     getColumnColor(agent, day) {
       if (this.isVacationDay(agent, day)) {
         return '#f2cb05';
@@ -296,12 +352,19 @@ export default {
     },
     calculateTotalHours(agent, days) {
       return days.reduce((total, day) => {
-        const vacation = this.getVacationForAgent(agent, day);
+        const restrictions = this.restrictions?.[agent] || [];
+        const dayDate = this.resolveDayDate(day);
+        const dayFull = dayDate ? this.formatConfigDate(dayDate) : null;
+        const restriction = restrictions.find((item) => item?.date === dayFull);
+        if (restriction && this.restrictionDurations?.[restriction.type]) {
+          return total + this.restrictionDurations[restriction.type];
+        }
+        const vacation = this.getWorkedAssignmentForAgent(agent, day);
         return total + (this.vacationDurations[vacation] || 0);
       }, 0);
     },
     calculateNumberShifts(agent, days) {
-      return days.filter((day) => this.getVacationForAgent(agent, day)).length;
+      return days.filter((day) => this.getWorkedAssignmentForAgent(agent, day)).length;
     }
   }
 };

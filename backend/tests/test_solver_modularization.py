@@ -124,6 +124,15 @@ def test_registry_contains_constraint_groups():
     assert len(registry.mixed) > 0
 
 
+def test_weekend_monday_nights_are_registered_as_soft_only():
+    registry = _build_registry()
+    hard_names = {constraint.__name__ for constraint in registry.hard}
+    soft_names = {constraint.__name__ for constraint in registry.soft}
+
+    assert "block_monday_night_after_weekend_nights" not in hard_names
+    assert "penalize_weekend_monday_nights" in soft_names
+
+
 def test_night_shift_blocks_next_day_jour_or_cdp():
     """
     Tests that night shifts block the next day from being assigned to
@@ -171,3 +180,24 @@ def test_cdp_is_limited_to_two_per_week_per_agent():
     for shifts in result.values():
         cdp_count = sum(1 for _, vacation in shifts if vacation == "CDP")
         assert cdp_count <= 2
+
+
+def test_diagnostic_probe_without_leave_constraint_does_not_require_leave_hours():
+    """Diagnostic probes can disable leave handling without breaking soft hour balance."""
+    agents, vacations, week_schedule = _sample_dataset()
+    runtime_config = _runtime_config_for_tests()
+    runtime_config["_disabled_hard_constraints_for_diagnostics"] = [
+        "block_leave_and_compute_paid_hours"
+    ]
+
+    result = generate_planning(
+        agents=agents,
+        vacations=vacations,
+        week_schedule=week_schedule,
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        runtime_config=runtime_config,
+    )
+
+    assert isinstance(result, dict)
