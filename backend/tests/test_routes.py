@@ -13,6 +13,7 @@ from app import (
     load_config,
     load_default_config,
     set_active_config,
+    validate_runtime_config,
 )
 
 
@@ -135,6 +136,22 @@ def test_config_default_route(client):
     payload = response.get_json()
     assert "agents" in payload
     assert "vacations" in payload
+
+
+def test_runtime_config_accepts_0_9_3_shape():
+    legacy_config = deepcopy(load_default_config())
+    for key in (
+        "half_vacations",
+        "restriction_types_durations",
+        "vacation_colors",
+        "vacation_metadata",
+    ):
+        legacy_config.pop(key, None)
+    legacy_config["solver"].pop("weekend_monday_night_penalty", None)
+    for agent in legacy_config["agents"]:
+        agent.pop("include_in_balance", None)
+
+    assert validate_runtime_config(legacy_config) == []
 
 
 def test_put_config_route_updates_active_config(client):

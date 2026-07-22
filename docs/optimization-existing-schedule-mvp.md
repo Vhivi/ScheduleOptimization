@@ -4,7 +4,7 @@
 
 This document describes the original MVP target. The implemented feature has since evolved:
 
-- manual shift entries are now treated as existing assignments to preserve when possible, not hard locks;
+- manual shift entries are locked by default and can be preserved softly when `existing_assignments_strict` is `false`;
 - status entries still inject hard non-working constraints;
 - backend responses include structured blocking reasons, segment-level diagnostics, impacted cells, suggestions, and modified existing assignments;
 - the frontend displays warnings, suggestions, blocking reasons, structured diagnostic segments, and existing assignments modified by the optimizer.
@@ -39,13 +39,14 @@ This mode is intended to complement current generation flows (new generation and
   - `vacations`
 - Optimization continues even with manual-input conflicts and returns warnings.
 - Minimal correction suggestions returned by backend.
-- Optional draft save/load for **manual input only** (no optimization result persistence).
 
 ### Explicitly Out of Scope (MVP)
 
 - Advanced versioning/history workflows.
 - Agent preference-weight tuning UI.
 - Rich bulk editing (copy week, fill range templates).
+- Optimization scope filters (`agents`, `slots`).
+- Draft save/load and optimization result persistence.
 
 ---
 
@@ -56,7 +57,7 @@ This mode is intended to complement current generation flows (new generation and
 For each cell in the planning grid:
 
 - `null` => optimizable by solver.
-- Manual shift assignment (e.g. day/night/cdp) => fixed assignment target.
+- Manual shift assignment (e.g. day/night/cdp) => fixed assignment by default, or a soft preservation target when strict mode is disabled.
 - Manual special status => fixed non-working status handled as existing config constraints.
 
 ## 3.2 Priority rules
@@ -83,7 +84,7 @@ When manual input contradicts config or hard rules, optimization should not fail
 
 ---
 
-## 4) Backend API contract (proposed)
+## 4) Backend API contract
 
 ## 4.1 Endpoint
 
@@ -104,17 +105,16 @@ When manual input contradicts config or hard rules, optimization should not fail
       "value": "SHIFT_CODE_OR_STATUS"
     }
   ],
-  "scope": {
-    "agents": ["AgentA", "AgentB"],
-    "slots": ["day", "night", "cdp"]
-  }
+  "existing_assignments_strict": true
 }
 ```
 
 Notes:
 
-- `scope` is optional in MVP phase 1 (global empty-cell optimization).
-- In phase 2, `scope` can restrict optimization to subset (agents and/or slots).
+- `existing_assignments_strict` is optional and defaults to `true`.
+- With strict mode enabled, manual shifts are hard locks. With `false`, they are objective-weighted existing assignments that the solver may modify.
+- Status entries always inject hard non-working constraints.
+- Scope filters are deferred; optimization currently covers the complete selected date range.
 
 ## 4.3 Response body
 
@@ -126,7 +126,6 @@ Notes:
       "2026-05-01": {"day": "M", "night": null, "cdp": null}
     }
   },
-  "fixed_cells_respected": true,
   "warnings": [
     {
       "code": "MANUAL_CONFLICT",
@@ -146,13 +145,18 @@ Notes:
       "reason": "Rest constraint violation"
     }
   ],
+  "blocking_reasons": [],
+  "impacted_cells": [],
+  "modified_existing_assignments": [],
   "meta": {
-    "optimized_cell_count": 42,
     "manual_cell_count": 18,
-    "conflict_count": 1
+    "conflict_count": 1,
+    "existing_assignments_strict": true
   }
 }
 ```
+
+An infeasible request returns `status: "unsat"` with an error HTTP status and the same diagnostic collections when available.
 
 ---
 
@@ -162,7 +166,8 @@ Notes:
 - Build pre-assignment map keyed by `(agent, date, slot)`.
 - Extend solver context to include fixed cell directives.
 - During variable creation:
-  - fixed shift cell => restrict variable domain to that assignment,
+  - strict shift cell => restrict variable domain to that assignment,
+  - soft shift cell => add an objective preference for the existing assignment,
   - fixed status cell => enforce non-working status per existing constraint logic,
   - empty cell => standard domain.
 - Add diagnostics collector to capture rule conflicts and attach warnings/suggestions.
@@ -224,4 +229,3 @@ Notes:
    - Optional optimization scope filters (`agents`, `slots`).
 3. **Slice C**
    - Manual draft save/load (local JSON workflow).
-

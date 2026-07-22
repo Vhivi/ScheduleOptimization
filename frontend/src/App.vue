@@ -1308,7 +1308,7 @@ export default {
     getManualCellStyle(agentName, day) {
       const value = this.manualSelectedShifts?.[agentName]?.[day] || '';
       if (!value || value.startsWith('status:')) return {};
-      return { 
+      return {
         backgroundColor: this.vacationColors[value] || '#ffffff'
       };
     },
