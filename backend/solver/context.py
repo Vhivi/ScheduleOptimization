@@ -46,10 +46,12 @@ class SolverContext:
         optimize_period_balance (bool): Flag to enable period balancing optimization. Default: False.
         period_balance_weight (int): Weight factor for period balancing objectives. Default: 2.
         weekend_monday_night_penalty (int): Penalty for Saturday/Sunday/Monday night sequences. Default: 500.
+        coworker_preference_weight (int): Weight for coworker preference scores. Default: 50.
         
         period_balancing_objective (cp_model.LinearExpr | int): Objective expression for balancing workload across periods.
         weekend_balancing_objective (cp_model.LinearExpr | int): Objective expression for balancing weekend assignments.
         weekend_monday_night_objective (cp_model.LinearExpr | int): Count of penalized night sequences.
+        coworker_preference_objective (cp_model.LinearExpr | int): Weighted coworker pairing score before the global coefficient.
     """
     model: cp_model.CpModel
     config: dict
@@ -87,7 +89,9 @@ class SolverContext:
     period_balance_weight: int = 2
     min_free_weekends_per_horizon: int = 0
     weekend_monday_night_penalty: int = 500
+    coworker_preference_weight: int = 50
 
     period_balancing_objective: cp_model.LinearExpr | int = 0
     weekend_balancing_objective: cp_model.LinearExpr | int = 0
     weekend_monday_night_objective: cp_model.LinearExpr | int = 0
+    coworker_preference_objective: cp_model.LinearExpr | int = 0
