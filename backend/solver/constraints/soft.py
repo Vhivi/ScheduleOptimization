@@ -24,6 +24,7 @@ def register(registry: ConstraintRegistry) -> None:
     - balance_paid_hours_by_period: Balances paid hours across all agents in each period of the week's schedule.
     - balance_full_weekends: Balances full weekends across all agents in the week's schedule.
     - penalize_weekend_monday_nights: Penalizes Saturday/Sunday/Monday night sequences.
+    - reward_coworker_preferences: Scores agents assigned together.
 
     :param registry: The constraint registry to which the constraints are registered.
     :type registry: ConstraintRegistry
@@ -32,6 +33,51 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_soft(balance_paid_hours_by_period)
     registry.register_soft(balance_full_weekends)
     registry.register_soft(penalize_weekend_monday_nights)
+    registry.register_soft(reward_coworker_preferences)
+
+
+def _coworker_pair_score(agent: dict, coworker: dict) -> int:
+    agent_score = agent.get("preferences", {}).get("coworkers", {}).get(
+        coworker["name"], 0
+    )
+    coworker_score = coworker.get("preferences", {}).get("coworkers", {}).get(
+        agent["name"], 0
+    )
+    positive_score = (
+        agent_score + coworker_score
+        if agent_score > 0 and coworker_score > 0
+        else 0
+    )
+    return positive_score + min(agent_score, 0) + min(coworker_score, 0)
+
+
+def reward_coworker_preferences(ctx: SolverContext) -> None:
+    """Reward or penalize agents sharing the same assignment on the same day."""
+    if ctx.coworker_preference_weight == 0:
+        ctx.coworker_preference_objective = 0
+        return
+
+    terms = []
+    for agent_index, agent in enumerate(ctx.agents):
+        for coworker in ctx.agents[agent_index + 1 :]:
+            score = _coworker_pair_score(agent, coworker)
+            if score == 0:
+                continue
+            for day in ctx.week_schedule:
+                for vacation in ctx.assignable_vacations:
+                    together = ctx.model.NewBoolVar(
+                        f"coworkers_{agent['name']}_{coworker['name']}_{day}_{vacation}"
+                    )
+                    agent_assignment = ctx.planning[(agent["name"], day, vacation)]
+                    coworker_assignment = ctx.planning[
+                        (coworker["name"], day, vacation)
+                    ]
+                    ctx.model.Add(together <= agent_assignment)
+                    ctx.model.Add(together <= coworker_assignment)
+                    ctx.model.Add(together >= agent_assignment + coworker_assignment - 1)
+                    terms.append(together * score)
+
+    ctx.coworker_preference_objective = cp_model.LinearExpr.Sum(terms)
 
 
 def penalize_weekend_monday_nights(ctx: SolverContext) -> None:
