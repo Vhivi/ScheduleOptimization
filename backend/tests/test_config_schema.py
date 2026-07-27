@@ -113,6 +113,49 @@ def test_schema_rejects_negative_weekend_monday_night_penalty():
     )
 
 
+@pytest.mark.parametrize("score", [-2, 0, 2])
+def test_schema_accepts_coworker_preference_score(score):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["agents"][0]["preferences"]["coworkers"] = {"Agent2": score}
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
+@pytest.mark.parametrize("score", [-3, 3, 1.5])
+def test_schema_rejects_invalid_coworker_preference_score(score):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["agents"][0]["preferences"]["coworkers"] = {"Agent2": score}
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) != []
+
+
+@pytest.mark.parametrize("weight", [0, 50])
+def test_schema_accepts_coworker_preference_weight(weight):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["solver"]["coworker_preference_weight"] = weight
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
+def test_schema_rejects_negative_coworker_preference_weight():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["solver"]["coworker_preference_weight"] = -1
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) != []
+
+
 def test_schema_accepts_agent_balance_opt_out():
     schema = _load_json(SCHEMA_PATH)
     example = _load_json(EXAMPLE_PATH)
