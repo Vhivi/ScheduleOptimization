@@ -34,6 +34,10 @@ Agent object fields:
 - `preferences` (object, required):
   - `preferred` (array of shifts)
   - `avoid` (array of shifts)
+  - `coworkers` (optional object of `{ "<agent name>": integer }`, default `{}`):
+    rate each colleague from `-2` (strongly avoid) to `2` (strongly prefer).
+    Positive scores apply only when both agents rate each other positively;
+    negative scores always apply. A match means the exact same shift on the same day.
 - `restriction` (array of shifts, required): shifts permanently forbidden for this agent.
 - `unavailable` (array of full dates, required): dates where the agent cannot work.
 - `training` (array of full dates, required): dates blocked for training.
@@ -225,6 +229,9 @@ Supported keys:
 - `weekend_monday_night_penalty` (integer, default `500`)
   - Objective penalty applied once per agent for each consecutive Saturday, Sunday, and Monday all worked on night assignments.
   - Higher values make this sequence less desirable without making it infeasible; set to `0` to disable the preference.
+- `coworker_preference_weight` (integer, default `50`)
+  - Multiplies coworker preference scores in the soft objective.
+  - Set to `0` to disable coworker preferences without removing them from agents.
 
 ## Common Mistakes
 
@@ -238,3 +245,4 @@ Supported keys:
 - Setting a negative staffing value (must be integer `>= 0`).
 - Forgetting required agent keys (all agent fields are expected, use empty arrays if needed).
 - Setting solver keys with wrong types (for example `"0.1"` as a string).
+- Referencing an unknown agent or the agent itself in `preferences.coworkers`.
