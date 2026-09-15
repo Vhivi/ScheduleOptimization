@@ -79,7 +79,9 @@ def validate_runtime_config(candidate_config):
         seen_agents = set()
         for index, agent in enumerate(agents):
             agent_name = agent.get("name") if isinstance(agent, dict) else None
-            if isinstance(agent_name, str) and agent_name in seen_agents:
+            if not isinstance(agent_name, str):
+                continue
+            if agent_name in seen_agents:
                 errors.append(
                     {
                         "path": f"agents/{index}/name",
@@ -92,7 +94,10 @@ def validate_runtime_config(candidate_config):
             if not isinstance(agent, dict):
                 continue
             agent_name = agent.get("name")
-            coworkers = agent.get("preferences", {}).get("coworkers", {})
+            preferences = agent.get("preferences")
+            if not isinstance(preferences, dict):
+                continue
+            coworkers = preferences.get("coworkers", {})
             if not isinstance(coworkers, dict):
                 continue
             for coworker_name in coworkers:

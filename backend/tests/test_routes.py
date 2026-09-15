@@ -186,6 +186,16 @@ def test_runtime_config_rejects_duplicate_agent_names():
     assert any("Duplicate agent name" in error["message"] for error in errors)
 
 
+@pytest.mark.parametrize(("field", "value"), [("name", []), ("preferences", None)])
+def test_put_config_rejects_invalid_agent_fields(client, field, value):
+    candidate = deepcopy(load_default_config())
+    candidate["agents"][0][field] = value
+
+    response = client.put("/config", json=candidate)
+
+    assert response.status_code == 400
+
+
 def test_put_config_route_updates_active_config(client):
     """
     Test that the /config PUT route updates the active configuration.
