@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-21
+
 ### Added
 
 - Added configurable soft coworker preferences for rewarding or avoiding agents assigned to the same shift.
