@@ -148,10 +148,52 @@ def test_runtime_config_accepts_0_9_3_shape():
     ):
         legacy_config.pop(key, None)
     legacy_config["solver"].pop("weekend_monday_night_penalty", None)
+    legacy_config["solver"].pop("coworker_preference_weight", None)
     for agent in legacy_config["agents"]:
         agent.pop("include_in_balance", None)
+        agent["preferences"].pop("coworkers", None)
 
     assert validate_runtime_config(legacy_config) == []
+
+
+def test_runtime_config_rejects_unknown_coworker():
+    candidate = deepcopy(load_default_config())
+    candidate["agents"][0]["preferences"]["coworkers"] = {"Unknown": 1}
+
+    errors = validate_runtime_config(candidate)
+
+    assert any("Unknown coworker" in error["message"] for error in errors)
+
+
+def test_runtime_config_rejects_self_coworker_preference():
+    candidate = deepcopy(load_default_config())
+    agent = candidate["agents"][0]
+    agent["preferences"]["coworkers"] = {agent["name"]: 1}
+
+    errors = validate_runtime_config(candidate)
+
+    assert any("cannot prefer itself" in error["message"] for error in errors)
+
+
+def test_runtime_config_rejects_duplicate_agent_names():
+    candidate = deepcopy(load_default_config())
+    for agent in candidate["agents"]:
+        agent["preferences"]["coworkers"] = {}
+    candidate["agents"][1]["name"] = candidate["agents"][0]["name"]
+
+    errors = validate_runtime_config(candidate)
+
+    assert any("Duplicate agent name" in error["message"] for error in errors)
+
+
+@pytest.mark.parametrize(("field", "value"), [("name", []), ("preferences", None)])
+def test_put_config_rejects_invalid_agent_fields(client, field, value):
+    candidate = deepcopy(load_default_config())
+    candidate["agents"][0][field] = value
+
+    response = client.put("/config", json=candidate)
+
+    assert response.status_code == 400
 
 
 def test_put_config_route_updates_active_config(client):

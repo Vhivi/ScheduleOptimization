@@ -10,7 +10,11 @@
         ],
         "avoid": [
           "Nuit"
-        ]
+        ],
+        "coworkers": {
+          "Agent2": -1,
+          "Agent3": 2
+        }
       },
       "restriction": [],
       "unavailable": [
@@ -36,7 +40,8 @@
         "avoid": [
           "Jour",
           "CDP"
-        ]
+        ],
+        "coworkers": {}
       },
       "restriction": [
         "Jour"
@@ -55,7 +60,10 @@
           "Jour",
           "CDP"
         ],
-        "avoid": []
+        "avoid": [],
+        "coworkers": {
+          "Agent1": 2
+        }
       },
       "restriction": [],
       "unavailable": [],
@@ -110,7 +118,8 @@
     "optimize_period_balance": false,
     "period_balance_weight": 2,
     "min_free_weekends_per_horizon": 3,
-    "weekend_monday_night_penalty": 500
+    "weekend_monday_night_penalty": 500,
+    "coworker_preference_weight": 50
   },
   "half_vacations": {
     "Jour": {

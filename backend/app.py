@@ -68,6 +68,52 @@ def validate_runtime_config(candidate_config):
                     }
                 )
 
+    agents = candidate_config.get("agents", [])
+    if isinstance(agents, list):
+        agent_names = [
+            agent.get("name")
+            for agent in agents
+            if isinstance(agent, dict) and isinstance(agent.get("name"), str)
+        ]
+        known_agents = set(agent_names)
+        seen_agents = set()
+        for index, agent in enumerate(agents):
+            agent_name = agent.get("name") if isinstance(agent, dict) else None
+            if not isinstance(agent_name, str):
+                continue
+            if agent_name in seen_agents:
+                errors.append(
+                    {
+                        "path": f"agents/{index}/name",
+                        "message": f"Duplicate agent name '{agent_name}'.",
+                    }
+                )
+            seen_agents.add(agent_name)
+
+        for index, agent in enumerate(agents):
+            if not isinstance(agent, dict):
+                continue
+            agent_name = agent.get("name")
+            preferences = agent.get("preferences")
+            if not isinstance(preferences, dict):
+                continue
+            coworkers = preferences.get("coworkers", {})
+            if not isinstance(coworkers, dict):
+                continue
+            for coworker_name in coworkers:
+                path = f"agents/{index}/preferences/coworkers/{coworker_name}"
+                if coworker_name == agent_name:
+                    errors.append(
+                        {"path": path, "message": "An agent cannot prefer itself."}
+                    )
+                elif coworker_name not in known_agents:
+                    errors.append(
+                        {
+                            "path": path,
+                            "message": f"Unknown coworker '{coworker_name}'.",
+                        }
+                    )
+
     if not errors:
         try:
             build_vacation_catalog(candidate_config)

@@ -107,6 +107,10 @@
         "weekend_monday_night_penalty": {
           "type": "integer",
           "minimum": 0
+        },
+        "coworker_preference_weight": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -179,6 +183,14 @@
               "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/shift"
+              }
+            },
+            "coworkers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": -2,
+                "maximum": 2
               }
             }
           }

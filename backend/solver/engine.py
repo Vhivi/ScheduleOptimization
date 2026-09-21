@@ -44,6 +44,7 @@ def _load_solver_settings(ctx: SolverContext) -> None:
     - period_balance_weight: the weight of the period balance objective.
     - min_free_weekends_per_horizon: minimum number of fully free weekends required per agent.
     - weekend_monday_night_penalty: objective penalty for three consecutive weekend/Monday nights.
+    - coworker_preference_weight: objective weight for coworker preferences.
 
     :param ctx: The solver context containing the problem data and the model.
     :type ctx: SolverContext
@@ -60,6 +61,9 @@ def _load_solver_settings(ctx: SolverContext) -> None:
     ctx.min_free_weekends_per_horizon = int(solver_config.get("min_free_weekends_per_horizon", 0))
     ctx.weekend_monday_night_penalty = int(
         solver_config.get("weekend_monday_night_penalty", 500)
+    )
+    ctx.coworker_preference_weight = int(
+        solver_config.get("coworker_preference_weight", 50)
     )
 
 

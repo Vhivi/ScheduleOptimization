@@ -16,6 +16,7 @@ from solver.constraints.soft import (
     balance_paid_hours,
     balance_paid_hours_by_period,
     penalize_weekend_monday_nights,
+    reward_coworker_preferences,
 )
 
 
@@ -317,6 +318,124 @@ def test_weekend_monday_night_sequence_is_counted_once_with_night_segments():
     solver = cp_model.CpSolver()
     assert solver.Solve(ctx.model) == cp_model.OPTIMAL
     assert solver.Value(ctx.weekend_monday_night_objective) == 1
+
+
+def _coworker_context(coworker_preferences, assignments=("Jour",)):
+    model = cp_model.CpModel()
+    day = "Lun. 05-01"
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for agent_name in coworker_preferences
+        for assignment in assignments
+    }
+    return SimpleNamespace(
+        agents=[
+            {
+                "name": agent_name,
+                "preferences": {
+                    "preferred": [],
+                    "avoid": [],
+                    "coworkers": preferences,
+                },
+            }
+            for agent_name, preferences in coworker_preferences.items()
+        ],
+        assignable_vacations=list(assignments),
+        week_schedule=[day],
+        planning=planning,
+        model=model,
+        coworker_preference_weight=50,
+        coworker_preference_objective=0,
+    )
+
+
+def test_mutual_coworker_preference_favors_same_assignment():
+    ctx = _coworker_context(
+        {"Agent": {"Preferred": 2}, "Preferred": {"Agent": 2}, "Other": {}}
+    )
+    day = ctx.week_schedule[0]
+    ctx.model.Add(ctx.planning[("Agent", day, "Jour")] == 1)
+    ctx.model.Add(
+        ctx.planning[("Preferred", day, "Jour")]
+        + ctx.planning[("Other", day, "Jour")]
+        == 1
+    )
+
+    reward_coworker_preferences(ctx)
+    ctx.model.Maximize(
+        ctx.coworker_preference_weight * ctx.coworker_preference_objective
+    )
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.planning[("Preferred", day, "Jour")]) == 1
+
+
+def test_unilateral_positive_coworker_preference_has_no_bonus():
+    ctx = _coworker_context({"Agent": {"Coworker": 2}, "Coworker": {}})
+    day = ctx.week_schedule[0]
+    ctx.model.Add(ctx.planning[("Agent", day, "Jour")] == 1)
+    ctx.model.Add(ctx.planning[("Coworker", day, "Jour")] == 1)
+
+    reward_coworker_preferences(ctx)
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.coworker_preference_objective) == 0
+
+
+def test_negative_coworker_preference_avoids_same_assignment_when_possible():
+    ctx = _coworker_context(
+        {"Agent": {"Avoided": -2}, "Avoided": {}, "Other": {}}
+    )
+    day = ctx.week_schedule[0]
+    ctx.model.Add(ctx.planning[("Agent", day, "Jour")] == 1)
+    ctx.model.Add(
+        ctx.planning[("Avoided", day, "Jour")]
+        + ctx.planning[("Other", day, "Jour")]
+        == 1
+    )
+
+    reward_coworker_preferences(ctx)
+    ctx.model.Maximize(
+        ctx.coworker_preference_weight * ctx.coworker_preference_objective
+    )
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.planning[("Avoided", day, "Jour")]) == 0
+
+
+def test_negative_coworker_preference_remains_feasible_when_required():
+    ctx = _coworker_context({"Agent": {"Coworker": -2}, "Coworker": {}})
+    day = ctx.week_schedule[0]
+    ctx.model.Add(ctx.planning[("Agent", day, "Jour")] == 1)
+    ctx.model.Add(ctx.planning[("Coworker", day, "Jour")] == 1)
+
+    reward_coworker_preferences(ctx)
+
+    assert cp_model.CpSolver().Solve(ctx.model) == cp_model.OPTIMAL
+
+
+def test_coworker_preference_requires_exact_same_assignment():
+    ctx = _coworker_context(
+        {"Agent": {"Coworker": 2}, "Coworker": {"Agent": 2}},
+        assignments=("Jour", "Nuit"),
+    )
+    day = ctx.week_schedule[0]
+    for agent_name, assignment in (("Agent", "Jour"), ("Coworker", "Nuit")):
+        for candidate in ctx.assignable_vacations:
+            ctx.model.Add(
+                ctx.planning[(agent_name, day, candidate)] == (candidate == assignment)
+            )
+
+    reward_coworker_preferences(ctx)
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(ctx.model) == cp_model.OPTIMAL
+    assert solver.Value(ctx.coworker_preference_objective) == 0
 
 
 def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=True):

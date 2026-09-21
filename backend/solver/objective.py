@@ -107,6 +107,7 @@ def apply_objective(ctx: SolverContext) -> None:
         - cp_model.LinearExpr.Sum(change_existing_assignments)
         - ctx.weekend_balancing_objective
         - ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+        + ctx.coworker_preference_weight * ctx.coworker_preference_objective
     )
     if ctx.optimize_period_balance:
         objective -= ctx.period_balance_weight * ctx.period_balancing_objective
