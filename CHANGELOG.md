@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Updated compatible Python and frontend dependencies to their latest non-breaking releases.
+
 ## [0.11.0] - 2026-09-21
 
 ### Added
