@@ -471,11 +471,17 @@ def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=Tru
     return cp_model.CpSolver().Solve(model)
 
 
-def _solve_forced_weekly_shifts(max_weekly_hours):
+def _solve_forced_weekly_shifts(max_weekly_hours, training_hours_by_day=None):
     model = cp_model.CpModel()
     agent_name = "Agent1"
     vacations = ["Jour", "Nuit"]
-    week = ["Lun. 01-06", "Mar. 02-06", "Mer. 03-06", "Jeu. 04-06"]
+    week = [
+        "Lun. 01-06",
+        "Mar. 02-06",
+        "Mer. 03-06",
+        "Jeu. 04-06",
+        "Ven. 05-06",
+    ]
     planning = {
         (agent_name, day, vacation): model.NewBoolVar(
             f"planning_{agent_name}_{day}_{vacation}"
@@ -490,6 +496,7 @@ def _solve_forced_weekly_shifts(max_weekly_hours):
         weeks_split=[week],
         planning=planning,
         shift_durations={"Jour": 120, "Nuit": 120},
+        training_hours_by_day=training_hours_by_day or {},
         max_weekly_hours=max_weekly_hours,
         model=model,
     )
@@ -621,7 +628,9 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
     return solver.Solve(model)
 
 
-def _solve_forced_rest_sequence(days, forced_shifts, metadata, previous_days=None):
+def _solve_forced_rest_sequence(
+    days, forced_shifts, metadata, previous_days=None, training=None
+):
     model = cp_model.CpModel()
     agent_name = "Agent1"
     previous_days = previous_days or []
@@ -636,7 +645,7 @@ def _solve_forced_rest_sequence(days, forced_shifts, metadata, previous_days=Non
     }
     start_date = datetime(2026, 1, 5) - timedelta(days=len(previous_days))
     ctx = SimpleNamespace(
-        agents=[{"name": agent_name}],
+        agents=[{"name": agent_name, "training": training or []}],
         assignable_vacations=assignments,
         week_schedule=days,
         previous_week_schedule=previous_days,
@@ -689,6 +698,33 @@ def _rest_metadata(night_start="19:00", night_end="07:00", include_half_night=Fa
             end_time="01:00",
         )
     return metadata
+
+
+def test_paid_hours_balance_counts_training_as_seven_hours():
+    model = cp_model.CpModel()
+    day = "Lun. 05-01"
+    agents = [{"name": "Agent1"}, {"name": "Agent2"}]
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(agent["name"])
+        for agent in agents
+    }
+    ctx = SimpleNamespace(
+        agents=agents,
+        assignable_vacations=["Jour"],
+        week_schedule=[day],
+        planning=planning,
+        shift_durations={"Jour": 70},
+        leave_paid_hours_by_day={},
+        training_hours_by_day={("Agent1", day): 70},
+        global_max_gap=0,
+        model=model,
+    )
+
+    balance_paid_hours(ctx)
+    model.Add(planning[("Agent1", day, "Jour")] == 0)
+    model.Add(planning[("Agent2", day, "Jour")] == 1)
+
+    assert cp_model.CpSolver().Solve(model) in [cp_model.OPTIMAL, cp_model.FEASIBLE]
 
 
 def test_paid_hours_balance_includes_agents_by_default():
@@ -825,6 +861,7 @@ def _use_legacy_solver_defaults_for_constraints_tests():
     previous_config = deepcopy(get_active_config())
     test_config = deepcopy(load_default_config())
     test_config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    test_config["solver"]["max_weekly_hours"] = 48
     set_active_config(test_config)
     yield
     set_active_config(previous_config)
@@ -1580,6 +1617,15 @@ def test_weekly_hours_limit_uses_configured_cap():
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
 
 
+def test_weekly_hours_limit_counts_training_as_seven_hours():
+    status = _solve_forced_weekly_shifts(
+        max_weekly_hours=540,
+        training_hours_by_day={("Agent1", "Ven. 05-06"): 70},
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
 def test_weekly_hours_limit_splits_sunday_overnight_shift():
     """
     Tuesday day + Friday/Saturday nights + Sunday night is 41h in the current
@@ -1673,6 +1719,32 @@ def test_previous_week_shift_rest_blocks_current_week_assignment():
     )
 
     assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_training_uses_day_shift_rest():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit")},
+        _rest_metadata(),
+        training=["07-01-2026"],
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_training_to_night_allows_exactly_twenty_four_hours_rest():
+    days = ["Lun. 05-01", "Mar. 06-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Mar. 06-01", "Nuit")},
+        _rest_metadata(),
+        training=["05-01-2026"],
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
     
 ######
 # Test failed, possible bug in the generate_planning function (constraint not respected or too soft)
