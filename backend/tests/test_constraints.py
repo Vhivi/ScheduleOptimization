@@ -8,6 +8,7 @@ from app import generate_planning, get_active_config, load_default_config, set_a
 from solver.catalog import AssignmentMetadata
 from solver.constraints.hard import (
     avoid_day_after_night,
+    block_training_days,
     enforce_min_free_weekends_per_horizon,
 )
 from solver.constraints.mixed import limit_weekly_nights_and_hours
@@ -586,7 +587,7 @@ def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
     return solver.Solve(model)
 
 
-def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
+def _solve_forced_continuity_weekly_shifts(max_weekly_hours, training=None):
     model = cp_model.CpModel()
     agent_name = "Agent1"
     vacations = ["Jour"]
@@ -603,7 +604,7 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
     start_date = datetime(2026, 9, 28)
 
     ctx = SimpleNamespace(
-        agents=[{"name": agent_name}],
+        agents=[{"name": agent_name, "training": training or []}],
         vacations=vacations,
         assignable_vacations=vacations,
         weeks_split=[week],
@@ -615,14 +616,19 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours):
             "Jour": AssignmentMetadata(name="Jour", parent="Jour", duration=120),
         },
         shift_durations={"Jour": 120},
+        training_hours_by_day={},
         max_weekly_hours=max_weekly_hours,
         model=model,
     )
 
+    block_training_days(ctx)
     limit_weekly_nights_and_hours(ctx)
 
     for day in all_days:
-        model.Add(planning[(agent_name, day, "Jour")] == 1)
+        model.Add(
+            planning[(agent_name, day, "Jour")]
+            == int((agent_name, day) not in ctx.training_hours_by_day)
+        )
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
@@ -1643,6 +1649,15 @@ def test_weekly_hours_limit_counts_continuity_shifts_in_same_iso_week():
     """
 
     status = _solve_forced_continuity_weekly_shifts(max_weekly_hours=480)
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_weekly_hours_limit_counts_training_from_previous_schedule():
+    status = _solve_forced_continuity_weekly_shifts(
+        max_weekly_hours=540,
+        training=["29-09-2026"],
+    )
 
     assert status == cp_model.INFEASIBLE
 
