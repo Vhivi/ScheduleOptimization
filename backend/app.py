@@ -995,10 +995,25 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
                     f"{agent_name} / {iso_date}: {', '.join(rest_triggering_shifts)} "
                     f"suivie de {', '.join(forbidden_next_manual_shifts)} le {next_iso}"
                 )
-            if next_day_str in (agent.get("unavailable") or []) or next_day_str in (agent.get("training") or []):
+            training_dates = set(agent.get("training") or [])
+            conflicting_training = next(
+                (
+                    day_dt + timedelta(days=offset)
+                    for offset in (1, 2)
+                    if (day_dt + timedelta(days=offset)).strftime("%d-%m-%Y")
+                    in training_dates
+                ),
+                None,
+            )
+            if next_day_str in (agent.get("unavailable") or []) or conflicting_training:
+                conflict_iso = (
+                    conflicting_training.strftime("%Y-%m-%d")
+                    if conflicting_training
+                    else next_iso
+                )
                 counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
                 details_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"].append(
-                    f"{agent_name} / {iso_date}: affectation de nuit avant indisponibilité ou formation le {next_iso}"
+                    f"{agent_name} / {iso_date}: affectation de nuit avant indisponibilité ou formation le {conflict_iso}"
                 )
 
         if day_dt.weekday() == 5 and _agent_has_status_on_day(agent, next_iso):
