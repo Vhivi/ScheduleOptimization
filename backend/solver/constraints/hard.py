@@ -440,7 +440,7 @@ def block_training_days(ctx: SolverContext) -> None:
         agent_name = agent["name"]
         training_dates = set(agent.get("training", []))
         training_days = {day_token(date) for date in training_dates}
-        for day in ctx.week_schedule:
+        for day in dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule):
             day_date = ctx.day_dates.get(day)
             is_training = (
                 day_date.strftime("%d-%m-%Y") in training_dates
