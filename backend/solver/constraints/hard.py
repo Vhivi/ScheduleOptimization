@@ -10,7 +10,12 @@ from ..catalog import (
 )
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
-from ..utils import day_token, find_training_leave_overlap
+from ..utils import (
+    datetime_interval,
+    day_token,
+    find_training_leave_overlap,
+    violates_day_night_rest,
+)
 
 DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
@@ -282,11 +287,7 @@ def _assignment_interval(ctx: SolverContext, day_dates: dict, day: str, assignme
     if not start_time or not end_time:
         return None
 
-    start_at = datetime.combine(day_date.date(), datetime.strptime(start_time, "%H:%M").time())
-    end_at = datetime.combine(day_date.date(), datetime.strptime(end_time, "%H:%M").time())
-    if end_at <= start_at:
-        end_at += timedelta(days=1)
-    return start_at, end_at
+    return datetime_interval(day_date, start_time, end_time)
 
 
 def avoid_day_after_night(ctx: SolverContext) -> None:
@@ -325,19 +326,13 @@ def avoid_day_after_night(ctx: SolverContext) -> None:
                         )
                         if next_interval is None:
                             continue
-                        next_start, _ = next_interval
-                        if next_start <= previous_start:
-                            continue
-
                         next_is_night = is_night_assignment(ctx, next_assignment)
-                        if previous_is_night and not next_is_night:
-                            required_rest = timedelta(hours=48)
-                        elif not previous_is_night and next_is_night:
-                            required_rest = timedelta(hours=24)
-                        else:
-                            continue
-
-                        if next_start - previous_end < required_rest:
+                        if violates_day_night_rest(
+                            (previous_start, previous_end),
+                            previous_is_night,
+                            next_interval,
+                            next_is_night,
+                        ):
                             ctx.model.Add(
                                 ctx.planning[(agent_name, previous_day, previous_assignment)]
                                 + ctx.planning[(agent_name, next_day, next_assignment)]
@@ -361,14 +356,7 @@ def avoid_day_after_night(ctx: SolverContext) -> None:
             end_time = getattr(day_metadata, "end_time", None) or DEFAULT_SHIFT_TIMES[
                 DAY_SHIFT
             ][1]
-            training_start = datetime.combine(
-                training_day.date(), datetime.strptime(start_time, "%H:%M").time()
-            )
-            training_end = datetime.combine(
-                training_day.date(), datetime.strptime(end_time, "%H:%M").time()
-            )
-            if training_end <= training_start:
-                training_end += timedelta(days=1)
+            training_interval = datetime_interval(training_day, start_time, end_time)
             for day in ordered_days:
                 for assignment in timed_assignments:
                     if not is_night_assignment(ctx, assignment):
@@ -376,14 +364,15 @@ def avoid_day_after_night(ctx: SolverContext) -> None:
                     interval = _assignment_interval(ctx, day_dates, day, assignment)
                     if interval is None:
                         continue
-                    night_start, night_end = interval
-                    if (
-                        night_start < training_start
-                        and training_start - night_end < timedelta(hours=48)
-                    ) or (
-                        night_start >= training_start
-                        and night_start - training_end < timedelta(hours=24)
-                    ):
+                    if interval[0] < training_interval[0]:
+                        violates_rest = violates_day_night_rest(
+                            interval, True, training_interval, False
+                        )
+                    else:
+                        violates_rest = violates_day_night_rest(
+                            training_interval, False, interval, True
+                        )
+                    if violates_rest:
                         ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
 
 
