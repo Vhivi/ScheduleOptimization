@@ -819,6 +819,57 @@ def test_diagnose_manual_entry_conflicts_allows_consecutive_manual_nights():
     assert "MANUAL_SHIFT_AFTER_NIGHT" not in reason_codes
 
 
+def test_diagnose_manual_entry_conflicts_detects_training_two_days_after_night():
+    config = deepcopy(load_default_config())
+    agent = config["agents"][0]
+    agent["training"] = ["14-01-2026"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-12",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            }
+        ],
+        config,
+    )
+
+    reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"
+    )
+    assert "2026-01-14" in reason["details"][0]
+
+
+def test_diagnose_manual_entry_conflicts_uses_day_to_night_rest_for_training():
+    config = deepcopy(load_default_config())
+    config["vacation_metadata"]["Nuit"]["start_time"] = "18:00"
+    agent = config["agents"][0]
+    agent["training"] = ["12-01-2026"]
+
+    reasons = _diagnose_manual_entry_conflicts(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-13",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            }
+        ],
+        config,
+    )
+
+    assert any(
+        reason["code"] == "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"
+        for reason in reasons
+    )
+
+
 def test_probe_relaxed_hard_constraints_reports_feasible_relaxed_constraint():
     config = deepcopy(load_default_config())
 
