@@ -68,6 +68,7 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                     )
                     for vacation in assignable_vacations
                 )
+                + getattr(ctx, "training_hours_by_day", {}).get((agent_name, day), 0)
                 for day in days_to_count
             )
             ctx.model.Add(total_hours <= ctx.max_weekly_hours)
