@@ -292,6 +292,7 @@ def _assignment_interval(ctx: SolverContext, day_dates: dict, day: str, assignme
 def avoid_day_after_night(ctx: SolverContext) -> None:
     """Enforces 24h day-to-night and 48h night-to-day rest, including training."""
     ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
+    uses_fallback_dates = not ctx.day_dates
     day_dates = dict(ctx.day_dates) or {
             day: datetime(2000, 1, 3) + timedelta(days=index)
             for index, day in enumerate(ordered_days)
@@ -345,6 +346,14 @@ def avoid_day_after_night(ctx: SolverContext) -> None:
 
         for training_date in agent.get("training", []):
             training_day = datetime.strptime(training_date, "%d-%m-%Y")
+            if uses_fallback_dates:
+                matching_day = next(
+                    (day for day in ordered_days if day_token(training_date) in day),
+                    None,
+                )
+                if matching_day is None:
+                    continue
+                training_day = day_dates[matching_day]
             day_metadata = ctx.assignment_metadata.get(DAY_SHIFT)
             start_time = getattr(day_metadata, "start_time", None) or DEFAULT_SHIFT_TIMES[
                 DAY_SHIFT
