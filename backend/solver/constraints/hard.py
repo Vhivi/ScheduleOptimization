@@ -20,6 +20,7 @@ DEFAULT_SHIFT_TIMES = {
     DAY_SHIFT: ("07:00", "19:00"),
     NIGHT_SHIFT: ("19:00", "07:00"),
 }
+TRAINING_DURATION_TENTHS = 70
 
 
 def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
@@ -56,8 +57,6 @@ def register(registry: ConstraintRegistry) -> None:
     - Block training days
     - Block leave and compute paid hours
     - Block night before unavailable
-    - Block night before training
-    - Limit pre/post training
     - Block exclusion days
     - Apply agent restrictions
     """
@@ -72,8 +71,6 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(block_training_days)
     registry.register_hard(block_leave_and_compute_paid_hours)
     registry.register_hard(block_night_before_unavailable)
-    registry.register_hard(block_night_before_training)
-    registry.register_hard(limit_pre_post_training)
     registry.register_hard(block_exclusion_days)
     registry.register_hard(apply_agent_restrictions)
 
@@ -293,7 +290,7 @@ def _assignment_interval(ctx: SolverContext, day_dates: dict, day: str, assignme
 
 
 def avoid_day_after_night(ctx: SolverContext) -> None:
-    """Enforces 24h day-to-night and 48h night-to-day rest between assignments."""
+    """Enforces 24h day-to-night and 48h night-to-day rest, including training."""
     ordered_days = list(dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule))
     day_dates = dict(ctx.day_dates) or {
             day: datetime(2000, 1, 3) + timedelta(days=index)
@@ -345,6 +342,41 @@ def avoid_day_after_night(ctx: SolverContext) -> None:
                                 + ctx.planning[(agent_name, next_day, next_assignment)]
                                 <= 1
                             )
+
+        for training_date in agent.get("training", []):
+            training_day = datetime.strptime(training_date, "%d-%m-%Y")
+            day_metadata = ctx.assignment_metadata.get(DAY_SHIFT)
+            start_time = getattr(day_metadata, "start_time", None) or DEFAULT_SHIFT_TIMES[
+                DAY_SHIFT
+            ][0]
+            end_time = getattr(day_metadata, "end_time", None) or DEFAULT_SHIFT_TIMES[
+                DAY_SHIFT
+            ][1]
+            training_start = datetime.combine(
+                training_day.date(), datetime.strptime(start_time, "%H:%M").time()
+            )
+            training_end = datetime.combine(
+                training_day.date(), datetime.strptime(end_time, "%H:%M").time()
+            )
+            if training_end <= training_start:
+                training_end += timedelta(days=1)
+            for day in ordered_days:
+                for assignment in timed_assignments:
+                    if not is_night_assignment(ctx, assignment):
+                        continue
+                    interval = _assignment_interval(ctx, day_dates, day, assignment)
+                    if interval is None:
+                        continue
+                    night_start, night_end = interval
+                    if (
+                        night_start < training_start
+                        and training_start - night_end < timedelta(hours=48)
+                    ) or (
+                        night_start >= training_start
+                        and night_start - training_end < timedelta(hours=24)
+                    ):
+                        ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
+
 
 def limit_cdp_per_week(ctx: SolverContext) -> None:
     """
@@ -406,12 +438,19 @@ def block_training_days(ctx: SolverContext) -> None:
     """
     for agent in ctx.agents:
         agent_name = agent["name"]
-        training_days = [day_token(date) for date in agent.get("training", [])]
-        for training_day in training_days:
-            for day in ctx.week_schedule:
-                if training_day in day:
-                    for vacation in ctx.assignable_vacations:
-                        ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 0)
+        training_dates = set(agent.get("training", []))
+        training_days = {day_token(date) for date in training_dates}
+        for day in ctx.week_schedule:
+            day_date = ctx.day_dates.get(day)
+            is_training = (
+                day_date.strftime("%d-%m-%Y") in training_dates
+                if day_date
+                else any(training_day in day for training_day in training_days)
+            )
+            if is_training:
+                ctx.training_hours_by_day[(agent_name, day)] = TRAINING_DURATION_TENTHS
+                for vacation in ctx.assignable_vacations:
+                    ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 0)
 
 
 def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
@@ -504,59 +543,6 @@ def block_night_before_unavailable(ctx: SolverContext) -> None:
                 for assignment in rest_trigger_assignments:
                     ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
 
-
-def block_night_before_training(ctx: SolverContext) -> None:
-    """
-    Blocks night shifts before training days.
-
-    This constraint is applied per agent and per day in the week's schedule.
-    For each agent, it ensures that if the agent has a training day on the next day,
-    the agent is not assigned a night shift on the current day.
-
-    :param ctx: The solver context containing the problem data and the model.
-    :type ctx: SolverContext
-    """
-    rest_trigger_assignments = [
-        assignment for assignment in ctx.assignable_vacations if requires_next_day_rest(ctx, assignment)
-    ]
-    if not rest_trigger_assignments:
-        return
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        training_days = [day_token(date) for date in agent.get("training", [])]
-        for day_idx, day in enumerate(ctx.week_schedule[:-1]):
-            next_day = ctx.week_schedule[day_idx + 1]
-            if any(training_day in next_day for training_day in training_days):
-                for assignment in rest_trigger_assignments:
-                    ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
-
-
-def limit_pre_post_training(ctx: SolverContext) -> None:
-    """Limits assignment types before and after training days."""
-    if not _has_shift(ctx, CDP_SHIFT):
-        return
-
-    for agent in ctx.agents:
-        agent_name = agent["name"]
-        training_days = [day_token(date) for date in agent.get("training", [])]
-
-        for day_idx, day in enumerate(ctx.week_schedule):
-            if not any(training_day in day for training_day in training_days):
-                continue
-
-            if day_idx > 0:
-                previous_day = ctx.week_schedule[day_idx - 1]
-                for assignment in ctx.assignable_vacations:
-                    if assignment_parent(ctx, assignment) != CDP_SHIFT:
-                        ctx.model.Add(ctx.planning[(agent_name, previous_day, assignment)] == 0)
-
-            if day_idx < len(ctx.week_schedule) - 1:
-                next_day = ctx.week_schedule[day_idx + 1]
-                for assignment in ctx.assignable_vacations:
-                    if assignment_parent(ctx, assignment) == CDP_SHIFT or is_night_assignment(ctx, assignment):
-                        continue
-                    ctx.model.Add(ctx.planning[(agent_name, next_day, assignment)] == 0)
 
 def block_exclusion_days(ctx: SolverContext) -> None:
     """
