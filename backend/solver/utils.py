@@ -94,17 +94,38 @@ def _parse_time_of_day(value: str) -> time:
     return datetime.strptime(value, "%H:%M").time()
 
 
+def datetime_interval(day_date: datetime, start_time: str, end_time: str):
+    """Return a dated interval, carrying overnight work into the next day."""
+    start_at = datetime.combine(day_date.date(), _parse_time_of_day(start_time))
+    end_at = datetime.combine(day_date.date(), _parse_time_of_day(end_time))
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
+def violates_day_night_rest(
+    previous_interval,
+    previous_is_night: bool,
+    next_interval,
+    next_is_night: bool,
+) -> bool:
+    """Apply the shared 24h day-to-night and 48h night-to-day rule."""
+    previous_start, previous_end = previous_interval
+    next_start, _ = next_interval
+    if next_start <= previous_start or previous_is_night == next_is_night:
+        return False
+    required_rest = timedelta(hours=48 if previous_is_night else 24)
+    return next_start - previous_end < required_rest
+
+
 def weekly_hour_contribution_tenths(day_date, metadata, fallback_duration, week_key):
     """Return assignment hours that belong to an ISO week, in tenths of hours."""
     if not day_date or not metadata or not metadata.start_time or not metadata.end_time:
         return fallback_duration if day_date and day_date.isocalendar()[:2] == week_key else 0
 
-    start_time = _parse_time_of_day(metadata.start_time)
-    end_time = _parse_time_of_day(metadata.end_time)
-    start_at = datetime.combine(day_date.date(), start_time)
-    end_at = datetime.combine(day_date.date(), end_time)
-    if end_at <= start_at:
-        end_at += timedelta(days=1)
+    start_at, end_at = datetime_interval(
+        day_date, metadata.start_time, metadata.end_time
+    )
 
     week_monday = date.fromisocalendar(week_key[0], week_key[1], 1)
     week_start = datetime.combine(week_monday, time.min)
