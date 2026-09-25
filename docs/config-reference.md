@@ -40,7 +40,7 @@ Agent object fields:
     negative scores always apply. A match means the exact same shift on the same day.
 - `restriction` (array of shifts, required): shifts permanently forbidden for this agent.
 - `unavailable` (array of full dates, required): dates where the agent cannot work.
-- `training` (array of full dates, required): dates blocked for training. Each date counts as 7 paid/worked hours and follows the same 24h-before-night / 48h-after-night rest rules as a day shift.
+- `training` (array of full dates, required): dates blocked for training. Each date counts as 7 paid/worked hours and follows the same 24h-before-night / 48h-after-night rest rules as a day shift. Training and leave cannot overlap; move the leave period when a training date conflicts with it.
 - `exclusion` (array of full dates, required): additional blocked dates.
 - `vacations` (array of periods, required):
   - each item: `{ "start": "dd-mm-YYYY", "end": "dd-mm-YYYY" }`
