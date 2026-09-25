@@ -13,7 +13,11 @@ from solver.catalog import (
     requires_next_day_rest,
 )
 from solver.engine import generate_planning as generate_planning_engine
-from solver.utils import find_training_leave_overlap
+from solver.utils import (
+    datetime_interval,
+    find_training_leave_overlap,
+    violates_day_night_rest,
+)
 
 app = Flask(__name__)
 CORS(app)
@@ -945,6 +949,14 @@ def _format_blocker_summary(blocker_counts):
         if count
     ]
 
+
+def _catalog_assignment_interval(catalog, day_date, assignment):
+    metadata = catalog["assignment_metadata"].get(assignment)
+    is_night = is_night_assignment(catalog, assignment)
+    start_time = getattr(metadata, "start_time", None) or ("19:00" if is_night else "07:00")
+    end_time = getattr(metadata, "end_time", None) or ("07:00" if is_night else "19:00")
+    return datetime_interval(day_date, start_time, end_time)
+
 def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_config):
     reasons = []
     by_agent = {agent["name"]: agent for agent in runtime_config.get("agents", [])}
@@ -995,16 +1007,29 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
                     f"{agent_name} / {iso_date}: {', '.join(rest_triggering_shifts)} "
                     f"suivie de {', '.join(forbidden_next_manual_shifts)} le {next_iso}"
                 )
-            training_dates = set(agent.get("training") or [])
-            conflicting_training = next(
-                (
-                    day_dt + timedelta(days=offset)
-                    for offset in (1, 2)
-                    if (day_dt + timedelta(days=offset)).strftime("%d-%m-%Y")
-                    in training_dates
-                ),
-                None,
-            )
+            conflicting_training = None
+            for shift in rest_triggering_shifts:
+                if not is_night_assignment(catalog, shift):
+                    continue
+                night_interval = _catalog_assignment_interval(catalog, day_dt, shift)
+                for training_date in agent.get("training") or []:
+                    training_day = datetime.strptime(training_date, "%d-%m-%Y")
+                    training_interval = _catalog_assignment_interval(
+                        catalog, training_day, "Jour"
+                    )
+                    if night_interval[0] < training_interval[0]:
+                        violates_rest = violates_day_night_rest(
+                            night_interval, True, training_interval, False
+                        )
+                    else:
+                        violates_rest = violates_day_night_rest(
+                            training_interval, False, night_interval, True
+                        )
+                    if violates_rest:
+                        conflicting_training = training_day
+                        break
+                if conflicting_training:
+                    break
             if next_day_str in (agent.get("unavailable") or []) or conflicting_training:
                 conflict_iso = (
                     conflicting_training.strftime("%Y-%m-%d")
@@ -1013,7 +1038,7 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
                 )
                 counts_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"] += 1
                 details_by_code["MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING"].append(
-                    f"{agent_name} / {iso_date}: affectation de nuit avant indisponibilité ou formation le {conflict_iso}"
+                    f"{agent_name} / {iso_date}: affectation de nuit incompatible avec indisponibilité ou formation le {conflict_iso}"
                 )
 
         if day_dt.weekday() == 5 and _agent_has_status_on_day(agent, next_iso):
@@ -1030,7 +1055,7 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
     reason_messages = {
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
         "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle non-nuit est posée le lendemain d'une affectation nécessitant un repos.",
-        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation nécessitant un repos est posée avant une indisponibilité ou une formation.",
+        "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation de nuit ne respecte pas le repos autour d'une indisponibilité ou d'une formation.",
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",
     }
     for code, count in counts_by_code.items():
