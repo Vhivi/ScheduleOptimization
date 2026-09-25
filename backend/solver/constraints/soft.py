@@ -15,6 +15,10 @@ def _leave_paid_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
     return ctx.leave_paid_hours_by_day.get((agent_name, day), 0)
 
 
+def _training_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
+    return getattr(ctx, "training_hours_by_day", {}).get((agent_name, day), 0)
+
+
 def register(registry: ConstraintRegistry) -> None:
     """
     Registers the soft constraints for the solver.
@@ -146,6 +150,7 @@ def balance_paid_hours(ctx: SolverContext) -> None:
                     for vacation in ctx.assignable_vacations
                 )
                 + _leave_paid_hours(ctx, agent_name, day)
+                + _training_hours(ctx, agent_name, day)
                 for day in ctx.week_schedule
             )
         )
@@ -190,6 +195,7 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
                         for vacation in ctx.assignable_vacations
                     )
                     + _leave_paid_hours(ctx, agent_name, day)
+                    + _training_hours(ctx, agent_name, day)
                     for day in period
                 )
             )
