@@ -186,6 +186,20 @@ def test_runtime_config_rejects_duplicate_agent_names():
     assert any("Duplicate agent name" in error["message"] for error in errors)
 
 
+def test_runtime_config_rejects_training_during_leave():
+    candidate = deepcopy(load_default_config())
+    agent = candidate["agents"][0]
+    agent["training"] = ["03-03-2026"]
+
+    errors = validate_runtime_config(candidate)
+
+    assert any(
+        error["path"] == "agents/0/training"
+        and "Move the leave period" in error["message"]
+        for error in errors
+    )
+
+
 @pytest.mark.parametrize(("field", "value"), [("name", []), ("preferences", None)])
 def test_put_config_rejects_invalid_agent_fields(client, field, value):
     candidate = deepcopy(load_default_config())
