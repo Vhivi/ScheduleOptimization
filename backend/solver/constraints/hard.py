@@ -10,7 +10,7 @@ from ..catalog import (
 )
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
-from ..utils import day_token
+from ..utils import day_token, find_training_leave_overlap
 
 DAY_SHIFT = "Jour"
 NIGHT_SHIFT = "Nuit"
@@ -484,6 +484,11 @@ def block_leave_and_compute_paid_hours(ctx: SolverContext) -> None:
 
     for agent in ctx.agents:
         agent_name = agent["name"]
+        overlap = find_training_leave_overlap(agent)
+        if overlap:
+            raise ValueError(
+                f"{agent_name}: training and leave overlap on {overlap}."
+            )
         vacations_periods = agent.get("vacations", [])
         if not isinstance(vacations_periods, list):
             continue
