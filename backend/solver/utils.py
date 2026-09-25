@@ -73,6 +73,23 @@ def day_token(date_full: str) -> str:
     return datetime.strptime(date_full, "%d-%m-%Y").strftime("%d-%m")
 
 
+def find_training_leave_overlap(agent: dict) -> str | None:
+    """Return the first training date included in a leave period."""
+    training_dates = sorted(
+        datetime.strptime(value, "%d-%m-%Y")
+        for value in agent.get("training", [])
+    )
+    for period in agent.get("vacations", []):
+        if not isinstance(period, dict) or "start" not in period or "end" not in period:
+            continue
+        start = datetime.strptime(period["start"], "%d-%m-%Y")
+        end = datetime.strptime(period["end"], "%d-%m-%Y")
+        for training_date in training_dates:
+            if start <= training_date <= end:
+                return training_date.strftime("%d-%m-%Y")
+    return None
+
+
 def _parse_time_of_day(value: str) -> time:
     return datetime.strptime(value, "%H:%M").time()
 
