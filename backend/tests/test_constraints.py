@@ -635,7 +635,12 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours, training=None):
 
 
 def _solve_forced_rest_sequence(
-    days, forced_shifts, metadata, previous_days=None, training=None
+    days,
+    forced_shifts,
+    metadata,
+    previous_days=None,
+    training=None,
+    with_day_dates=True,
 ):
     model = cp_model.CpModel()
     agent_name = "Agent1"
@@ -655,7 +660,11 @@ def _solve_forced_rest_sequence(
         assignable_vacations=assignments,
         week_schedule=days,
         previous_week_schedule=previous_days,
-        day_dates={day: start_date + timedelta(days=index) for index, day in enumerate(all_days)},
+        day_dates=(
+            {day: start_date + timedelta(days=index) for index, day in enumerate(all_days)}
+            if with_day_dates
+            else {}
+        ),
         assignment_metadata=metadata,
         planning=planning,
         model=model,
@@ -1744,6 +1753,20 @@ def test_night_to_training_uses_day_shift_rest():
         {("Lun. 05-01", "Nuit")},
         _rest_metadata(),
         training=["07-01-2026"],
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_night_to_training_uses_day_labels_without_planning_start_date():
+    days = ["Lun. 05-01", "Mar. 06-01", "Mer. 07-01"]
+
+    status = _solve_forced_rest_sequence(
+        days,
+        {("Lun. 05-01", "Nuit")},
+        _rest_metadata(),
+        training=["07-01-2026"],
+        with_day_dates=False,
     )
 
     assert status == cp_model.INFEASIBLE
