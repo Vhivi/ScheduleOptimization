@@ -13,6 +13,7 @@ from solver.catalog import (
     requires_next_day_rest,
 )
 from solver.engine import generate_planning as generate_planning_engine
+from solver.utils import find_training_leave_overlap
 
 app = Flask(__name__)
 CORS(app)
@@ -94,6 +95,20 @@ def validate_runtime_config(candidate_config):
             if not isinstance(agent, dict):
                 continue
             agent_name = agent.get("name")
+            try:
+                overlap = find_training_leave_overlap(agent)
+            except (TypeError, ValueError):
+                overlap = None
+            if overlap:
+                errors.append(
+                    {
+                        "path": f"agents/{index}/training",
+                        "message": (
+                            f"Training and leave overlap on {overlap} for "
+                            f"'{agent_name}'. Move the leave period."
+                        ),
+                    }
+                )
             preferences = agent.get("preferences")
             if not isinstance(preferences, dict):
                 continue
