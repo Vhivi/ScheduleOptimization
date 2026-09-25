@@ -106,6 +106,7 @@ def _runtime_config_for_tests():
             "num_search_workers": 0,
             "global_max_gap": 240,
             "period_max_gap": 240,
+            "max_weekly_hours": 48,
             "optimize_period_balance": False,
             "period_balance_weight": 2,
             "min_free_weekends_per_horizon": 0,
