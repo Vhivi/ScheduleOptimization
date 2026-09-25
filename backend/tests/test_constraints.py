@@ -876,6 +876,15 @@ def _use_legacy_solver_defaults_for_constraints_tests():
     previous_config = deepcopy(get_active_config())
     test_config = deepcopy(load_default_config())
     test_config.setdefault("solver", {})["min_free_weekends_per_horizon"] = 0
+    set_active_config(test_config)
+    yield
+    set_active_config(previous_config)
+
+
+@pytest.fixture
+def legacy_48_hour_weekly_cap():
+    previous_config = deepcopy(get_active_config())
+    test_config = deepcopy(previous_config)
     test_config["solver"]["max_weekly_hours"] = 48
     set_active_config(test_config)
     yield
@@ -883,7 +892,7 @@ def _use_legacy_solver_defaults_for_constraints_tests():
 
 
 @pytest.fixture
-def setup_correct_data():
+def setup_correct_data(legacy_48_hour_weekly_cap):
     """
     Fixture to set up correct data for testing schedule optimization constraints.
 
