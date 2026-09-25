@@ -40,7 +40,7 @@ Agent object fields:
     negative scores always apply. A match means the exact same shift on the same day.
 - `restriction` (array of shifts, required): shifts permanently forbidden for this agent.
 - `unavailable` (array of full dates, required): dates where the agent cannot work.
-- `training` (array of full dates, required): dates blocked for training.
+- `training` (array of full dates, required): dates blocked for training. Each date counts as 7 paid/worked hours and follows the same 24h-before-night / 48h-after-night rest rules as a day shift.
 - `exclusion` (array of full dates, required): additional blocked dates.
 - `vacations` (array of periods, required):
   - each item: `{ "start": "dd-mm-YYYY", "end": "dd-mm-YYYY" }`
@@ -219,6 +219,7 @@ Supported keys:
 - `max_weekly_hours` (number, default `36`)
   - Strict maximum worked hours per agent and per week.
   - Counts all generated shift types in `vacations`.
+  - Counts each training day as 7 hours.
   - Does not include paid leave hours.
 - `global_max_gap` (integer, default `240`)
   - Maximum paid-hour balance gap between agents over the generated period, in tenths of hours.
