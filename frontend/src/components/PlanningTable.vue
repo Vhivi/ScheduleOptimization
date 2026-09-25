@@ -352,6 +352,9 @@ export default {
     },
     calculateTotalHours(agent, days) {
       return days.reduce((total, day) => {
+        if (this.isTrainingDay(agent, day)) {
+          return total + 7;
+        }
         const restrictions = this.restrictions?.[agent] || [];
         const dayDate = this.resolveDayDate(day);
         const dayFull = dayDate ? this.formatConfigDate(dayDate) : null;
