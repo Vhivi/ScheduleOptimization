@@ -937,7 +937,6 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": [],
         "MANUAL_SHIFT_AFTER_NIGHT": [],
         "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": [],
-        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": [],
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": [],
     }
     counts_by_code = {code: 0 for code in details_by_code}
@@ -998,26 +997,10 @@ def _diagnose_manual_sequence_conflicts(manual_shifts_by_agent_day, runtime_conf
                 f"{agent_name}: vacation manuelle le dimanche {iso_date}, mais samedi {previous_iso} bloqué"
             )
 
-        if day_dt.strftime("%d-%m-%Y") in (agent.get("training") or []):
-            previous_shifts = manual_shifts_by_agent_day.get((agent_name, previous_iso), [])
-            next_shifts = manual_shifts_by_agent_day.get((agent_name, next_iso), [])
-            forbidden_previous = [shift for shift in previous_shifts if shift != "CDP"]
-            forbidden_next = [
-                shift
-                for shift in next_shifts
-                if shift != "CDP" and not is_night_assignment(catalog, shift)
-            ]
-            if forbidden_previous or forbidden_next:
-                counts_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"] += 1
-                details_by_code["MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED"].append(
-                    f"{agent_name} / formation {iso_date}: vacations incompatibles autour de la formation"
-                )
-
     reason_messages = {
         "MANUAL_CDP_WEEKLY_LIMIT_EXCEEDED": "La limite de 2 vacations CDP par semaine est dépassée par des saisies manuelles.",
         "MANUAL_SHIFT_AFTER_NIGHT": "Une vacation manuelle non-nuit est posée le lendemain d'une affectation nécessitant un repos.",
         "MANUAL_NIGHT_BEFORE_UNAVAILABLE_OR_TRAINING": "Une affectation nécessitant un repos est posée avant une indisponibilité ou une formation.",
-        "MANUAL_SHIFT_AROUND_TRAINING_NOT_ALLOWED": "Une vacation manuelle ne respecte pas les règles de veille/lendemain de formation.",
         "MANUAL_FULL_WEEKEND_COMPOSITION_CONFLICT": "Une saisie manuelle empêche de respecter la règle de week-end complet.",
     }
     for code, count in counts_by_code.items():
@@ -1226,16 +1209,6 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
         "constraint": "block_night_before_unavailable",
         "label": "affectation repos avant indisponibilité",
         "detail": "Une affectation nécessitant un repos avant une indisponibilité semble nécessaire pour trouver une solution.",
-    },
-    {
-        "constraint": "block_night_before_training",
-        "label": "affectation repos avant formation",
-        "detail": "Une affectation nécessitant un repos avant une formation semble nécessaire pour trouver une solution.",
-    },
-    {
-        "constraint": "limit_pre_post_training",
-        "label": "veille/lendemain de formation",
-        "detail": "Les règles autour des formations semblent empêcher une solution.",
     },
     {
         "constraint": "block_exclusion_days",
