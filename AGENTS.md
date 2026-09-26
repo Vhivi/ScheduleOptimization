@@ -6,14 +6,22 @@ The Flask API lives in `backend/app.py`. Scheduling logic is split across `backe
 
 The Vue 3 client lives in `frontend/src/`: reusable UI belongs in `components/`, API calls in `apiClient.js`, and static images in `assets/`. Jest tests live in `frontend/tests/`. Architecture and configuration details are documented in `ARCHITECTURE.md` and `docs/`.
 
+## Git Workflow Safety
+
+Before editing files, run `git status --short --branch`. Never modify `main` or `master` directly unless the user explicitly requests it. If the current branch is protected, ask whether to create or switch to a dedicated branch and wait for confirmation before editing.
+
 ## Build, Test, and Development Commands
 
-Backend development uses `backend/.venv`. Before Python commands, check that it exists, create it only if missing (`python -m venv backend/.venv`), then activate it from `backend` with `.\.venv\Scripts\Activate.ps1` (Windows) or `source .venv/bin/activate` (Unix).
+Reuse the existing backend environment. Before Python commands, check both `.venv` and `backend/.venv`; use whichever already exists and do not create a second environment. If both exist and neither is already active, ask the user which one to use. If neither exists, ask before creating one or installing dependencies.
 
-- `pip install -r backend/requirements.txt` installs Python dependencies.
+From the repository root, activate the selected environment with `.\.venv\Scripts\Activate.ps1` or `.\backend\.venv\Scripts\Activate.ps1` on Windows, and `source .venv/bin/activate` or `source backend/.venv/bin/activate` on Unix. The Python commands below assume that selected environment is active.
+
+Reuse `frontend/node_modules` when it exists. Do not run an installation command routinely. If dependencies are missing or a clean lockfile-based installation is requested, ask before running `npm ci`. Use `npm install` only when intentionally changing dependencies.
+
+- `python -m pip install -r backend/requirements.txt` installs Python dependencies only when required and approved.
 - `cd backend; python -m pytest -q` runs the backend suite.
 - `cd backend; flask run` serves the API at `http://127.0.0.1:5000`.
-- `cd frontend; npm install` installs locked frontend dependencies.
+- `cd frontend; npm ci` performs an approved clean installation from the lockfile.
 - `cd frontend; npm run serve` starts the development server with hot reload.
 - `cd frontend; npm test -- --runInBand` runs Jest tests once, serially.
 - `cd frontend; npm run lint` checks JavaScript and Vue files with ESLint.
