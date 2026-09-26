@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-09-26
+
 ### Fixed
 
 - Counted each training day as 7 hours and applied the standard day/night rest rules around it.
