@@ -41,7 +41,9 @@ class SolverContext:
         max_time_seconds (int): Maximum solver runtime in seconds. Default: 600.
         global_max_gap (int): Global maximum balance gap in hours * 10. Default: 240.
         period_max_gap (int): Period-specific balance gap in hours * 10. Default: 240.
-        max_weekly_hours (int): Maximum worked hours per agent per week in hours * 10. Default: 360.
+        max_weekly_hours (int): Maximum worked hours per agent per week in hours * 10. Default: 440.
+        preferred_max_hours_per_rolling_5_days (int): Preferred worked hours over five calendar days, in hours * 10. Default: 360.
+        training_duration (int): Worked duration of a training day in hours * 10. Default: 70.
         relative_gap_limit (float): Relative optimality gap limit as a fraction. Default: 0.10.
         num_search_workers (int): Number of parallel search workers for the solver. Default: 0.
         optimize_period_balance (bool): Flag to enable period balancing optimization. Default: False.
@@ -53,6 +55,7 @@ class SolverContext:
         weekend_balancing_objective (cp_model.LinearExpr | int): Objective expression for balancing weekend assignments.
         weekend_monday_night_objective (cp_model.LinearExpr | int): Count of penalized night sequences.
         coworker_preference_objective (cp_model.LinearExpr | int): Weighted coworker pairing score before the global coefficient.
+        rolling_5_day_excess_hours_objective (cp_model.LinearExpr | int): Worked hours above the preferred five-day threshold.
     """
     model: cp_model.CpModel
     config: dict
@@ -84,7 +87,9 @@ class SolverContext:
     max_time_seconds: int = 600
     global_max_gap: int = 240
     period_max_gap: int = 240
-    max_weekly_hours: int = 360
+    max_weekly_hours: int = 440
+    preferred_max_hours_per_rolling_5_days: int = 360
+    training_duration: int = 70
     relative_gap_limit: float = 0.10
     num_search_workers: int = 0
     optimize_period_balance: bool = False
@@ -97,3 +102,4 @@ class SolverContext:
     weekend_balancing_objective: cp_model.LinearExpr | int = 0
     weekend_monday_night_objective: cp_model.LinearExpr | int = 0
     coworker_preference_objective: cp_model.LinearExpr | int = 0
+    rolling_5_day_excess_hours_objective: cp_model.LinearExpr | int = 0
