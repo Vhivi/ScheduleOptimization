@@ -411,6 +411,7 @@ def _build_planning_payload(payload, runtime_config):
         "unavailable": unavailable,
         "dayOff": dayOff,
         "training": training,
+        "training_duration_hours": runtime_config.get("training_duration_hours", 7),
         "restrictions": restrictions,
         "restriction_types_durations": restriction_types_durations,
     }, 200
