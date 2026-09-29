@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added per-agent `preferences.avoid_weekdays` as a strong soft preference, including overnight assignments that overlap an avoided day.
+
+### Fixed
+
+- Preserved coworker preferences when loading and saving configuration in the frontend.
+
 ## [0.11.2] - 2026-09-26
 
 ### Fixed

@@ -52,6 +52,31 @@ def test_schema_rejects_invalid_date_format():
     )
 
 
+def test_schema_accepts_avoid_weekdays():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["agents"][0]["preferences"]["avoid_weekdays"] = [
+        "wednesday",
+        "sunday",
+    ]
+
+    assert list(Draft202012Validator(schema).iter_errors(example)) == []
+
+
+def test_schema_rejects_unknown_avoid_weekday():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["agents"][0]["preferences"]["avoid_weekdays"] = ["mercredi"]
+
+    errors = list(Draft202012Validator(schema).iter_errors(example))
+
+    assert errors != []
+    assert any(
+        "avoid_weekdays" in "/".join(str(part) for part in error.path)
+        for error in errors
+    )
+
+
 def test_schema_accepts_custom_shift_name():
     schema = _load_json(SCHEMA_PATH)
     example = _load_json(EXAMPLE_PATH)

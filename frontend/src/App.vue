@@ -184,6 +184,18 @@
             @input="setList(agent.preferences, 'avoid', $event.target.value)"
           />
 
+          <fieldset class="weekday-preferences">
+            <legend>Jours hebdomadaires à éviter (préférence forte)</legend>
+            <label v-for="weekday in weekdayOptions" :key="weekday.value" class="inline-control">
+              <input
+                type="checkbox"
+                :value="weekday.value"
+                v-model="agent.preferences.avoid_weekdays"
+              />
+              {{ weekday.label }}
+            </label>
+          </fieldset>
+
           <label>Restrictions (virgules)</label>
           <input type="text" :value="joinList(agent.restriction)" @input="setList(agent, 'restriction', $event.target.value)" />
 
@@ -500,12 +512,24 @@ function parseCsvList(value) {
   return Array.from(unique);
 }
 
+const WEEKDAY_OPTIONS = [
+  { value: 'monday', label: 'Lundi' },
+  { value: 'tuesday', label: 'Mardi' },
+  { value: 'wednesday', label: 'Mercredi' },
+  { value: 'thursday', label: 'Jeudi' },
+  { value: 'friday', label: 'Vendredi' },
+  { value: 'saturday', label: 'Samedi' },
+  { value: 'sunday', label: 'Dimanche' }
+];
+
 function defaultAgent(name = 'NouvelAgent') {
   return {
     name,
     preferences: {
       preferred: [],
-      avoid: []
+      avoid: [],
+      avoid_weekdays: [],
+      coworkers: {}
     },
     restriction: [],
     unavailable: [],
@@ -521,6 +545,7 @@ export default {
   },
   data() {
     return {
+      weekdayOptions: WEEKDAY_OPTIONS,
       activeMode: 'planning',
       startDate: null,
       endDate: null,
@@ -741,8 +766,13 @@ export default {
         ...defaultAgent(`Agent${index + 1}`),
         ...agent,
         preferences: {
+          ...agent?.preferences,
           preferred: Array.isArray(agent?.preferences?.preferred) ? agent.preferences.preferred : [],
-          avoid: Array.isArray(agent?.preferences?.avoid) ? agent.preferences.avoid : []
+          avoid: Array.isArray(agent?.preferences?.avoid) ? agent.preferences.avoid : [],
+          avoid_weekdays: Array.isArray(agent?.preferences?.avoid_weekdays) ? agent.preferences.avoid_weekdays : [],
+          coworkers: agent?.preferences?.coworkers && typeof agent.preferences.coworkers === 'object'
+            ? agent.preferences.coworkers
+            : {}
         },
         restriction: Array.isArray(agent?.restriction) ? agent.restriction : [],
         unavailable: Array.isArray(agent?.unavailable) ? agent.unavailable : [],
@@ -820,8 +850,11 @@ export default {
         ...agent,
         name: (agent.name || `Agent${index + 1}`).trim(),
         preferences: {
+          ...agent.preferences,
           preferred: parseCsvList((agent.preferences?.preferred || []).join(', ')),
-          avoid: parseCsvList((agent.preferences?.avoid || []).join(', '))
+          avoid: parseCsvList((agent.preferences?.avoid || []).join(', ')),
+          avoid_weekdays: Array.from(new Set(agent.preferences?.avoid_weekdays || [])),
+          coworkers: agent.preferences?.coworkers || {}
         },
         restriction: parseCsvList((agent.restriction || []).join(', ')),
         unavailable: parseCsvList((agent.unavailable || []).join(', ')),
@@ -1500,6 +1533,25 @@ button:disabled {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+}
+
+.inline-control input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.weekday-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #dce8f7;
+}
+
+.weekday-preferences legend {
+  padding: 0 4px;
 }
 
 .existing-options {

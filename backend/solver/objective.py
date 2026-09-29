@@ -2,6 +2,7 @@ from ortools.sat.python import cp_model
 
 from .catalog import assignment_matches_choice, is_half_assignment
 from .context import SolverContext
+from .utils import assignment_overlaps_weekdays
 
 
 def apply_objective(ctx: SolverContext) -> None:
@@ -16,6 +17,7 @@ def apply_objective(ctx: SolverContext) -> None:
     weight_preferred = 100
     weight_other = 1
     weight_avoid = -250
+    weight_avoid_weekday = -1000
 
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
@@ -44,6 +46,21 @@ def apply_objective(ctx: SolverContext) -> None:
             for day in ctx.week_schedule
             for vacation in ctx.assignable_vacations
             if assignment_matches_choice(ctx, vacation, agent["preferences"]["avoid"])
+        )
+    )
+
+    penalized_weekdays = cp_model.LinearExpr.Sum(
+        list(
+            ctx.planning[(agent["name"], day, vacation)] * weight_avoid_weekday
+            for agent in ctx.agents
+            for day in ctx.week_schedule
+            for vacation in ctx.assignable_vacations
+            if ctx.day_dates.get(day)
+            and assignment_overlaps_weekdays(
+                ctx.day_dates[day],
+                ctx.assignment_metadata.get(vacation),
+                agent.get("preferences", {}).get("avoid_weekdays", []),
+            )
         )
     )
 
@@ -101,6 +118,7 @@ def apply_objective(ctx: SolverContext) -> None:
         objective_preferred_vacations
         + objective_other_vacations
         + penalized_vacations
+        + penalized_weekdays
         + cp_model.LinearExpr.Sum(agent_usage_bonus_terms)
         + cp_model.LinearExpr.Sum(preserve_existing_assignments)
         - half_vacation_penalties

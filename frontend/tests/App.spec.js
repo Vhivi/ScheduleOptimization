@@ -190,6 +190,46 @@ describe('App.vue', () => {
     });
   });
 
+  it('keeps weekday and coworker preferences in config payloads', async () => {
+    const wrapper = shallowMount(App, {
+      global: { stubs: { PlanningTable: true } },
+    });
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.setData({
+      vacationsInput: 'Jour',
+      holidaysInput: '',
+      configData: {
+        agents: [{
+          name: 'Agent1',
+          preferences: {
+            preferred: ['Jour'],
+            avoid: [],
+            avoid_weekdays: ['wednesday', 'sunday'],
+            coworkers: { Agent2: 2 },
+          },
+          restriction: [],
+          unavailable: [],
+          training: [],
+          exclusion: [],
+          vacations: [],
+        }],
+        vacations: ['Jour'],
+        vacation_durations: { Jour: 12, Conge: 7 },
+        staffing_requirements: { Jour: 1 },
+        holidays: [],
+        solver: {},
+        half_vacations: {},
+        vacation_colors: {},
+      },
+    });
+
+    const preferences = wrapper.vm.buildConfigPayload().agents[0].preferences;
+
+    expect(preferences.avoid_weekdays).toEqual(['wednesday', 'sunday']);
+    expect(preferences.coworkers).toEqual({ Agent2: 2 });
+  });
+
   it('renders structured blocking reason segments', async () => {
     const wrapper = shallowMount(App, {
       global: {

@@ -11,6 +11,7 @@
         "avoid": [
           "Nuit"
         ],
+        "avoid_weekdays": [],
         "coworkers": {
           "Agent2": -1,
           "Agent3": 2
@@ -41,6 +42,7 @@
           "Jour",
           "CDP"
         ],
+        "avoid_weekdays": [],
         "coworkers": {}
       },
       "restriction": [
@@ -61,6 +63,7 @@
           "CDP"
         ],
         "avoid": [],
+        "avoid_weekdays": [],
         "coworkers": {
           "Agent1": 2
         }

@@ -1,11 +1,13 @@
 import json
 from copy import deepcopy
+from datetime import datetime
 from unittest.mock import mock_open, patch
 
 import pytest
 from app import (
     RELAXED_CONSTRAINT_DIAGNOSTICS,
     _diagnose_manual_entry_conflicts,
+    _parse_manual_entries,
     _probe_relaxed_hard_constraints,
     _inject_manual_status_entries,
     app,
@@ -15,6 +17,32 @@ from app import (
     set_active_config,
     validate_runtime_config,
 )
+
+
+def test_manual_night_overlapping_avoided_weekday_returns_warning():
+    runtime_config = load_default_config()
+    agent = runtime_config["agents"][0]
+    agent["preferences"]["avoid_weekdays"] = ["wednesday"]
+
+    _, _, warnings, error = _parse_manual_entries(
+        [
+            {
+                "agent": agent["name"],
+                "date": "2026-01-06",
+                "slot": "night",
+                "type": "shift",
+                "value": "Nuit",
+            }
+        ],
+        runtime_config,
+        datetime(2026, 1, 6),
+        datetime(2026, 1, 6),
+    )
+
+    assert error is None
+    assert [warning["code"] for warning in warnings] == [
+        "MANUAL_SHIFT_ON_AVOIDED_WEEKDAY"
+    ]
 
 
 @pytest.fixture

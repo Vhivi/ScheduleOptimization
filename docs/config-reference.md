@@ -34,6 +34,11 @@ Agent object fields:
 - `preferences` (object, required):
   - `preferred` (array of shifts)
   - `avoid` (array of shifts)
+  - `avoid_weekdays` (optional array, default `[]`): English weekday names
+    (`monday` through `sunday`) that the agent strongly prefers not to work.
+    This is a soft preference: the solver may assign the agent when coverage
+    requires it. Any assignment overlapping the selected calendar day is
+    penalized, including a night shift that starts the previous day.
   - `coworkers` (optional object of `{ "<agent name>": integer }`, default `{}`):
     rate each colleague from `-2` (strongly avoid) to `2` (strongly prefer).
     Positive scores apply only when both agents rate each other positively;
