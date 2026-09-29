@@ -25,7 +25,6 @@ DEFAULT_SHIFT_TIMES = {
     DAY_SHIFT: ("07:00", "19:00"),
     NIGHT_SHIFT: ("19:00", "07:00"),
 }
-TRAINING_DURATION_TENTHS = 70
 
 
 def _has_shift(ctx: SolverContext, shift_name: str) -> bool:
@@ -446,7 +445,9 @@ def block_training_days(ctx: SolverContext) -> None:
                 else any(training_day in day for training_day in training_days)
             )
             if is_training:
-                ctx.training_hours_by_day[(agent_name, day)] = TRAINING_DURATION_TENTHS
+                ctx.training_hours_by_day[(agent_name, day)] = getattr(
+                    ctx, "training_duration", 70
+                )
                 for vacation in ctx.assignable_vacations:
                     ctx.model.Add(ctx.planning[(agent_name, day, vacation)] == 0)
 
