@@ -72,6 +72,11 @@ export default {
       type: Object,
       required: true
     },
+    trainingDuration: {
+      type: Number,
+      required: false,
+      default: 7
+    },
     restrictions: {
       type: Object,
       required: false,
@@ -353,7 +358,7 @@ export default {
     calculateTotalHours(agent, days) {
       return days.reduce((total, day) => {
         if (this.isTrainingDay(agent, day)) {
-          return total + 7;
+          return total + this.trainingDuration;
         }
         const restrictions = this.restrictions?.[agent] || [];
         const dayDate = this.resolveDayDate(day);
