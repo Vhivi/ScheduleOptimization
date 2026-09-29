@@ -16,6 +16,7 @@ from solver.constraints.soft import (
     balance_full_weekends,
     balance_paid_hours,
     balance_paid_hours_by_period,
+    penalize_rolling_5_day_workload,
     penalize_weekend_monday_nights,
     reward_coworker_preferences,
 )
@@ -573,10 +574,16 @@ def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=Tru
     return cp_model.CpSolver().Solve(model)
 
 
-def _solve_forced_weekly_shifts(max_weekly_hours, training_hours_by_day=None):
+def _solve_forced_weekly_shifts(
+    max_weekly_hours,
+    training_hours_by_day=None,
+    forced_shifts=None,
+    shift_durations=None,
+):
     model = cp_model.CpModel()
     agent_name = "Agent1"
-    vacations = ["Jour", "Nuit"]
+    shift_durations = shift_durations or {"Jour": 120, "Nuit": 120}
+    vacations = list(shift_durations)
     week = [
         "Lun. 01-06",
         "Mar. 02-06",
@@ -597,7 +604,7 @@ def _solve_forced_weekly_shifts(max_weekly_hours, training_hours_by_day=None):
         vacations=vacations,
         weeks_split=[week],
         planning=planning,
-        shift_durations={"Jour": 120, "Nuit": 120},
+        shift_durations=shift_durations,
         training_hours_by_day=training_hours_by_day or {},
         max_weekly_hours=max_weekly_hours,
         model=model,
@@ -605,7 +612,7 @@ def _solve_forced_weekly_shifts(max_weekly_hours, training_hours_by_day=None):
 
     limit_weekly_nights_and_hours(ctx)
 
-    forced_shifts = {
+    forced_shifts = forced_shifts or {
         ("Lun. 01-06", "Jour"),
         ("Mar. 02-06", "Jour"),
         ("Mer. 03-06", "Nuit"),
@@ -620,6 +627,54 @@ def _solve_forced_weekly_shifts(max_weekly_hours, training_hours_by_day=None):
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
+
+
+def _solve_rolling_workload(
+    days,
+    forced_shifts,
+    training_hours_by_day=None,
+    leave_paid_hours_by_day=None,
+    previous_day_count=0,
+):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    assignments = ["Jour", "Demi"]
+    start_date = datetime(2026, 6, 1)
+    planning = {
+        (agent_name, day, assignment): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{assignment}"
+        )
+        for day in days
+        for assignment in assignments
+    }
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        assignable_vacations=assignments,
+        week_schedule=days[previous_day_count:],
+        previous_week_schedule=days[:previous_day_count],
+        planning=planning,
+        day_dates={
+            day: start_date + timedelta(days=index) for index, day in enumerate(days)
+        },
+        assignment_metadata={
+            "Jour": AssignmentMetadata("Jour", "Jour", 120),
+            "Demi": AssignmentMetadata("Demi", "Jour", 60),
+        },
+        shift_durations={"Jour": 120, "Demi": 60},
+        training_hours_by_day=training_hours_by_day or {},
+        leave_paid_hours_by_day=leave_paid_hours_by_day or {},
+        preferred_max_hours_per_rolling_5_days=360,
+        rolling_5_day_excess_hours_objective=0,
+        model=model,
+    )
+    for key, variable in planning.items():
+        model.Add(variable == int((key[1], key[2]) in forced_shifts))
+
+    penalize_rolling_5_day_workload(ctx)
+    model.Minimize(ctx.rolling_5_day_excess_hours_objective)
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+    return status, solver.Value(ctx.rolling_5_day_excess_hours_objective)
 
 
 def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
@@ -688,7 +743,9 @@ def _solve_forced_temporal_weekly_shifts(max_weekly_hours):
     return solver.Solve(model)
 
 
-def _solve_forced_continuity_weekly_shifts(max_weekly_hours, training=None):
+def _solve_forced_continuity_weekly_shifts(
+    max_weekly_hours, training=None, training_duration=70
+):
     model = cp_model.CpModel()
     agent_name = "Agent1"
     vacations = ["Jour"]
@@ -718,6 +775,7 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours, training=None):
         },
         shift_durations={"Jour": 120},
         training_hours_by_day={},
+        training_duration=training_duration,
         max_weekly_hours=max_weekly_hours,
         model=model,
     )
@@ -733,6 +791,56 @@ def _solve_forced_continuity_weekly_shifts(max_weekly_hours, training=None):
 
     solver = cp_model.CpSolver()
     return solver.Solve(model)
+
+
+def _solve_week_after_previous_sunday_night(max_weekly_hours):
+    model = cp_model.CpModel()
+    agent_name = "Agent1"
+    previous_week = ["Dim. 07-06"]
+    week = ["Lun. 08-06", "Mar. 09-06", "Mer. 10-06"]
+    all_days = previous_week + week
+    vacations = ["Jour", "Nuit"]
+    planning = {
+        (agent_name, day, vacation): model.NewBoolVar(
+            f"planning_{agent_name}_{day}_{vacation}"
+        )
+        for day in all_days
+        for vacation in vacations
+    }
+    ctx = SimpleNamespace(
+        agents=[{"name": agent_name}],
+        vacations=vacations,
+        assignable_vacations=vacations,
+        weeks_split=[week],
+        week_schedule=week,
+        previous_week_schedule=previous_week,
+        planning=planning,
+        day_dates={
+            day: datetime(2026, 6, 7) + timedelta(days=index)
+            for index, day in enumerate(all_days)
+        },
+        assignment_metadata={
+            "Jour": AssignmentMetadata(
+                "Jour", "Jour", 120, start_time="07:00", end_time="19:00"
+            ),
+            "Nuit": AssignmentMetadata(
+                "Nuit", "Nuit", 120, start_time="19:00", end_time="07:00"
+            ),
+        },
+        shift_durations={"Jour": 120, "Nuit": 120},
+        training_hours_by_day={},
+        max_weekly_hours=max_weekly_hours,
+        model=model,
+    )
+    limit_weekly_nights_and_hours(ctx)
+
+    forced_shifts = {(previous_week[0], "Nuit")} | {
+        (day, "Jour") for day in week
+    }
+    for key, variable in planning.items():
+        model.Add(variable == int((key[1], key[2]) in forced_shifts))
+
+    return cp_model.CpSolver().Solve(model)
 
 
 def _solve_forced_rest_sequence(
@@ -1723,11 +1831,11 @@ def test_weekly_hours_limit_counts_night_shifts_with_default_cap():
     """
     Regression test: weekly hour cap must count night shifts, not only day/CDP.
 
-    Two day shifts and two night shifts at 12h each exceed the default 36h cap,
+    Two day shifts and two night shifts at 12h each exceed the default 44h cap,
     even though day-only hours and night-only count are independently valid.
     """
 
-    status = _solve_forced_weekly_shifts(max_weekly_hours=360)
+    status = _solve_forced_weekly_shifts(max_weekly_hours=440)
 
     assert status == cp_model.INFEASIBLE
 
@@ -1740,6 +1848,76 @@ def test_weekly_hours_limit_uses_configured_cap():
     status = _solve_forced_weekly_shifts(max_weekly_hours=480)
 
     assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_weekly_hours_limit_allows_three_full_shifts_and_one_half_shift_at_42h():
+    status = _solve_forced_weekly_shifts(
+        max_weekly_hours=420,
+        shift_durations={"Jour": 120, "Demi": 60},
+        forced_shifts={
+            ("Lun. 01-06", "Jour"),
+            ("Mar. 02-06", "Jour"),
+            ("Mer. 03-06", "Jour"),
+            ("Jeu. 04-06", "Demi"),
+        },
+    )
+
+    assert status in [cp_model.OPTIMAL, cp_model.FEASIBLE]
+
+
+def test_rolling_5_day_workload_penalty_is_proportional_and_soft():
+    days = [
+        "Lun. 01-06",
+        "Mar. 02-06",
+        "Mer. 03-06",
+        "Jeu. 04-06",
+    ]
+    status, excess = _solve_rolling_workload(
+        days,
+        {
+            ("Lun. 01-06", "Jour"),
+            ("Mar. 02-06", "Jour"),
+            ("Mer. 03-06", "Jour"),
+            ("Jeu. 04-06", "Demi"),
+        },
+        previous_day_count=3,
+    )
+
+    assert status == cp_model.OPTIMAL
+    assert excess == 60
+
+
+def test_rolling_5_day_workload_penalizes_three_days_gap_three_days():
+    days = [
+        "Lun. 01-06",
+        "Mar. 02-06",
+        "Mer. 03-06",
+        "Jeu. 04-06",
+        "Ven. 05-06",
+        "Sam. 06-06",
+        "Dim. 07-06",
+    ]
+    forced_shifts = {
+        (day, "Jour") for day in days if not day.startswith("Jeu.")
+    }
+
+    status, excess = _solve_rolling_workload(days, forced_shifts)
+
+    assert status == cp_model.OPTIMAL
+    assert excess == 360
+
+
+def test_rolling_5_day_workload_counts_training_but_not_leave():
+    days = ["Lun. 01-06", "Mar. 02-06", "Mer. 03-06"]
+    status, excess = _solve_rolling_workload(
+        days,
+        {("Lun. 01-06", "Jour"), ("Mar. 02-06", "Jour")},
+        training_hours_by_day={("Agent1", "Mer. 03-06"): 70},
+        leave_paid_hours_by_day={("Agent1", "Mer. 03-06"): 70},
+    )
+
+    assert status == cp_model.OPTIMAL
+    assert excess == 0
 
 
 def test_weekly_hours_limit_counts_training_as_seven_hours():
@@ -1772,10 +1950,26 @@ def test_weekly_hours_limit_counts_continuity_shifts_in_same_iso_week():
     assert status == cp_model.INFEASIBLE
 
 
+def test_weekly_hours_limit_counts_previous_sunday_night_after_midnight():
+    status = _solve_week_after_previous_sunday_night(max_weekly_hours=420)
+
+    assert status == cp_model.INFEASIBLE
+
+
 def test_weekly_hours_limit_counts_training_from_previous_schedule():
     status = _solve_forced_continuity_weekly_shifts(
         max_weekly_hours=540,
         training=["29-09-2026"],
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_weekly_hours_limit_uses_configured_training_duration():
+    status = _solve_forced_continuity_weekly_shifts(
+        max_weekly_hours=550,
+        training=["29-09-2026"],
+        training_duration=80,
     )
 
     assert status == cp_model.INFEASIBLE
