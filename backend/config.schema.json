@@ -143,6 +143,18 @@
       "type": "string",
       "pattern": "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-\\d{4}$"
     },
+    "weekday": {
+      "type": "string",
+      "enum": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ]
+    },
     "agent": {
       "type": "object",
       "additionalProperties": false,
@@ -183,6 +195,13 @@
               "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/shift"
+              }
+            },
+            "avoid_weekdays": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/weekday"
               }
             },
             "coworkers": {
