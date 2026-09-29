@@ -14,6 +14,7 @@ from solver.catalog import (
 )
 from solver.engine import generate_planning as generate_planning_engine
 from solver.utils import (
+    assignment_overlaps_weekdays,
     datetime_interval,
     find_training_leave_overlap,
     violates_day_night_rest,
@@ -471,8 +472,10 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
     if not isinstance(manual_entries, list):
         return None, None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
 
-    valid_agents = {agent["name"] for agent in runtime_config["agents"]}
-    valid_vacations = set(build_vacation_catalog(runtime_config)["assignable_vacations"])
+    agents_by_name = {agent["name"]: agent for agent in runtime_config["agents"]}
+    valid_agents = set(agents_by_name)
+    catalog = build_vacation_catalog(runtime_config)
+    valid_vacations = set(catalog["assignable_vacations"])
     valid_restriction_types = set(
         (runtime_config.get("restriction_types_durations") or {}).keys()
     )
@@ -505,6 +508,24 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
                 return None, None, None, (jsonify({"error": f"Invalid vacation: {value}"}), 400)
             day_label = format_day_label(entry_date)
             existing_assignments.setdefault(agent, []).append((day_label, value))
+            if assignment_overlaps_weekdays(
+                entry_date,
+                catalog["assignment_metadata"].get(value),
+                agents_by_name[agent].get("preferences", {}).get("avoid_weekdays", []),
+            ):
+                warnings.append(
+                    {
+                        "code": "MANUAL_SHIFT_ON_AVOIDED_WEEKDAY",
+                        "agent": agent,
+                        "date": date,
+                        "slot": slot,
+                        "message": (
+                            "L'affectation chevauche un jour hebdomadaire que l'agent "
+                            "préfère éviter. Elle reste autorisée."
+                        ),
+                        "source": "agent_preference",
+                    }
+                )
         elif entry_type == "status":
             if value in {"unavailable", "training", "vacations"}:
                 pass  # These are valid status types

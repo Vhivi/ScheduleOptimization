@@ -103,6 +103,41 @@ def datetime_interval(day_date: datetime, start_time: str, end_time: str):
     return start_at, end_at
 
 
+WEEKDAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
+
+def assignment_overlaps_weekdays(day_date, metadata, weekdays) -> bool:
+    """Return whether an assignment overlaps one of the selected weekdays."""
+    if not weekdays:
+        return False
+
+    is_night = bool(metadata and metadata.is_night)
+    start_time = getattr(metadata, "start_time", None) or (
+        "19:00" if is_night else "07:00"
+    )
+    end_time = getattr(metadata, "end_time", None) or (
+        "07:00" if is_night else "19:00"
+    )
+    start_at, end_at = datetime_interval(day_date, start_time, end_time)
+    last_date = (end_at - timedelta(microseconds=1)).date()
+    current_date = start_at.date()
+    avoided = set(weekdays)
+
+    while current_date <= last_date:
+        if WEEKDAY_NAMES[current_date.weekday()] in avoided:
+            return True
+        current_date += timedelta(days=1)
+    return False
+
+
 def violates_day_night_rest(
     previous_interval,
     previous_is_night: bool,
