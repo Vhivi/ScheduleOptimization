@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
 from ..utils import weekly_hour_contribution_tenths
@@ -40,6 +42,7 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                     week_key = None
                 else:
                     week_key = week_day_dates[0].isocalendar()[:2]
+                    week_start = date.fromisocalendar(week_key[0], week_key[1], 1)
                     scheduled_days = list(
                         dict.fromkeys(
                             getattr(ctx, "previous_week_schedule", [])
@@ -50,7 +53,9 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                         day
                         for day in scheduled_days
                         if day_dates.get(day)
-                        and day_dates[day].isocalendar()[:2] == week_key
+                        and week_start - timedelta(days=1)
+                        <= day_dates[day].date()
+                        < week_start + timedelta(days=7)
                     ]
 
             total_hours = sum(
@@ -68,7 +73,14 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                     )
                     for vacation in assignable_vacations
                 )
-                + getattr(ctx, "training_hours_by_day", {}).get((agent_name, day), 0)
+                + (
+                    getattr(ctx, "training_hours_by_day", {}).get(
+                        (agent_name, day), 0
+                    )
+                    if week_key is None
+                    or day_dates[day].isocalendar()[:2] == week_key
+                    else 0
+                )
                 for day in days_to_count
             )
             ctx.model.Add(total_hours <= ctx.max_weekly_hours)
