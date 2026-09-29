@@ -18,6 +18,7 @@ def apply_objective(ctx: SolverContext) -> None:
     weight_other = 1
     weight_avoid = -250
     weight_avoid_weekday = -1000
+    weight_rolling_5_day_excess = 20
 
     objective_preferred_vacations = cp_model.LinearExpr.Sum(
         list(
@@ -125,6 +126,7 @@ def apply_objective(ctx: SolverContext) -> None:
         - cp_model.LinearExpr.Sum(change_existing_assignments)
         - ctx.weekend_balancing_objective
         - ctx.weekend_monday_night_penalty * ctx.weekend_monday_night_objective
+        - weight_rolling_5_day_excess * ctx.rolling_5_day_excess_hours_objective
         + ctx.coworker_preference_weight * ctx.coworker_preference_objective
     )
     if ctx.optimize_period_balance:
