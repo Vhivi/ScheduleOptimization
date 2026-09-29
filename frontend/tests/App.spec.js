@@ -224,10 +224,12 @@ describe('App.vue', () => {
       },
     });
 
-    const preferences = wrapper.vm.buildConfigPayload().agents[0].preferences;
+    const payload = wrapper.vm.buildConfigPayload();
+    const preferences = payload.agents[0].preferences;
 
     expect(preferences.avoid_weekdays).toEqual(['wednesday', 'sunday']);
     expect(preferences.coworkers).toEqual({ Agent2: 2 });
+    expect(payload.training_duration_hours).toBe(7);
   });
 
   it('renders structured blocking reason segments', async () => {
