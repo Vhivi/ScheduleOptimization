@@ -307,6 +307,107 @@ def test_generate_planning_uses_default_penalty_to_avoid_sequence():
     assert (days[2], "Nuit") in result["Alternative"]
 
 
+@pytest.mark.parametrize(
+    ("day", "planning_start_date", "vacation"),
+    [
+        ("Mer. 07-01", "2026-01-07", "Jour"),
+        ("Mar. 06-01", "2026-01-06", "Nuit"),
+    ],
+)
+def test_avoid_weekday_prefers_another_agent_including_previous_night(
+    day, planning_start_date, vacation
+):
+    agents = [
+        {
+            "name": "Avoided",
+            "preferences": {
+                "preferred": [],
+                "avoid": [],
+                "avoid_weekdays": ["wednesday"],
+            },
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+        {
+            "name": "Available",
+            "preferences": {"preferred": [], "avoid": [], "avoid_weekdays": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        },
+    ]
+    runtime_config = {
+        "vacations": [vacation],
+        "vacation_durations": {vacation: 12, "Conge": 7},
+        "vacation_metadata": {
+            vacation: {
+                "is_night": vacation == "Nuit",
+                "start_time": "19:00" if vacation == "Nuit" else "07:00",
+                "end_time": "07:00" if vacation == "Nuit" else "19:00",
+            }
+        },
+        "staffing_requirements": {vacation: 1},
+        "holidays": [],
+        "solver": {"max_weekly_hours": 36},
+    }
+
+    result = generate_planning(
+        agents=agents,
+        vacations=[vacation],
+        week_schedule=[day],
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date=planning_start_date,
+        runtime_config=runtime_config,
+    )
+
+    assert (day, vacation) not in result["Avoided"]
+    assert (day, vacation) in result["Available"]
+
+
+def test_avoid_weekday_remains_feasible_when_agent_is_required():
+    day = "Mer. 07-01"
+    agent = {
+        "name": "Required",
+        "preferences": {
+            "preferred": [],
+            "avoid": [],
+            "avoid_weekdays": ["wednesday"],
+        },
+        "restriction": [],
+        "unavailable": [],
+        "training": [],
+        "exclusion": [],
+        "vacations": [],
+    }
+    runtime_config = {
+        "vacations": ["Jour"],
+        "vacation_durations": {"Jour": 12, "Conge": 7},
+        "staffing_requirements": {"Jour": 1},
+        "holidays": [],
+        "solver": {"max_weekly_hours": 36},
+    }
+
+    result = generate_planning(
+        agents=[agent],
+        vacations=["Jour"],
+        week_schedule=[day],
+        dayOff={},
+        previous_week_schedule=[],
+        initial_shifts={},
+        planning_start_date="2026-01-07",
+        runtime_config=runtime_config,
+    )
+
+    assert result["Required"] == [(day, "Jour")]
+
+
 def test_weekend_monday_night_sequence_is_counted_once_with_night_segments():
     assignments = ["Nuit debut", "Nuit fin"]
     ctx = _weekend_monday_night_context(["Segmented"], assignments)
