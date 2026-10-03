@@ -33,6 +33,7 @@ class SolverContext:
         planning (Dict[Tuple[str, str, str], cp_model.IntVar]): Mapping of (agent, day, shift) to CP integer variables.
         leave_paid_hours_by_day (Dict[Tuple[str, str], int]): Paid leave hours indexed by (agent, day).
         training_hours_by_day (Dict[Tuple[str, str], int]): Training hours indexed by (agent, day).
+        restriction_hours_by_day (Dict[Tuple[str, str], int]): External-site restriction hours indexed by (agent, day).
         
         shift_durations (Dict[str, int]): Duration in tenths of hours for each configured vacation.
         staffing_requirements (Dict[str, int]): Required number of assigned agents per vacation and day.
@@ -73,6 +74,7 @@ class SolverContext:
     planning: Dict[Tuple[str, str, str], cp_model.IntVar] = field(default_factory=dict)
     leave_paid_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
     training_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
+    restriction_hours_by_day: Dict[Tuple[str, str], int] = field(default_factory=dict)
     day_dates: Dict[str, datetime] = field(default_factory=dict)
     assignable_vacations: List[str] = field(default_factory=list)
     assignment_metadata: Dict[str, AssignmentMetadata] = field(default_factory=dict)
