@@ -1,9 +1,11 @@
+from datetime import timedelta
+
 from ortools.sat.python import cp_model
 
 from ..catalog import is_night_assignment
 from ..context import SolverContext
 from ..registry import ConstraintRegistry
-from ..utils import split_by_month_or_period
+from ..utils import interval_hour_contribution_tenths, split_by_month_or_period
 from .hard import _weekend_pairs, _weekend_work_sum
 
 def _agents_in_paid_hours_balance(ctx: SolverContext) -> list[dict]:
@@ -36,8 +38,72 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_soft(balance_paid_hours)
     registry.register_soft(balance_paid_hours_by_period)
     registry.register_soft(balance_full_weekends)
+    registry.register_soft(penalize_rolling_5_day_workload)
     registry.register_soft(penalize_weekend_monday_nights)
     registry.register_soft(reward_coworker_preferences)
+
+
+def penalize_rolling_5_day_workload(ctx: SolverContext) -> None:
+    """Penalize worked hours above the preferred total in any five-day window."""
+    day_dates = getattr(ctx, "day_dates", {}) or {}
+    if not day_dates:
+        ctx.rolling_5_day_excess_hours_objective = 0
+        return
+
+    all_days = list(
+        dict.fromkeys(
+            getattr(ctx, "previous_week_schedule", []) + ctx.week_schedule
+        )
+    )
+    excess_terms = []
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        for end_day in ctx.week_schedule:
+            if end_day not in day_dates:
+                continue
+            interval_end = day_dates[end_day].replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) + timedelta(days=1)
+            interval_start = interval_end - timedelta(days=5)
+            days_to_count = [
+                day
+                for day in all_days
+                if day in day_dates
+                and interval_start.date() - timedelta(days=1)
+                <= day_dates[day].date()
+                < interval_end.date()
+            ]
+            total_hours = sum(
+                sum(
+                    ctx.planning[(agent_name, day, assignment)]
+                    * interval_hour_contribution_tenths(
+                        day_dates[day],
+                        ctx.assignment_metadata.get(assignment),
+                        ctx.shift_durations[assignment],
+                        interval_start,
+                        interval_end,
+                    )
+                    for assignment in ctx.assignable_vacations
+                )
+                + (
+                    _training_hours(ctx, agent_name, day)
+                    if interval_start.date()
+                    <= day_dates[day].date()
+                    < interval_end.date()
+                    else 0
+                )
+                for day in days_to_count
+            )
+            excess = ctx.model.NewIntVar(
+                0, 10000, f"rolling_5_day_excess_{agent_name}_{end_day}"
+            )
+            ctx.model.AddMaxEquality(
+                excess,
+                [total_hours - ctx.preferred_max_hours_per_rolling_5_days, 0],
+            )
+            excess_terms.append(excess)
+
+    ctx.rolling_5_day_excess_hours_objective = cp_model.LinearExpr.Sum(excess_terms)
 
 
 def _coworker_pair_score(agent: dict, coworker: dict) -> int:

@@ -153,21 +153,35 @@ def violates_day_night_rest(
     return next_start - previous_end < required_rest
 
 
-def weekly_hour_contribution_tenths(day_date, metadata, fallback_duration, week_key):
-    """Return assignment hours that belong to an ISO week, in tenths of hours."""
+def interval_hour_contribution_tenths(
+    day_date, metadata, fallback_duration, interval_start, interval_end
+):
+    """Return assignment hours overlapping a datetime interval, in tenths."""
     if not day_date or not metadata or not metadata.start_time or not metadata.end_time:
-        return fallback_duration if day_date and day_date.isocalendar()[:2] == week_key else 0
+        return (
+            fallback_duration
+            if day_date and interval_start.date() <= day_date.date() < interval_end.date()
+            else 0
+        )
 
     start_at, end_at = datetime_interval(
         day_date, metadata.start_time, metadata.end_time
     )
-
-    week_monday = date.fromisocalendar(week_key[0], week_key[1], 1)
-    week_start = datetime.combine(week_monday, time.min)
-    week_end = week_start + timedelta(days=7)
-
-    overlap_start = max(start_at, week_start)
-    overlap_end = min(end_at, week_end)
+    overlap_start = max(start_at, interval_start)
+    overlap_end = min(end_at, interval_end)
     if overlap_end <= overlap_start:
         return 0
     return int(round((overlap_end - overlap_start).total_seconds() / 360))
+
+
+def weekly_hour_contribution_tenths(day_date, metadata, fallback_duration, week_key):
+    """Return assignment hours that belong to an ISO week, in tenths of hours."""
+    week_monday = date.fromisocalendar(week_key[0], week_key[1], 1)
+    week_start = datetime.combine(week_monday, time.min)
+    return interval_hour_contribution_tenths(
+        day_date,
+        metadata,
+        fallback_duration,
+        week_start,
+        week_start + timedelta(days=7),
+    )

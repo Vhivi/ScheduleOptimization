@@ -112,6 +112,26 @@ def test_schema_accepts_max_weekly_hours():
     assert errors == []
 
 
+def test_schema_accepts_training_duration_hours():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["training_duration_hours"] = 6.5
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
+def test_schema_accepts_preferred_max_hours_per_rolling_5_days():
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["solver"]["preferred_max_hours_per_rolling_5_days"] = 36
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+
+
 @pytest.mark.parametrize("penalty", [0, 500])
 def test_schema_accepts_weekend_monday_night_penalty(penalty):
     schema = _load_json(SCHEMA_PATH)
@@ -256,3 +276,30 @@ def test_schema_rejects_non_positive_max_weekly_hours(max_weekly_hours):
         "max_weekly_hours" in "/".join(str(part) for part in error.path)
         for error in errors
     )
+
+
+@pytest.mark.parametrize("preferred_hours", [0, -1])
+def test_schema_rejects_non_positive_rolling_5_day_preference(preferred_hours):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+
+    example["solver"]["preferred_max_hours_per_rolling_5_days"] = preferred_hours
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors(example))
+
+    assert any(
+        "preferred_max_hours_per_rolling_5_days"
+        in "/".join(str(part) for part in error.path)
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize("training_duration", [0, -1])
+def test_schema_rejects_non_positive_training_duration(training_duration):
+    schema = _load_json(SCHEMA_PATH)
+    example = _load_json(EXAMPLE_PATH)
+    example["training_duration_hours"] = training_duration
+
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) != []

@@ -52,6 +52,14 @@
             @input="setStaffingRequirement(vacation, $event.target.value)"
           />
         </div>
+        <label for="trainingDuration">DurÃ©e d'une formation (heures)</label>
+        <input
+          id="trainingDuration"
+          v-model.number="configData.training_duration_hours"
+          type="number"
+          min="0.1"
+          step="0.1"
+        />
       </div>
 
       <div class="config-block">
@@ -467,6 +475,7 @@
           :unavailable="unavailableFromConfig"
           :dayOff="dayOffFromConfig"
           :training="trainingFromConfig"
+          :trainingDuration="trainingDuration"
           :restrictions="restrictionsFromConfig"
           :restrictionDurations="restrictionDurationsFromConfig"
           :assignmentLabels="assignmentLabels"
@@ -562,6 +571,7 @@ export default {
       unavailableFromConfig: null,
       dayOffFromConfig: null,
       trainingFromConfig: null,
+      trainingDuration: 7,
       restrictionsFromConfig: null,
       restrictionDurationsFromConfig: {},
       errorMessage: null,
@@ -596,6 +606,7 @@ export default {
           CDP: 5.5,
           Conge: 7
         },
+        training_duration_hours: 7,
         staffing_requirements: {
           Jour: 1,
           Nuit: 1,
@@ -705,6 +716,7 @@ export default {
       this.unavailableFromConfig = null;
       this.dayOffFromConfig = null;
       this.trainingFromConfig = null;
+      this.trainingDuration = 7;
       this.restrictionsFromConfig = null;
       this.restrictionDurationsFromConfig = {};
       this.optimizationWarnings = [];
@@ -721,6 +733,9 @@ export default {
       normalized.agents = Array.isArray(normalized.agents) ? normalized.agents : [];
       normalized.vacations = Array.isArray(normalized.vacations) ? normalized.vacations : [];
       normalized.vacation_durations = normalized.vacation_durations || {};
+      normalized.training_duration_hours = Number(normalized.training_duration_hours) > 0
+        ? Number(normalized.training_duration_hours)
+        : 7;
       normalized.staffing_requirements = normalized.staffing_requirements || {};
       normalized.holidays = Array.isArray(normalized.holidays) ? normalized.holidays : [];
       normalized.solver = normalized.solver || {};
@@ -824,6 +839,9 @@ export default {
       payload.holidays = parseCsvList(this.holidaysInput);
 
       payload.vacation_durations = payload.vacation_durations || {};
+      payload.training_duration_hours = Number(payload.training_duration_hours) > 0
+        ? Number(payload.training_duration_hours)
+        : 7;
       payload.staffing_requirements = payload.staffing_requirements || {};
       payload.half_vacations = payload.half_vacations || {};
       payload.vacation_colors = payload.vacation_colors || {};
@@ -1297,6 +1315,7 @@ export default {
         this.unavailableFromConfig = response.data.unavailable;
         this.dayOffFromConfig = response.data.dayOff;
         this.trainingFromConfig = response.data.training;
+        this.trainingDuration = response.data.training_duration_hours || 7;
         this.restrictionsFromConfig = response.data.restrictions;
         this.restrictionDurationsFromConfig = response.data.restriction_types_durations || {};
         this.optimizationWarnings = response.data.warnings || [];

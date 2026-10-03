@@ -96,6 +96,7 @@
     "CDP": 5.5,
     "Conge": 7
   },
+  "training_duration_hours": 7,
   "holidays": [
     "01-01",
     "06-04",
@@ -117,7 +118,8 @@
     "num_search_workers": 0,
     "global_max_gap": 240,
     "period_max_gap": 240,
-    "max_weekly_hours": 36,
+    "max_weekly_hours": 44,
+    "preferred_max_hours_per_rolling_5_days": 36,
     "optimize_period_balance": false,
     "period_balance_weight": 2,
     "min_free_weekends_per_horizon": 3,

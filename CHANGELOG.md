@@ -10,6 +10,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Added per-agent `preferences.avoid_weekdays` as a strong soft preference, including overnight assignments that overlap an avoided day.
+- Added a soft, proportional workload penalty above 36 worked hours in any rolling five-day window.
+- Added configurable `training_duration_hours`, shared by solver workload calculations and frontend totals.
+
+### Changed
+
+- Raised the default strict ISO-week worked-hours cap from 36 to 44 hours.
 
 ### Fixed
 

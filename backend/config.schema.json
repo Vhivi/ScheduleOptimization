@@ -42,6 +42,10 @@
         }
       }
     },
+    "training_duration_hours": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
     "staffing_requirements": {
       "type": "object",
       "additionalProperties": {
@@ -90,6 +94,10 @@
           "minimum": 0
         },
         "max_weekly_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "preferred_max_hours_per_rolling_5_days": {
           "type": "number",
           "exclusiveMinimum": 0
         },

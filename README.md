@@ -156,12 +156,14 @@ Core sections in `config.json`:
 - `vacations`: generated shift types (dynamic names supported)
 - `staffing_requirements`: simultaneous required agents per shift (`>= 0`, fallback `1`)
 - `vacation_durations`: paid-hour durations for each configured shift plus `Conge`
+- `training_duration_hours`: worked duration of one training day, default `7`
 - `half_vacations`: optional split segments for parent shifts such as `Jour` or `Nuit`
 - `vacation_colors`: frontend display colors for full shifts and half-vacation segments
 - `vacation_metadata`: optional labels and night/rest behavior for parent shifts
 - `holidays`: recurring public holidays
 - `solver`: optional runtime and fairness tuning
-  - `max_weekly_hours`: strict weekly worked-hours cap per agent, default `36`
+  - `max_weekly_hours`: strict ISO-week worked-hours cap per agent, default `44`
+  - `preferred_max_hours_per_rolling_5_days`: soft workload target over five calendar days, default `36`
   - `global_max_gap` / `period_max_gap`: paid-hour balance gaps between agents, expressed in tenths of hours
 
 Half-vacation notes:

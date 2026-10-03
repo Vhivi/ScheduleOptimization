@@ -178,7 +178,7 @@ describe('PlanningTable.vue', () => {
     expect(wrapper.find('tbody td[title="Jour matin"]').exists()).toBe(true);
   });
 
-  it('counts each training day as seven hours', () => {
+  it('uses the configured training duration', () => {
     const wrapper = shallowMount(PlanningTable, {
       props: {
         planning: { Agent1: [] },
@@ -189,10 +189,11 @@ describe('PlanningTable.vue', () => {
         unavailable: { Agent1: [] },
         dayOff: { Agent1: [] },
         training: { Agent1: ['05-01-2026'] },
+        trainingDuration: 6.5,
         planningStartDate: '2026-01-05',
       },
     });
 
-    expect(wrapper.text()).toContain('7 h');
+    expect(wrapper.text()).toContain('6.5 h');
   });
 });

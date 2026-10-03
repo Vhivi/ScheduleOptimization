@@ -45,7 +45,7 @@ Agent object fields:
     negative scores always apply. A match means the exact same shift on the same day.
 - `restriction` (array of shifts, required): shifts permanently forbidden for this agent.
 - `unavailable` (array of full dates, required): dates where the agent cannot work.
-- `training` (array of full dates, required): dates blocked for training. Each date counts as 7 paid/worked hours and follows the same 24h-before-night / 48h-after-night rest rules as a day shift. Training and leave cannot overlap; move the leave period when a training date conflicts with it.
+- `training` (array of full dates, required): dates blocked for training. Each date counts as the paid/worked hours configured by `training_duration_hours` and follows the same 24h-before-night / 48h-after-night rest rules as a day shift. Training and leave cannot overlap; move the leave period when a training date conflicts with it.
 - `exclusion` (array of full dates, required): additional blocked dates.
 - `vacations` (array of periods, required):
   - each item: `{ "start": "dd-mm-YYYY", "end": "dd-mm-YYYY" }`
@@ -83,6 +83,14 @@ Allowed shift names:
 - Required for each configured vacation:
   - Every value in `vacations` must have a matching key in `vacation_durations`.
 - Purpose: paid-hour durations used by balancing constraints.
+
+### `training_duration_hours` (optional)
+
+- Type: positive number
+- Default: `7`
+- Purpose: worked hours credited for each training day. The same value is used
+  by weekly limits, rolling workload smoothing, paid-hour balancing, and the
+  planning totals displayed in the frontend.
 
 ### `half_vacations` (optional)
 
@@ -221,11 +229,20 @@ Supported keys:
 - `max_time_seconds` (integer, default `600`)
 - `relative_gap_limit` (number in `(0, 1]`, default `0.1`)
 - `num_search_workers` (integer, default `0`)
-- `max_weekly_hours` (number, default `36`)
-  - Strict maximum worked hours per agent and per week.
+- `max_weekly_hours` (number, default `44`)
+  - Strict maximum worked hours per agent and per ISO calendar week.
   - Counts all generated shift types in `vacations`.
-  - Counts each training day as 7 hours.
+  - Counts each training day using `training_duration_hours`.
   - Does not include paid leave hours.
+- `preferred_max_hours_per_rolling_5_days` (number, default `36`)
+  - Preferred maximum worked hours in every rolling window of five calendar days.
+  - This is a soft workload-smoothing objective, not a legal-compliance check:
+    exceeding it remains possible when required to produce a feasible schedule.
+  - The penalty grows with excess hours, favoring a 6-hour half-vacation over
+    a 12-hour vacation when either can cover the same remaining need under the
+    standard half-vacation penalties.
+  - Counts generated shifts and training, including hours crossing a window
+    boundary; paid leave is excluded.
 - `global_max_gap` (integer, default `240`)
   - Maximum paid-hour balance gap between agents over the generated period, in tenths of hours.
 - `period_max_gap` (integer, default `240`)
