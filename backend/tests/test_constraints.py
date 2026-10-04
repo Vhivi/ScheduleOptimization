@@ -8,6 +8,7 @@ from app import generate_planning, get_active_config, load_default_config, set_a
 from solver.catalog import AssignmentMetadata
 from solver.constraints.hard import (
     avoid_day_after_night,
+    block_external_assignments,
     block_training_days,
     enforce_min_free_weekends_per_horizon,
 )
@@ -541,7 +542,9 @@ def test_coworker_preference_requires_exact_same_assignment():
     assert solver.Value(ctx.coworker_preference_objective) == 0
 
 
-def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=True):
+def _solve_forced_paid_hours_balance(
+    agents, apply_global=True, apply_period=True, external_assignment_hours_by_day=None
+):
     model = cp_model.CpModel()
     day = "Lun. 01-06"
     planning = {
@@ -557,6 +560,7 @@ def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=Tru
         planning=planning,
         shift_durations={"Jour": 120},
         leave_paid_hours_by_day={},
+        external_assignment_hours_by_day=external_assignment_hours_by_day or {},
         global_max_gap=0,
         period_max_gap=0,
         model=model,
@@ -577,6 +581,7 @@ def _solve_forced_paid_hours_balance(agents, apply_global=True, apply_period=Tru
 def _solve_forced_weekly_shifts(
     max_weekly_hours,
     training_hours_by_day=None,
+    external_assignment_hours_by_day=None,
     forced_shifts=None,
     shift_durations=None,
 ):
@@ -606,6 +611,7 @@ def _solve_forced_weekly_shifts(
         planning=planning,
         shift_durations=shift_durations,
         training_hours_by_day=training_hours_by_day or {},
+        external_assignment_hours_by_day=external_assignment_hours_by_day or {},
         max_weekly_hours=max_weekly_hours,
         model=model,
     )
@@ -633,6 +639,7 @@ def _solve_rolling_workload(
     days,
     forced_shifts,
     training_hours_by_day=None,
+    external_assignment_hours_by_day=None,
     leave_paid_hours_by_day=None,
     previous_day_count=0,
 ):
@@ -662,6 +669,7 @@ def _solve_rolling_workload(
         },
         shift_durations={"Jour": 120, "Demi": 60},
         training_hours_by_day=training_hours_by_day or {},
+        external_assignment_hours_by_day=external_assignment_hours_by_day or {},
         leave_paid_hours_by_day=leave_paid_hours_by_day or {},
         preferred_max_hours_per_rolling_5_days=360,
         rolling_5_day_excess_hours_objective=0,
@@ -957,6 +965,17 @@ def test_paid_hours_balance_includes_agents_by_default():
     status = _solve_forced_paid_hours_balance(agents)
 
     assert status == cp_model.INFEASIBLE
+
+
+def test_paid_hours_balance_counts_external_assignment_hours():
+    agents = [{"name": "Agent1"}, {"name": "Agent2"}, {"name": "Agent3"}]
+
+    status = _solve_forced_paid_hours_balance(
+        agents,
+        external_assignment_hours_by_day={("Agent3", "Lun. 01-06"): 120},
+    )
+
+    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
 
 
 def test_paid_hours_balance_ignores_opted_out_agent_with_zero_hours():
@@ -1840,6 +1859,50 @@ def test_weekly_hours_limit_counts_night_shifts_with_default_cap():
     assert status == cp_model.INFEASIBLE
 
 
+@pytest.mark.parametrize(
+    "duration_key",
+    ["external_assignment_types_durations", "restriction_types_durations"],
+)
+def test_external_assignment_blocks_local_coverage_assignment(duration_key):
+    model = cp_model.CpModel()
+    day = "Lun. 01-06"
+    agents = [
+        {
+            "name": "Restricted",
+            "external_assignments": [
+                {"date": "01-06-2026", "type": "HorsSite"}
+            ],
+        },
+        {"name": "Available"},
+    ]
+    planning = {
+        (agent["name"], day, "Jour"): model.NewBoolVar(
+            f"planning_{agent['name']}_{day}_Jour"
+        )
+        for agent in agents
+    }
+    ctx = SimpleNamespace(
+        agents=agents,
+        config={duration_key: {"HorsSite": 10.5}},
+        week_schedule=[day],
+        previous_week_schedule=[],
+        day_dates={day: datetime(2026, 6, 1)},
+        assignable_vacations=["Jour"],
+        planning=planning,
+        external_assignment_hours_by_day={},
+        model=model,
+    )
+    model.Add(sum(planning.values()) == 1)
+
+    block_external_assignments(ctx)
+    solver = cp_model.CpSolver()
+
+    assert solver.Solve(model) == cp_model.OPTIMAL
+    assert solver.Value(planning[("Restricted", day, "Jour")]) == 0
+    assert solver.Value(planning[("Available", day, "Jour")]) == 1
+    assert ctx.external_assignment_hours_by_day[("Restricted", day)] == 105
+
+
 def test_weekly_hours_limit_uses_configured_cap():
     """
     The same 48h worked week becomes feasible when solver.max_weekly_hours is 48.
@@ -1920,10 +1983,40 @@ def test_rolling_5_day_workload_counts_training_but_not_leave():
     assert excess == 0
 
 
+def test_rolling_5_day_workload_counts_external_assignment_hours():
+    days = ["Lun. 01-06", "Mar. 02-06", "Mer. 03-06", "Jeu. 04-06"]
+    status, excess = _solve_rolling_workload(
+        days,
+        {
+            ("Lun. 01-06", "Jour"),
+            ("Mar. 02-06", "Jour"),
+            ("Mer. 03-06", "Jour"),
+        },
+        external_assignment_hours_by_day={("Agent1", "Jeu. 04-06"): 105},
+    )
+
+    assert status == cp_model.OPTIMAL
+    assert excess == 105
+
+
 def test_weekly_hours_limit_counts_training_as_seven_hours():
     status = _solve_forced_weekly_shifts(
         max_weekly_hours=540,
         training_hours_by_day={("Agent1", "Ven. 05-06"): 70},
+    )
+
+    assert status == cp_model.INFEASIBLE
+
+
+def test_weekly_hours_limit_counts_external_assignment_hours():
+    status = _solve_forced_weekly_shifts(
+        max_weekly_hours=440,
+        external_assignment_hours_by_day={("Agent1", "Jeu. 04-06"): 105},
+        forced_shifts={
+            ("Lun. 01-06", "Jour"),
+            ("Mar. 02-06", "Jour"),
+            ("Mer. 03-06", "Jour"),
+        },
     )
 
     assert status == cp_model.INFEASIBLE

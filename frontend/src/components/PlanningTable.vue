@@ -77,12 +77,12 @@ export default {
       required: false,
       default: 7
     },
-    restrictions: {
+    externalAssignments: {
       type: Object,
       required: false,
       default: () => ({})
     },
-    restrictionDurations: {
+    externalAssignmentDurations: {
       type: Object,
       required: false,
       default: () => ({})
@@ -232,8 +232,8 @@ export default {
       );
     },
     getVacationForAgent(agent, day) {
-      if (this.isRestrictionDay(agent, day)) {
-        return 'Res.';
+      if (this.isExternalAssignmentDay(agent, day)) {
+        return 'Ext.';
       }
       if (this.isTrainingDay(agent, day)) {
         return 'For.';
@@ -325,14 +325,14 @@ export default {
       const dayFull = this.formatConfigDate(dayDate);
       return trainingDays.includes(dayFull);
     },
-    isRestrictionDay(agent, day) {
-      const restrictions = this.restrictions?.[agent] || [];
+    isExternalAssignmentDay(agent, day) {
+      const externalAssignments = this.externalAssignments?.[agent] || [];
       const dayDate = this.resolveDayDate(day);
       if (!dayDate) {
         return false;
       }
       const dayFull = this.formatConfigDate(dayDate);
-      return restrictions.some((item) => item?.date === dayFull);
+      return externalAssignments.some((item) => item?.date === dayFull);
     },
     getColumnColor(agent, day) {
       if (this.isVacationDay(agent, day)) {
@@ -360,12 +360,15 @@ export default {
         if (this.isTrainingDay(agent, day)) {
           return total + this.trainingDuration;
         }
-        const restrictions = this.restrictions?.[agent] || [];
+        const externalAssignments = this.externalAssignments?.[agent] || [];
         const dayDate = this.resolveDayDate(day);
         const dayFull = dayDate ? this.formatConfigDate(dayDate) : null;
-        const restriction = restrictions.find((item) => item?.date === dayFull);
-        if (restriction && this.restrictionDurations?.[restriction.type]) {
-          return total + this.restrictionDurations[restriction.type];
+        const externalAssignment = externalAssignments.find((item) => item?.date === dayFull);
+        if (
+          externalAssignment
+          && this.externalAssignmentDurations?.[externalAssignment.type]
+        ) {
+          return total + this.externalAssignmentDurations[externalAssignment.type];
         }
         const vacation = this.getWorkedAssignmentForAgent(agent, day);
         return total + (this.vacationDurations[vacation] || 0);

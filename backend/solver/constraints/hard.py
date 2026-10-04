@@ -13,6 +13,7 @@ from ..registry import ConstraintRegistry
 from ..utils import (
     datetime_interval,
     day_token,
+    external_assignment_type_durations,
     find_training_leave_overlap,
     violates_day_night_rest,
 )
@@ -62,7 +63,8 @@ def register(registry: ConstraintRegistry) -> None:
     - Block leave and compute paid hours
     - Block night before unavailable
     - Block exclusion days
-    - Apply agent restrictions
+    - Apply permanent agent restrictions
+    - Block external-site assignments
     """
     registry.register_hard(apply_initial_shifts)
     registry.register_hard(limit_one_shift_per_day)
@@ -77,6 +79,7 @@ def register(registry: ConstraintRegistry) -> None:
     registry.register_hard(block_night_before_unavailable)
     registry.register_hard(block_exclusion_days)
     registry.register_hard(apply_agent_restrictions)
+    registry.register_hard(block_external_assignments)
 
 
 def apply_initial_shifts(ctx: SolverContext) -> None:
@@ -572,7 +575,7 @@ def block_exclusion_days(ctx: SolverContext) -> None:
 
 
 def apply_agent_restrictions(ctx: SolverContext) -> None:
-    """Applies agent-specific vacation/assignment restrictions."""
+    """Block vacation types permanently forbidden for an agent."""
     for agent in ctx.agents:
         agent_name = agent["name"]
         restricted_vacations = set(agent.get("restriction", []))
@@ -580,3 +583,42 @@ def apply_agent_restrictions(ctx: SolverContext) -> None:
             for assignment in ctx.assignable_vacations:
                 if assignment_matches_choice(ctx, assignment, restricted_vacations):
                     ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)
+
+
+def block_external_assignments(ctx: SolverContext) -> None:
+    """Block local work and record hours for dated external-site assignments."""
+    assignment_durations = external_assignment_type_durations(ctx.config)
+    scheduled_days = list(
+        dict.fromkeys(ctx.previous_week_schedule + ctx.week_schedule)
+    )
+
+    for agent in ctx.agents:
+        agent_name = agent["name"]
+        dated_assignments = {
+            assignment.get("date"): assignment.get("type")
+            for assignment in agent.get("external_assignments", [])
+            if isinstance(assignment, dict)
+        }
+        for day in scheduled_days:
+            day_date = ctx.day_dates.get(day)
+            full_date = day_date.strftime("%d-%m-%Y") if day_date else None
+            if full_date is None:
+                full_date = next(
+                    (
+                        date_value
+                        for date_value in dated_assignments
+                        if date_value and day_token(date_value) in day
+                    ),
+                    None,
+                )
+            assignment_type = dated_assignments.get(full_date)
+            if assignment_type is None:
+                continue
+            if assignment_type not in assignment_durations:
+                raise ValueError(f"Unknown external assignment type: {assignment_type}")
+
+            ctx.external_assignment_hours_by_day[(agent_name, day)] = int(
+                round(float(assignment_durations[assignment_type]) * 10)
+            )
+            for assignment in ctx.assignable_vacations:
+                ctx.model.Add(ctx.planning[(agent_name, day, assignment)] == 0)

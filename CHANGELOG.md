@@ -20,6 +20,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - Preserved coworker preferences when loading and saving configuration in the frontend.
+- Distinguished permanent agent restrictions from dated external-site assignments, which no longer cover local shifts and now count toward workload calculations.
 
 ## [0.11.2] - 2026-09-26
 

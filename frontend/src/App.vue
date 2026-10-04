@@ -204,7 +204,7 @@
             </label>
           </fieldset>
 
-          <label>Restrictions (virgules)</label>
+          <label>Vacations interdites (virgules)</label>
           <input type="text" :value="joinList(agent.restriction)" @input="setList(agent, 'restriction', $event.target.value)" />
 
           <label>Indisponibilités `dd-mm-YYYY`</label>
@@ -326,13 +326,12 @@
                     <option value="status:unavailable">Indisponible</option>
                     <option value="status:training">Formation</option>
                     <option value="status:vacations">Congé</option>
-                    <option value="status:restriction">Restriction</option>
                     <option
-                      v-for="(duration, restrictionType) in restrictionTypesDurations"
-                      :key="`r_${restrictionType}`"
-                      :value="`status:restrictions:${restrictionType}`"
+                      v-for="(duration, assignmentType) in externalAssignmentTypesDurations"
+                      :key="`external_${assignmentType}`"
+                      :value="`status:external_assignments:${assignmentType}`"
                     >
-                      Restriction - {{ restrictionType }}
+                      Vacation externe - {{ assignmentType }}
                     </option>
                   </select>
                 </td>
@@ -476,8 +475,8 @@
           :dayOff="dayOffFromConfig"
           :training="trainingFromConfig"
           :trainingDuration="trainingDuration"
-          :restrictions="restrictionsFromConfig"
-          :restrictionDurations="restrictionDurationsFromConfig"
+          :externalAssignments="externalAssignmentsFromConfig"
+          :externalAssignmentDurations="externalAssignmentDurationsFromConfig"
           :assignmentLabels="assignmentLabels"
           :planningStartDate="startDate"
         />
@@ -572,8 +571,8 @@ export default {
       dayOffFromConfig: null,
       trainingFromConfig: null,
       trainingDuration: 7,
-      restrictionsFromConfig: null,
-      restrictionDurationsFromConfig: {},
+      externalAssignmentsFromConfig: null,
+      externalAssignmentDurationsFromConfig: {},
       errorMessage: null,
       infoMessage: null,
       generationMode: 'new',
@@ -673,8 +672,10 @@ export default {
         return months;
       }, {});
     },
-    restrictionTypesDurations() {
-      return this.restrictionDurationsFromConfig || this.configData?.restriction_types_durations || {};
+    externalAssignmentTypesDurations() {
+      return this.externalAssignmentDurationsFromConfig
+        || this.configData?.external_assignment_types_durations
+        || {};
     },
     assignableVacations() {
       return this.assignableVacationsData?.length ? this.assignableVacationsData : this.vacations;
@@ -717,8 +718,8 @@ export default {
       this.dayOffFromConfig = null;
       this.trainingFromConfig = null;
       this.trainingDuration = 7;
-      this.restrictionsFromConfig = null;
-      this.restrictionDurationsFromConfig = {};
+      this.externalAssignmentsFromConfig = null;
+      this.externalAssignmentDurationsFromConfig = {};
       this.optimizationWarnings = [];
       this.optimizationSuggestions = [];
       this.optimizationMeta = null;
@@ -739,7 +740,10 @@ export default {
       normalized.staffing_requirements = normalized.staffing_requirements || {};
       normalized.holidays = Array.isArray(normalized.holidays) ? normalized.holidays : [];
       normalized.solver = normalized.solver || {};
-      normalized.restriction_types_durations = normalized.restriction_types_durations || {};
+      normalized.external_assignment_types_durations = normalized.external_assignment_types_durations
+        || normalized.restriction_types_durations
+        || {};
+      delete normalized.restriction_types_durations;
       normalized.half_vacations = normalized.half_vacations || {};
       normalized.vacation_colors = normalized.vacation_colors || {};
 
@@ -803,7 +807,7 @@ export default {
       this.assignableVacationsData = this.buildAssignableVacations(normalized);
       this.vacationColors = { ...this.vacationColors, ...normalized.vacation_colors };
       this.agents = [...normalized.agents];
-      this.restrictionDurationsFromConfig = normalized.restriction_types_durations;
+      this.externalAssignmentDurationsFromConfig = normalized.external_assignment_types_durations;
       await this.$nextTick();
       this.isHydratingConfig = false;
       this.configDirty = false;
@@ -1115,8 +1119,8 @@ export default {
       const labels = {
         existing_assignment: 'affectation existante differente',
         status: 'statut bloquant',
-        restriction: 'restriction directe',
-        parent_restriction: 'restriction parent',
+        restriction: 'vacation interdite',
+        parent_restriction: 'vacation parente interdite',
         half_weekend: 'demi-vacation interdite week-end',
         half_holiday: 'demi-vacation interdite jour ferie'
       };
@@ -1316,8 +1320,8 @@ export default {
         this.dayOffFromConfig = response.data.dayOff;
         this.trainingFromConfig = response.data.training;
         this.trainingDuration = response.data.training_duration_hours || 7;
-        this.restrictionsFromConfig = response.data.restrictions;
-        this.restrictionDurationsFromConfig = response.data.restriction_types_durations || {};
+        this.externalAssignmentsFromConfig = response.data.external_assignments;
+        this.externalAssignmentDurationsFromConfig = response.data.external_assignment_types_durations || {};
         this.optimizationWarnings = response.data.warnings || [];
         this.optimizationSuggestions = response.data.suggestions || [];
         this.optimizationBlockingReasons = response.data.blocking_reasons || [];

@@ -108,7 +108,7 @@
     "11-11",
     "25-12"
   ],
-  "restriction_types_durations": {
+  "external_assignment_types_durations": {
     "HorsSite": 10.5,
     "VM": 2
   },

@@ -9,6 +9,12 @@ NIGHT_SHIFT = "Nuit"
 CDP_SHIFT = "CDP"
 
 
+def _external_assignment_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
+    return getattr(ctx, "external_assignment_hours_by_day", {}).get(
+        (agent_name, day), 0
+    )
+
+
 def register(registry: ConstraintRegistry) -> None:
     """
     Registers all the mixed constraints to the given registry.
@@ -77,6 +83,12 @@ def limit_weekly_worked_hours(ctx: SolverContext) -> None:
                     getattr(ctx, "training_hours_by_day", {}).get(
                         (agent_name, day), 0
                     )
+                    if week_key is None
+                    or day_dates[day].isocalendar()[:2] == week_key
+                    else 0
+                )
+                + (
+                    _external_assignment_hours(ctx, agent_name, day)
                     if week_key is None
                     or day_dates[day].isocalendar()[:2] == week_key
                     else 0
