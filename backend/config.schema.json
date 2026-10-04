@@ -61,7 +61,15 @@
         "pattern": "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])$"
       }
     },
+    "external_assignment_types_durations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
     "restriction_types_durations": {
+      "deprecated": true,
       "type": "object",
       "additionalProperties": {
         "type": "number",
