@@ -368,6 +368,83 @@ def test_generate_planning_route_valid_data(client):
     assert len(result["week_schedule"]) == 2
 
 
+def test_all_planning_modes_share_half_vacation_fallback(client):
+    config = deepcopy(load_default_config())
+    config["agents"] = [
+        {
+            "name": name,
+            "preferences": {"preferred": ["Jour"], "avoid": []},
+            "restriction": [],
+            "unavailable": [],
+            "training": [],
+            "exclusion": [],
+            "vacations": [],
+        }
+        for name in ("Agent1", "Agent2")
+    ]
+    config["vacations"] = ["Jour"]
+    config["staffing_requirements"] = {"Jour": 1}
+    config["vacation_durations"] = {"Jour": 12, "Conge": 7}
+    config["half_vacations"] = {
+        "Jour": {
+            "enabled": True,
+            "penalty": 500,
+            "segments": [
+                {"name": "Jour matin", "duration": 6},
+                {"name": "Jour apres-midi", "duration": 6},
+            ],
+        }
+    }
+    config["holidays"] = []
+    config["solver"]["max_weekly_hours"] = 6
+    config["solver"]["min_free_weekends_per_horizon"] = 0
+    set_active_config(config)
+
+    expected_assignments = ["Jour apres-midi", "Jour matin"]
+
+    def current_assignments(response):
+        assert response.status_code == 200
+        planning = response.get_json()["planning"]
+        return sorted(vacation for shifts in planning.values() for _, vacation in shifts)
+
+    new_response = client.post(
+        "/generate-planning",
+        json={"start_date": "2026-01-05", "end_date": "2026-01-05"},
+    )
+    continuity_response = client.post(
+        "/generate-planning",
+        json={
+            "start_date": "2026-01-05",
+            "end_date": "2026-01-05",
+            "initial_shifts": {"Agent1": [["Lun. 29-12", "Jour matin"]]},
+        },
+    )
+    existing_response = client.post(
+        "/optimize-existing-planning",
+        json={
+            "start_date": "2026-01-05",
+            "end_date": "2026-01-05",
+            "existing_assignments_strict": False,
+            "manual_entries": [
+                {
+                    "agent": "Agent1",
+                    "date": "2026-01-05",
+                    "slot": "day",
+                    "type": "shift",
+                    "value": "Jour",
+                }
+            ],
+        },
+    )
+
+    assert current_assignments(new_response) == expected_assignments
+    assert current_assignments(continuity_response) == expected_assignments
+    assert current_assignments(existing_response) == expected_assignments
+    assert existing_response.get_json()["modified_existing_assignments"][0][
+        "change_type"
+    ] == "changed_to_half"
+
+
 
 def test_optimize_existing_planning_requires_valid_manual_entries(client):
     data = {

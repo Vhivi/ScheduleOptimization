@@ -41,6 +41,13 @@ def _runtime_config():
             "Jour matin": "#B9F6CA",
             "Jour après-midi": "#00C853",
         },
+        "vacation_metadata": {
+            "Jour": {
+                "is_night": False,
+                "start_time": "07:00",
+                "end_time": "19:00",
+            }
+        },
         "holidays": [],
         "solver": {
             "max_time_seconds": 30,
@@ -66,6 +73,9 @@ def test_half_vacation_config_validates_and_builds_assignable_catalog():
     assert catalog["assignable_vacations"] == ["Jour", "Jour matin", "Jour après-midi"]
     assert catalog["assignment_metadata"]["Jour matin"].parent == "Jour"
     assert catalog["assignment_metadata"]["Jour matin"].duration == 60
+    assert catalog["assignment_metadata"]["Jour matin"].start_time == "07:00"
+    assert catalog["assignment_metadata"]["Jour matin"].end_time == "19:00"
+    assert not catalog["assignment_metadata"]["Jour matin"].use_time_window_for_hours
     assert catalog["segment_covering_assignments"][("Jour", "Jour matin")] == [
         "Jour",
         "Jour matin",
@@ -80,6 +90,19 @@ def test_half_vacation_config_rejects_duration_mismatch():
 
     assert errors
     assert "segment durations must sum" in errors[0]["message"]
+
+
+def test_explicit_half_vacation_times_drive_hour_splitting():
+    config = _runtime_config()
+    config["half_vacations"]["Jour"]["segments"][0].update(
+        {"start_time": "07:00", "end_time": "13:00"}
+    )
+
+    metadata = build_vacation_catalog(config)["assignment_metadata"]["Jour matin"]
+
+    assert metadata.start_time == "07:00"
+    assert metadata.end_time == "13:00"
+    assert metadata.use_time_window_for_hours
 
 
 def test_solver_can_cover_parent_with_complementary_half_vacations():
