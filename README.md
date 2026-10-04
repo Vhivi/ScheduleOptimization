@@ -157,6 +157,7 @@ Core sections in `config.json`:
 - `staffing_requirements`: simultaneous required agents per shift (`>= 0`, fallback `1`)
 - `vacation_durations`: paid-hour durations for each configured shift plus `Conge`
 - `training_duration_hours`: worked duration of one training day, default `7`
+- `external_assignment_types_durations`: worked durations for dated assignments on another site
 - `half_vacations`: optional split segments for parent shifts such as `Jour` or `Nuit`
 - `vacation_colors`: frontend display colors for full shifts and half-vacation segments
 - `vacation_metadata`: optional labels and night/rest behavior for parent shifts
