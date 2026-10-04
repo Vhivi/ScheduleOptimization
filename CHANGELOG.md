@@ -21,6 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Preserved coworker preferences when loading and saving configuration in the frontend.
 - Distinguished permanent agent restrictions from dated external-site assignments, which no longer cover local shifts and now count toward workload calculations.
+- Counted half-vacations with their own configured duration when parent shifts define a longer time window.
 
 ## [0.11.2] - 2026-09-26
 
