@@ -170,7 +170,7 @@ def test_runtime_config_accepts_0_9_3_shape():
     legacy_config = deepcopy(load_default_config())
     for key in (
         "half_vacations",
-        "restriction_types_durations",
+        "external_assignment_types_durations",
         "vacation_colors",
         "vacation_metadata",
     ):
@@ -437,8 +437,8 @@ def test_optimize_existing_planning_locks_manual_shifts_by_default(client):
         "unavailable": {},
         "dayOff": {},
         "training": {},
-        "restrictions": {},
-        "restriction_types_durations": {},
+        "external_assignments": {},
+        "external_assignment_types_durations": {},
     }
 
     with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
@@ -542,8 +542,8 @@ def test_optimize_existing_planning_can_keep_manual_shifts_soft(client):
         "unavailable": {},
         "dayOff": {},
         "training": {},
-        "restrictions": {},
-        "restriction_types_durations": {},
+        "external_assignments": {},
+        "external_assignment_types_durations": {},
     }
 
     with patch("app._build_planning_payload", return_value=(fake_result, 200)) as build_payload:
@@ -558,7 +558,7 @@ def test_optimize_existing_planning_can_keep_manual_shifts_soft(client):
     assert response.get_json()["meta"]["existing_assignments_strict"] is False
 
 
-def test_optimize_existing_planning_returns_warning_for_status_entries(client):
+def test_optimize_existing_planning_warns_for_legacy_untyped_restriction(client):
     data = {
         "start_date": "2026-01-05",
         "end_date": "2026-01-06",
@@ -578,7 +578,10 @@ def test_optimize_existing_planning_returns_warning_for_status_entries(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["status"] == "warning"
-    assert payload["warnings"][0]["code"] == "STATUS_RESTRICTION_REQUIRES_SHIFT"
+    assert (
+        payload["warnings"][0]["code"]
+        == "STATUS_EXTERNAL_ASSIGNMENT_REQUIRES_TYPE"
+    )
     assert payload["suggestions"] != []
     assert "planning" in payload
     assert len(payload["week_schedule"]) == 2
@@ -1314,8 +1317,8 @@ def test_optimize_existing_planning_reports_modified_existing_assignment(client)
         "unavailable": {},
         "dayOff": {},
         "training": {},
-        "restrictions": {},
-        "restriction_types_durations": {},
+        "external_assignments": {},
+        "external_assignment_types_durations": {},
     }
     with patch("app._build_planning_payload", return_value=(fake_result, 200)):
         response = client.post(
@@ -1352,6 +1355,36 @@ def test_inject_manual_status_entries_adds_unavailable_day():
     assert warnings == []
     target_agent = next(agent for agent in updated_config["agents"] if agent["name"] == agent_name)
     assert "06-01-2026" in target_agent["unavailable"]
+
+
+@pytest.mark.parametrize("status_prefix", ["external_assignments", "restrictions"])
+def test_inject_manual_status_entries_adds_external_assignment(status_prefix):
+    runtime_config = load_default_config()
+    agent_name = runtime_config["agents"][0]["name"]
+    assignment_type = next(
+        iter(runtime_config["external_assignment_types_durations"])
+    )
+
+    updated_config, warnings = _inject_manual_status_entries(
+        runtime_config,
+        [
+            {
+                "agent": agent_name,
+                "date": "2026-01-06",
+                "slot": "day",
+                "value": f"{status_prefix}:{assignment_type}",
+            }
+        ],
+    )
+
+    assert warnings == []
+    target_agent = next(
+        agent for agent in updated_config["agents"] if agent["name"] == agent_name
+    )
+    assert target_agent["external_assignments"] == [
+        {"date": "06-01-2026", "type": assignment_type}
+    ]
+    assert "restrictions" not in target_agent
 
 
 def test_generate_planning_route_invalid_date(client):
