@@ -43,7 +43,9 @@ Agent object fields:
     rate each colleague from `-2` (strongly avoid) to `2` (strongly prefer).
     Positive scores apply only when both agents rate each other positively;
     negative scores always apply. A match means the exact same shift on the same day.
-- `restriction` (array of shifts, required): shifts permanently forbidden for this agent.
+- `restriction` (array of shifts, required): shifts permanently forbidden for this
+  agent, for example for a medical or regulatory reason. This field never
+  represents work performed on another site.
 - `unavailable` (array of full dates, required): dates where the agent cannot work.
 - `training` (array of full dates, required): dates blocked for training. Each date counts as the paid/worked hours configured by `training_duration_hours` and follows the same 24h-before-night / 48h-after-night rest rules as a day shift. Training and leave cannot overlap; move the leave period when a training date conflicts with it.
 - `exclusion` (array of full dates, required): additional blocked dates.
@@ -91,6 +93,18 @@ Allowed shift names:
 - Purpose: worked hours credited for each training day. The same value is used
   by weekly limits, rolling workload smoothing, paid-hour balancing, and the
   planning totals displayed in the frontend.
+
+### `external_assignment_types_durations` (optional)
+
+- Type: object of `{ "<restriction type>": positive number }`
+- Purpose: worked hours credited when the matching dated restriction is entered
+  while optimizing an existing planning.
+- A dated restriction represents work on another site: it blocks every local
+  assignment for that agent and contributes nothing to local daily staffing.
+- Its duration is included in weekly limits, rolling workload smoothing,
+  paid-hour balancing, and frontend totals.
+- The former `restriction_types_durations` name remains accepted as a legacy
+  alias and is migrated by the configuration interface.
 
 ### `half_vacations` (optional)
 
