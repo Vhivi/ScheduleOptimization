@@ -165,7 +165,13 @@ def interval_hour_contribution_tenths(
     day_date, metadata, fallback_duration, interval_start, interval_end
 ):
     """Return assignment hours overlapping a datetime interval, in tenths."""
-    if not day_date or not metadata or not metadata.start_time or not metadata.end_time:
+    if (
+        not day_date
+        or not metadata
+        or not metadata.start_time
+        or not metadata.end_time
+        or not getattr(metadata, "use_time_window_for_hours", True)
+    ):
         return (
             fallback_duration
             if day_date and interval_start.date() <= day_date.date() < interval_end.date()
