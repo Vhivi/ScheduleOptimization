@@ -281,7 +281,7 @@ describe('App.vue', () => {
     expect(text).toContain('Besoin: 2');
     expect(text).toContain('Agents possibles: 0');
     expect(text).toContain('statut bloquant (2)');
-    expect(text).toContain('restriction parent (1)');
+    expect(text).toContain('vacation parente interdite (1)');
     expect(text).toContain('liberer un agent');
     expect(text).toContain('reduire le besoin de couverture');
     expect(text).toContain('Agent1: statut bloquant');
@@ -300,8 +300,8 @@ describe('App.vue', () => {
         unavailable: {},
         dayOff: {},
         training: {},
-        restrictions: {},
-        restriction_types_durations: {},
+        external_assignments: {},
+        external_assignment_types_durations: {},
         warnings: [],
         suggestions: [],
         blocking_reasons: [],

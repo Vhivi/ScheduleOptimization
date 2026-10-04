@@ -196,4 +196,28 @@ describe('PlanningTable.vue', () => {
 
     expect(wrapper.text()).toContain('6.5 h');
   });
+
+  it('displays external assignments separately from local shifts', () => {
+    const wrapper = shallowMount(PlanningTable, {
+      props: {
+        planning: { Agent1: [] },
+        weekSchedule: ['Lun. 05-01'],
+        vacationDurations: {},
+        vacationColors: {},
+        holidays: [],
+        unavailable: { Agent1: [] },
+        dayOff: { Agent1: [] },
+        training: { Agent1: [] },
+        externalAssignments: {
+          Agent1: [{ date: '05-01-2026', type: 'HorsSite' }],
+        },
+        externalAssignmentDurations: { HorsSite: 10.5 },
+        planningStartDate: '2026-01-05',
+      },
+    });
+
+    expect(wrapper.text()).toContain('Ext.');
+    expect(wrapper.text()).toContain('0');
+    expect(wrapper.text()).toContain('10.5 h');
+  });
 });
