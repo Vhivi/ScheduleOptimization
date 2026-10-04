@@ -16,6 +16,7 @@ from solver.engine import generate_planning as generate_planning_engine
 from solver.utils import (
     assignment_overlaps_weekdays,
     datetime_interval,
+    external_assignment_type_durations,
     find_training_leave_overlap,
     violates_day_night_rest,
 )
@@ -257,8 +258,10 @@ def _build_planning_payload(payload, runtime_config):
     unavailable = {}
     dayOff = {}
     training = {}
-    restrictions = {}
-    restriction_types_durations = runtime_config.get("restriction_types_durations", {})
+    external_assignments = {}
+    external_assignment_types_durations = external_assignment_type_durations(
+        runtime_config
+    )
 
     # Retrieve agent training days and store them in a dictionary {agent: [days]}.
     for agent in agents:
@@ -276,9 +279,8 @@ def _build_planning_payload(payload, runtime_config):
                 if isinstance(vac, dict) and "start" in vac and "end" in vac:
                     # Store leave days in a dictionary {agent: [start, end]}
                     dayOff[agent["name"]].append([vac["start"], vac["end"]])
-        # Retrieve agent restrictions and store them in a dictionary {agent: [days]}.
-        if "restrictions" in agent:
-            restrictions[agent["name"]] = agent["restrictions"]
+        if "external_assignments" in agent:
+            external_assignments[agent["name"]] = agent["external_assignments"]
 
     start_date, end_date, date_error = _validate_date_range_payload(payload)
     if date_error is not None:
@@ -412,8 +414,8 @@ def _build_planning_payload(payload, runtime_config):
         "dayOff": dayOff,
         "training": training,
         "training_duration_hours": runtime_config.get("training_duration_hours", 7),
-        "restrictions": restrictions,
-        "restriction_types_durations": restriction_types_durations,
+        "external_assignments": external_assignments,
+        "external_assignment_types_durations": external_assignment_types_durations,
     }, 200
 
 
@@ -469,6 +471,13 @@ def _validate_date_range_payload(payload):
     return start_date, end_date, None
 
 
+def _external_assignment_type_from_status(value):
+    for prefix in ("external_assignments:", "restrictions:"):
+        if value.startswith(prefix):
+            return value.split(":", 1)[1]
+    return None
+
+
 def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
     if not isinstance(manual_entries, list):
         return None, None, None, (jsonify({"error": "manual_entries must be a list"}), 400)
@@ -477,8 +486,8 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
     valid_agents = set(agents_by_name)
     catalog = build_vacation_catalog(runtime_config)
     valid_vacations = set(catalog["assignable_vacations"])
-    valid_restriction_types = set(
-        (runtime_config.get("restriction_types_durations") or {}).keys()
+    valid_external_assignment_types = set(
+        external_assignment_type_durations(runtime_config).keys()
     )
 
     existing_assignments = {}
@@ -530,11 +539,17 @@ def _parse_manual_entries(manual_entries, runtime_config, start_date, end_date):
         elif entry_type == "status":
             if value in {"unavailable", "training", "vacations"}:
                 pass  # These are valid status types
-            elif value.startswith("restrictions:"):
-                restriction_type = value.split(":", 1)[1]
-                if restriction_type not in valid_restriction_types:
+            elif external_assignment_type := _external_assignment_type_from_status(value):
+                if external_assignment_type not in valid_external_assignment_types:
                     return None, None, None, (
-                        jsonify({"error": f"Unkown restriction type: {restriction_type}"}),
+                        jsonify(
+                            {
+                                "error": (
+                                    "Unknown external assignment type: "
+                                    f"{external_assignment_type}"
+                                )
+                            }
+                        ),
                         400,
                     )
             elif value == "restriction":
@@ -576,18 +591,21 @@ def _inject_manual_status_entries(runtime_config, status_entries):
         elif status_value == "restriction":
             warnings.append(
                 {
-                    "code": "STATUS_RESTRICTION_REQUIRES_SHIFT",
+                    "code": "STATUS_EXTERNAL_ASSIGNMENT_REQUIRES_TYPE",
                     "agent": agent_name,
                     "date": date,
                     "slot": entry["slot"],
-                    "message": "Restriction requires a shift name and was ignored.",
+                    "message": "External assignment requires a type and was ignored.",
                     "source": "api_validation",
                 }
             )
-        elif status_value.startswith("restrictions:"):
-            restriction_type = status_value.split(":", 1)[1]
-            target.setdefault("restrictions", [])
-            target["restrictions"].append({"date": day_str, "type": restriction_type})
+        elif external_assignment_type := _external_assignment_type_from_status(
+            status_value
+        ):
+            target.setdefault("external_assignments", [])
+            target["external_assignments"].append(
+                {"date": day_str, "type": external_assignment_type}
+            )
     return injected_config, warnings
 
 
@@ -895,8 +913,11 @@ def _agent_has_status_on_day(agent, iso_date):
         return True
     if _date_matches_vacation_period(iso_date, agent.get("vacations") or []):
         return True
-    for restriction in agent.get("restrictions") or []:
-        if isinstance(restriction, dict) and restriction.get("date") == day_str:
+    for external_assignment in agent.get("external_assignments") or []:
+        if (
+            isinstance(external_assignment, dict)
+            and external_assignment.get("date") == day_str
+        ):
             return True
     return False
 
@@ -1294,8 +1315,13 @@ RELAXED_CONSTRAINT_DIAGNOSTICS = [
     },
     {
         "constraint": "apply_agent_restrictions",
-        "label": "restrictions agent",
-        "detail": "Relâcher les restrictions agent rendrait le planning faisable.",
+        "label": "vacations interdites à l'agent",
+        "detail": "Relâcher les interdictions de vacations rendrait le planning faisable.",
+    },
+    {
+        "constraint": "block_external_assignments",
+        "label": "vacations externes",
+        "detail": "Relâcher les vacations externes rendrait le planning faisable.",
     },
 ]
 

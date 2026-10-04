@@ -1,6 +1,14 @@
 from datetime import date, datetime, time, timedelta
 
 
+def external_assignment_type_durations(config):
+    """Return canonical external-assignment durations with legacy fallback."""
+    return config.get(
+        "external_assignment_types_durations",
+        config.get("restriction_types_durations", {}),
+    )
+
+
 def split_into_weeks(week_schedule):
     """
     Splits a list of days into separate weeks.
