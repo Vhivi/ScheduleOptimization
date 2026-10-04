@@ -146,6 +146,8 @@ describe('App.vue', () => {
                 duration: 6,
                 is_night: false,
                 requires_next_day_rest: false,
+                start_time: '07:00',
+                end_time: '13:00',
               },
               {
                 name: 'Jour apres-midi',
@@ -181,7 +183,13 @@ describe('App.vue', () => {
 
     expect(Object.keys(payload.half_vacations)).toEqual(['Jour']);
     expect(payload.half_vacations.Jour.segments).toEqual([
-      { name: 'Jour matin', duration: 6, label: 'J matin' },
+      {
+        name: 'Jour matin',
+        duration: 6,
+        label: 'J matin',
+        start_time: '07:00',
+        end_time: '13:00',
+      },
       { name: 'Jour apres-midi', duration: 6, label: 'J aprem' },
     ]);
     expect(payload.vacation_colors).toEqual({
@@ -294,7 +302,7 @@ describe('App.vue', () => {
         vacation_durations: {},
         assignment_labels: {},
         vacation_colors: {},
-        assignable_vacations: ['Jour'],
+        assignable_vacations: ['Jour', 'Jour matin'],
         week_schedule: ['Lun. 05-01'],
         holidays: [],
         unavailable: {},
@@ -335,7 +343,7 @@ describe('App.vue', () => {
     await wrapper.setData({
       manualSelectedShifts: {
         Agent1: {
-          'Lun. 05-01': 'Jour',
+          'Lun. 05-01': 'Jour matin',
         },
       },
     });
@@ -351,10 +359,63 @@ describe('App.vue', () => {
           date: '2026-01-05',
           slot: 'day',
           type: 'shift',
-          value: 'Jour',
+          value: 'Jour matin',
         },
       ],
       existing_assignments_strict: false,
+    });
+  });
+
+  it('sends half-vacation continuity assignments to the common generation endpoint', async () => {
+    apiPost.mockResolvedValueOnce({
+      data: {
+        planning: {},
+        vacation_durations: {},
+        assignment_labels: {},
+        vacation_colors: {},
+        assignable_vacations: ['Jour', 'Jour matin'],
+        week_schedule: ['Lun. 05-01'],
+        holidays: [],
+        unavailable: {},
+        dayOff: {},
+        training: {},
+        external_assignments: {},
+        external_assignment_types_durations: {},
+      },
+    });
+    const wrapper = shallowMount(App, {
+      data() {
+        return {
+          generationMode: 'continuity',
+          startDate: '2026-01-05',
+          endDate: '2026-01-05',
+        };
+      },
+      global: {
+        stubs: {
+          PlanningTable: true,
+        },
+      },
+    });
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.setData({
+      selectedShifts: {
+        Agent1: {
+          'Lun. 29-12': 'Jour matin',
+        },
+      },
+    });
+
+    await wrapper.vm.generatePlanning();
+
+    expect(apiPost).toHaveBeenCalledWith('/generate-planning', {
+      start_date: '2026-01-05',
+      end_date: '2026-01-05',
+      initial_shifts: {
+        Agent1: [['Lun. 29-12', 'Jour matin']],
+      },
     });
   });
 });
