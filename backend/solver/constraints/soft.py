@@ -21,6 +21,12 @@ def _training_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
     return getattr(ctx, "training_hours_by_day", {}).get((agent_name, day), 0)
 
 
+def _external_assignment_hours(ctx: SolverContext, agent_name: str, day: str) -> int:
+    return getattr(ctx, "external_assignment_hours_by_day", {}).get(
+        (agent_name, day), 0
+    )
+
+
 def register(registry: ConstraintRegistry) -> None:
     """
     Registers the soft constraints for the solver.
@@ -87,6 +93,13 @@ def penalize_rolling_5_day_workload(ctx: SolverContext) -> None:
                 )
                 + (
                     _training_hours(ctx, agent_name, day)
+                    if interval_start.date()
+                    <= day_dates[day].date()
+                    < interval_end.date()
+                    else 0
+                )
+                + (
+                    _external_assignment_hours(ctx, agent_name, day)
                     if interval_start.date()
                     <= day_dates[day].date()
                     < interval_end.date()
@@ -217,6 +230,7 @@ def balance_paid_hours(ctx: SolverContext) -> None:
                 )
                 + _leave_paid_hours(ctx, agent_name, day)
                 + _training_hours(ctx, agent_name, day)
+                + _external_assignment_hours(ctx, agent_name, day)
                 for day in ctx.week_schedule
             )
         )
@@ -262,6 +276,7 @@ def balance_paid_hours_by_period(ctx: SolverContext) -> None:
                     )
                     + _leave_paid_hours(ctx, agent_name, day)
                     + _training_hours(ctx, agent_name, day)
+                    + _external_assignment_hours(ctx, agent_name, day)
                     for day in period
                 )
             )
