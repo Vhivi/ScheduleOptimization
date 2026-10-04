@@ -83,6 +83,20 @@ The project is divided into two main components: **Frontend** and **Backend**.
   - `backend/solver/constraints/mixed.py`
 - Objective assembly is isolated in `backend/solver/objective.py`.
 
+##### Planning mode parity
+
+The three planning modes share the same `_build_planning_payload()` pipeline, vacation
+catalog, constraints, and objective:
+
+- new generation starts without seeded assignments;
+- continuity generation locks assignments from the previous seven days;
+- existing-schedule optimization locks current assignments in strict mode, or treats
+  them as high-priority preservation targets in soft mode.
+
+Full and half vacations are therefore available to every mode. Mode-specific inputs
+only provide continuity or preservation context; they do not select a different solver
+or relax staffing and workload rules.
+
 ### CODE MAP
 
 #### Directory Structure

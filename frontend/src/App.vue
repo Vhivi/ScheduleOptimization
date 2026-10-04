@@ -775,7 +775,9 @@ export default {
               label: segment?.label || '',
               duration: Number.isFinite(Number(segment?.duration)) ? Number(segment.duration) : 1,
               is_night: Boolean(segment?.is_night),
-              requires_next_day_rest: Boolean(segment?.requires_next_day_rest)
+              requires_next_day_rest: Boolean(segment?.requires_next_day_rest),
+              ...(segment?.start_time ? { start_time: segment.start_time } : {}),
+              ...(segment?.end_time ? { end_time: segment.end_time } : {})
             }))
             : []
         };
@@ -910,6 +912,8 @@ export default {
             if (label) normalizedSegment.label = label;
             if (segment?.is_night) normalizedSegment.is_night = true;
             if (segment?.requires_next_day_rest) normalizedSegment.requires_next_day_rest = true;
+            if (segment?.start_time) normalizedSegment.start_time = segment.start_time;
+            if (segment?.end_time) normalizedSegment.end_time = segment.end_time;
             return normalizedSegment;
           })
           .filter(Boolean);

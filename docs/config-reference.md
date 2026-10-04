@@ -226,7 +226,10 @@ Notes:
 - If `end_time` is less than or equal to `start_time`, the shift is treated as ending the next day.
 - Example: a Sunday `Nuit` from `19:00` to `07:00` contributes 5h to the Sunday week and 7h to the next Monday week.
 - For weekly-hour calculation, if either time is missing, the full `vacation_durations` value is counted on the assignment day, preserving legacy behavior.
-- Segment-level metadata in `half_vacations[].segments[]` overrides or inherits from the parent behavior.
+- Segment-level `is_night` and `requires_next_day_rest` override or inherit from the parent behavior.
+- Parent times remain available to segment rest rules. For weekly accounting, however, a segment time window
+  is used only when both `start_time` and `end_time` are explicitly configured on that segment. Otherwise its
+  configured `duration` is counted on the assignment day, avoiding overcount from the complete parent interval.
 
 ### `holidays` (required)
 
